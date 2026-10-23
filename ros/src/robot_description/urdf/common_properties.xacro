@@ -1,0 +1,111 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <material name="blue">
+        <color rgba="0 0 0.5 1" />
+    </material>
+
+    <material name="grey">
+        <color rgba="0.5 0.5 0.5 1" />
+    </material>
+
+    <material name="red">
+        <color rgba="0.5 0 0 1" />
+    </material>
+
+    <!-- Escala global del modelo CAD exportado desde SolidWorks -->
+    <xacro:property name="global_scale" value="1.0" />
+
+<!-- =========================================================== -->
+
+    <!-- Base -->
+    <xacro:property name="base_mesh" value="base.STL" />
+    <xacro:property
+        name="base_scale"
+        value="${global_scale} ${global_scale} ${global_scale}"
+    />
+    <xacro:property name="base_visual_xyz" value="0 0 0" />
+    <xacro:property name="base_visual_rpy" value="0 0 0" />
+    <xacro:property name="base_width" value="0.25599" />
+    <xacro:property name="base_depth" value="0.149987" />
+    <xacro:property name="base_height" value="0.004" />
+    <xacro:property name="base_mass" value="0.33" />
+
+    <!-- Front Plate -->
+    <xacro:property name="front_plate_mesh" value="front_plate.STL" />
+    <xacro:property name="back_plate_mesh" value="back_plate.STL" />
+    <xacro:property
+        name="plate_scale"
+        value="${global_scale} ${global_scale} ${global_scale}"
+    />
+    <xacro:property name="front_plate_xyz" value="0.135 -0.085 0" />
+    <xacro:property name="back_plate_xyz" value="-0.137 0.09 0" />
+    <xacro:property name="front_plate_rpy" value="0 0 ${pi/2}" />
+    <xacro:property name="back_plate_rpy" value="0 0 ${-pi/2}" />
+    <xacro:property name="front_plate_coll_xyz" value="0.083750 0.020398 0.024938" />
+    <xacro:property name="back_plate_coll_xyz"  value="0.083750 0.020398 0.024938" />
+    <xacro:property name="plate_width" value="0.163" />
+    <xacro:property name="plate_depth" value="0.0468" />
+    <xacro:property name="plate_height" value="0.056" />
+    <xacro:property name="plate_mass" value="0.25" />
+
+<!-- =========================================================== -->
+<!-- Wheels -->
+<!-- =========================================================== -->
+
+    <xacro:property name="wheel_width" value="0.069"/>
+    <xacro:property name="wheel_mass" value="0.012" />
+    <xacro:property name="wheel_depth" value="0.069"/>
+    <xacro:property name="wheel_height" value="0.03"/>
+
+    <!-- Rueda izquierda -->
+    <xacro:property name="left_wheel_mesh" value="left_wheel.STL" />
+    <xacro:property
+        name="left_wheel_scale"
+        value="${global_scale} ${global_scale} ${global_scale}"
+    />
+    <xacro:property
+        name="left_front_wheel_xyz"
+        value="-0.0555 0.08025 -0.01375"
+    />
+    <xacro:property
+        name="left_back_wheel_xyz"
+        value="0.0555 0.08025 -0.01375"
+    />
+    <xacro:property name="left_wheel_rpy" value="0 0 0" />
+    <xacro:property name="left_wheel_axis" value="0 1 0" />
+    <xacro:property name="left_wheel_visual_xyz" value="0 0 0" />
+    <xacro:property name="left_wheel_visual_rpy" value="-1.5708 0.042481 0" />
+
+    <!-- Rueda derecha -->
+    <xacro:property name="right_wheel_mesh" value="right_wheel.STL" />
+    <xacro:property
+        name="right_wheel_scale"
+        value="${global_scale} ${global_scale} ${global_scale}"
+    />
+    <xacro:property
+        name="right_front_wheel_xyz"
+        value="-0.0555 -0.08025 -0.01375"
+    />
+    <xacro:property
+        name="right_back_wheel_xyz"
+        value="0.0555 -0.08025 -0.01375"
+    />
+    <xacro:property name="right_wheel_rpy" value="0 0 0" />
+    <xacro:property name="right_wheel_axis" value="0 1 0" />
+    <xacro:property name="right_wheel_visual_xyz" value="0 0 0" />
+    <xacro:property name="right_wheel_visual_rpy" value="-1.5708 0.042481 0" />
+
+<!-- =========================================================== -->
+<!-- Parámetros geométricos de referencia para usar en control/TF -->
+<!-- No se usan explicitamente, pero sirven para dejar documentadas las dimensiones principales -->
+<!-- =========================================================== -->
+
+    <xacro:property name="wheel_separation" value="0.1605" />
+    <xacro:property name="wheel_radius" value="0.033" />
+    <xacro:property name="robot_length" value="0.185" />
+    <xacro:property name="robot_width" value="0.145" />
+    <xacro:property name="robot_height" value="0.050" />
+
+
+</robot>

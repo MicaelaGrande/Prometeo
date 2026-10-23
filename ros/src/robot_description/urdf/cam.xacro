@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <xacro:macro name="esp32_cam" params="name parent x y z">
+      <link name="${name}_link">
+        <visual>
+          <geometry><box size="0.005 0.027 0.040"/></geometry>
+          <material name="cam_black"><color rgba="0.1 0.1 0.1 1"/></material>
+        </visual>
+        <collision>
+          <geometry><box size="0.005 0.027 0.040"/></geometry>
+        </collision>
+        <inertial>
+          <mass value="0.01"/>
+          <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+        </inertial>
+      </link>
+
+      <joint name="${name}_joint" type="fixed">
+        <parent link="${parent}"/>
+        <child link="${name}_link"/>
+        <origin xyz="${x} ${y} ${z}" rpy="0 0 0"/>
+      </joint>
+
+      <link name="${name}_optical_frame"/>
+      <joint name="${name}_optical_joint" type="fixed">
+        <parent link="${name}_link"/>
+        <child link="${name}_optical_frame"/>
+        <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      </joint>
+    </xacro:macro>
+
+</robot>

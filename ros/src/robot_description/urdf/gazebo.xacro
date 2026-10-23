@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <xacro:macro name="gazebo">
+
+    <!-- Plugin de tracción diferencial -->
+    <gazebo>
+        <plugin
+            filename="gz-sim-diff-drive-system"
+            name="gz::sim::systems::DiffDrive">
+
+            <left_joint>left_front_wheel_joint</left_joint>
+            <left_joint>left_back_wheel_joint</left_joint>
+            <right_joint>right_front_wheel_joint</right_joint>
+            <right_joint>right_back_wheel_joint</right_joint>
+
+            <wheel_separation>${wheel_separation}</wheel_separation>
+            <wheel_radius>${wheel_radius}</wheel_radius>
+
+            <topic>/cmd_vel</topic>
+            <odom_topic>/odom</odom_topic>
+            <tf_topic>/tf</tf_topic>
+
+            <frame_id>odom</frame_id>
+            <child_frame_id>base_footprint</child_frame_id>
+
+            <odom_publish_frequency>50</odom_publish_frequency>
+
+            <max_linear_acceleration>1.0</max_linear_acceleration>
+            <max_angular_acceleration>2.0</max_angular_acceleration>
+        </plugin>
+
+        <plugin
+            filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher"
+            >
+            <topic>/joint_states</topic>
+        </plugin>
+
+    </gazebo>
+
+    <gazebo reference="left_wheel_link_front">
+        <mu1>0.8</mu1>
+        <mu2>0.4</mu2>
+    </gazebo>
+    <gazebo reference="left_wheel_link_back">
+        <mu1>0.8</mu1>
+        <mu2>0.4</mu2>
+    </gazebo>
+    <gazebo reference="right_wheel_link_front">
+        <mu1>0.8</mu1>
+        <mu2>0.4</mu2>
+    </gazebo>
+    <gazebo reference="right_wheel_link_back">
+        <mu1>0.8</mu1>
+        <mu2>0.4</mu2>
+    </gazebo>
+
+    </xacro:macro>
+
+</robot>

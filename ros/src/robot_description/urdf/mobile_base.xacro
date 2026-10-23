@@ -1,0 +1,216 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="package_name" default="robot_description" />
+  <xacro:arg name="mesh_dir" default="meshes" />
+
+<!-- ======================================================================= -->
+<!-- ================================ Links ================================ -->
+<!-- ======================================================================= -->
+
+    <link name="base_footprint" />
+
+    <link name="base_link">
+        <xacro:mesh_link
+                mesh="${base_mesh}" scale="${base_scale}"
+                material="blue"
+                xyz="${base_visual_xyz}"    rpy="${base_visual_rpy}"
+            />
+        <xacro:box_collision
+                x="${base_width}"
+                y="${base_depth}"
+                z="${base_height}"
+                xyz="0 0 0"   rpy="0 0 0"
+        />
+        <xacro:box_inertia
+            mass="${base_mass}"
+            x="${base_width}"
+            y="${base_depth}"
+            z="${base_height}"
+            xyz="0 0 0"   rpy="0 0 0"
+        />
+    </link>
+
+    <link name="front_link">
+        <xacro:mesh_link
+                mesh="${front_plate_mesh}" scale="${plate_scale}"
+                material="blue"
+                xyz="0 0 0"    rpy="0 0 0"
+            />
+
+        <xacro:box_collision
+                x="${plate_width}"
+                y="${plate_depth}"
+                z="${plate_height}"
+                xyz="${front_plate_coll_xyz}"   rpy="0 0 0"
+        />
+        <xacro:box_inertia
+            mass="${plate_mass}"
+            x="${plate_width}"
+            y="${plate_depth}"
+            z="${plate_height}"
+            xyz="${front_plate_coll_xyz}"   rpy="0 0 0"
+        />
+    </link>
+
+    <link name="back_link">
+        <xacro:mesh_link
+                mesh="${back_plate_mesh}" scale="${plate_scale}"
+                material="blue"
+                xyz="0 0 0"    rpy="0 0 0"
+            />
+        <xacro:box_collision
+                x="${plate_width}"
+                y="${plate_depth}"
+                z="${plate_height}"
+                xyz="${back_plate_coll_xyz}"   rpy="0 0 0"
+        />
+        <xacro:box_inertia
+            mass="${plate_mass}"
+            x="${plate_width}"
+            y="${plate_depth}"
+            z="${plate_height}"
+            xyz="${back_plate_coll_xyz}"   rpy="0 0 0"
+        />
+    </link>
+
+    <!-- Wheels -->
+
+    <link name="left_wheel_link_front">
+        <xacro:mesh_link
+            mesh="${left_wheel_mesh}" scale="${left_wheel_scale}"
+            material="grey"
+            xyz="${left_wheel_visual_xyz}" rpy="${left_wheel_visual_rpy}"
+        />
+        <xacro:sphere_collision
+            radius="${wheel_radius}"
+            xyz="0 ${-wheel_height/2.0} 0" rpy="${left_wheel_visual_rpy}"
+        />
+        <xacro:cylinder_inertia
+            mass="${wheel_mass}"
+            radius="${wheel_radius}" height="${wheel_height}"
+            xyz="0 ${-wheel_height/2.0} 0" rpy="${left_wheel_visual_rpy}"
+        />
+    </link>
+
+    <link name="left_wheel_link_back">
+        <xacro:mesh_link
+            mesh="${left_wheel_mesh}" scale="${left_wheel_scale}"
+            material="grey"
+            xyz="${left_wheel_visual_xyz}" rpy="${left_wheel_visual_rpy}"
+        />
+        <xacro:sphere_collision
+            radius="${wheel_radius}"
+            xyz="0 ${-wheel_height/2.0} 0" rpy="${left_wheel_visual_rpy}"
+        />
+        <xacro:cylinder_inertia
+            mass="${wheel_mass}"
+            radius="${wheel_radius}" height="${wheel_height}"
+            xyz="0 ${-wheel_height/2.0} 0" rpy="${left_wheel_visual_rpy}"
+        />
+    </link>
+
+    <link name="right_wheel_link_front" >
+        <xacro:mesh_link
+            mesh="${right_wheel_mesh}" scale="${right_wheel_scale}"
+            material="grey"
+            xyz="${right_wheel_visual_xyz}" rpy="${right_wheel_visual_rpy}"
+        />
+        <xacro:sphere_collision
+            radius="${wheel_radius}"
+            xyz="0 ${wheel_height/2.0} 0" rpy="${right_wheel_visual_rpy}"
+        />
+        <xacro:cylinder_inertia
+            mass="${wheel_mass}"
+            radius="${wheel_radius}" height="${wheel_height}"
+            xyz="0 ${wheel_height/2.0} 0" rpy="${right_wheel_visual_rpy}"
+        />
+    </link>
+
+      <link name="right_wheel_link_back" >
+        <xacro:mesh_link
+            mesh="${right_wheel_mesh}" scale="${right_wheel_scale}"
+            material="grey"
+            xyz="${right_wheel_visual_xyz}" rpy="${right_wheel_visual_rpy}"
+        />
+        <xacro:sphere_collision
+            radius="${wheel_radius}"
+            xyz="0 ${wheel_height/2.0} 0" rpy="${right_wheel_visual_rpy}"
+        />
+        <xacro:cylinder_inertia
+            mass="${wheel_mass}"
+            radius="${wheel_radius}" height="${wheel_height}"
+            xyz="0 ${wheel_height/2.0} 0" rpy="${right_wheel_visual_rpy}"
+        />
+      </link>
+
+
+<!-- ======================================================================== -->
+<!-- ================================ Sensors =============================== -->
+<!-- ======================================================================== -->
+
+<xacro:esp32_cam name="camera" parent="base_link" x="0.12" y="0" z="0.08"/>
+
+<!-- ======================================================================== -->
+<!-- ================================ Joints ================================ -->
+<!-- ======================================================================== -->
+
+  <joint name="base_joint" type="fixed">
+  <parent link="base_footprint" />
+  <child link="base_link" />
+  <origin xyz="0 0 0.04675" rpy="0 0 0" />
+  </joint>
+
+  <joint name="front_plate_joint" type="fixed">
+      <parent link="base_link" />
+      <child link="front_link" />
+      <origin xyz="${front_plate_xyz}" rpy="${front_plate_rpy}" />
+  </joint>
+
+  <joint name="back_plate_joint" type="fixed">
+      <parent link="base_link" />
+      <child link="back_link" />
+      <origin xyz="${back_plate_xyz}" rpy="${back_plate_rpy}" />
+  </joint>
+
+  <!-- Wheels -->
+
+  <joint name="left_front_wheel_joint" type="continuous">
+    <origin xyz="${left_front_wheel_xyz}" rpy="${left_wheel_rpy}" />
+    <parent link="base_link" />
+    <child link="left_wheel_link_front" />
+    <axis xyz="${left_wheel_axis}" />
+  </joint>
+
+  <joint name="left_back_wheel_joint" type="continuous">
+    <origin xyz="${left_back_wheel_xyz}" rpy="${left_wheel_rpy}" />
+    <parent link="base_link" />
+    <child link="left_wheel_link_back" />
+    <axis xyz="${left_wheel_axis}" />
+  </joint>
+
+ <joint name="right_front_wheel_joint" type="continuous">
+   <origin xyz="${right_front_wheel_xyz}" rpy="${right_wheel_rpy}" />
+   <parent link="base_link" />
+   <child link="right_wheel_link_front" />
+   <axis xyz="${right_wheel_axis}" />
+ </joint>
+
+ <joint name="right_back_wheel_joint" type="continuous">
+   <origin xyz="${right_back_wheel_xyz}" rpy="${right_wheel_rpy}" />
+   <parent link="base_link" />
+   <child link="right_wheel_link_back" />
+   <axis xyz="${right_wheel_axis}" />
+ </joint>
+
+ <!-- ======================================================================== -->
+ <!-- ================================= Misc ================================= -->
+ <!-- ======================================================================== -->
+
+
+<!-- Sensores del robot -->
+ <xacro:sensors/>
+<!-- Settings Gazebo -->
+ <xacro:gazebo/>
+
+</robot>
