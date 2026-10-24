@@ -66,7 +66,7 @@ esp_err_t hcsr04_new(const hcsr04_config_t *config, hcsr04_handle_t *out_handle)
         .mem_block_symbols = 64,            // el minimo de memoria si dma no esta activado
         .resolution_hz = RMT_RESOLUTION_HZ, // resolucion de contador de icks interno
         .trans_queue_depth = 1,             // cuantas transacciones pueden esperar en la cola
-        .int_priority = 0,                  // configura la prioridad
+        .intr_priority = 0,                  // configura la prioridad
         .flags.allow_pd = false};           // el periferico no se apaga en light sleep solo importa si usas ese modo
     ESP_GOTO_ON_ERROR(rmt_new_tx_channel(&tx_cfg, &h->tx_chan), err, TAG, "fallo canal TX");
 
