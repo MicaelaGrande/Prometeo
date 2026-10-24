@@ -1,0 +1,243 @@
+<?xml version="1.0" ?>
+<!--
+  World: 3 arrows (red, green, blue) + 3 small 3 cm cubes (red, green, blue).
+
+  Layout (top-down, +X is forward, +Y is left):
+
+        y=+0.4    y=0.0    y=-0.4
+  x=2.0   [=========== wall ===========]   (1.6 m wide, 1.0 m tall, 5 cm thick)
+  x=1.95   arrow     arrow    arrow       (mounted on the wall face, pointing up)
+  x=1.5    box       box      box         (on the floor in front of the wall)
+           red       green    blue        (left to right as seen from the origin)
+
+  Each arrow is a cylinder shaft + cone head (SDF has no arrow primitive).
+  Arrow origin is at its tail; total length is 0.28 m.
+-->
+<sdf version="1.9">
+  <world name="colored_objects">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane><normal>0 0 1</normal><size>20 20</size></plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane><normal>0 0 1</normal><size>20 20</size></plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ===================== WALL ===================== -->
+    <!-- Front face (facing the origin) is at x = 1.975 -->
+
+    <model name="wall">
+      <static>true</static>
+      <pose>2.0 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.05 1.6 1.0</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.05 1.6 1.0</size></box></geometry>
+          <material>
+            <ambient>0.92 0.92 0.92 1</ambient>
+            <diffuse>0.92 0.92 0.92 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ===================== ARROWS (mounted on the wall, pointing up) ===================== -->
+    <!-- Pitch of -90 deg turns the arrow's local +X (its pointing direction) into world +Z.
+         x = 1.95 puts the cone head (radius 2.5 cm) flush against the wall face at x = 1.975. -->
+
+
+    <model name="arrow_red">
+      <static>true</static>
+      <pose>1.95 0.4 0.5 0 -1.5708 0</pose>
+      <link name="link">
+        <visual name="shaft">
+          <pose>0.10 0 0 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.01</radius><length>0.20</length></cylinder></geometry>
+          <material>
+            <ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse><specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <visual name="head">
+          <pose>0.24 0 0 0 1.5708 0</pose>
+          <geometry><cone><radius>0.025</radius><length>0.08</length></cone></geometry>
+          <material>
+            <ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse><specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <collision name="shaft_collision">
+          <pose>0.10 0 0 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.01</radius><length>0.20</length></cylinder></geometry>
+        </collision>
+        <collision name="head_collision">
+          <pose>0.24 0 0 0 1.5708 0</pose>
+          <geometry><cone><radius>0.025</radius><length>0.08</length></cone></geometry>
+        </collision>
+      </link>
+    </model>
+
+    <model name="arrow_green">
+      <static>true</static>
+      <pose>1.95 0.0 0.5 0 -1.5708 0</pose>
+      <link name="link">
+        <visual name="shaft">
+          <pose>0.10 0 0 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.01</radius><length>0.20</length></cylinder></geometry>
+          <material>
+            <ambient>0 1 0 1</ambient><diffuse>0 1 0 1</diffuse><specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <visual name="head">
+          <pose>0.24 0 0 0 1.5708 0</pose>
+          <geometry><cone><radius>0.025</radius><length>0.08</length></cone></geometry>
+          <material>
+            <ambient>0 1 0 1</ambient><diffuse>0 1 0 1</diffuse><specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <collision name="shaft_collision">
+          <pose>0.10 0 0 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.01</radius><length>0.20</length></cylinder></geometry>
+        </collision>
+        <collision name="head_collision">
+          <pose>0.24 0 0 0 1.5708 0</pose>
+          <geometry><cone><radius>0.025</radius><length>0.08</length></cone></geometry>
+        </collision>
+      </link>
+    </model>
+
+    <model name="arrow_blue">
+      <static>true</static>
+      <pose>1.95 -0.4 0.5 0 -1.5708 0</pose>
+      <link name="link">
+        <visual name="shaft">
+          <pose>0.10 0 0 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.01</radius><length>0.20</length></cylinder></geometry>
+          <material>
+            <ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse><specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <visual name="head">
+          <pose>0.24 0 0 0 1.5708 0</pose>
+          <geometry><cone><radius>0.025</radius><length>0.08</length></cone></geometry>
+          <material>
+            <ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse><specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <collision name="shaft_collision">
+          <pose>0.10 0 0 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.01</radius><length>0.20</length></cylinder></geometry>
+        </collision>
+        <collision name="head_collision">
+          <pose>0.24 0 0 0 1.5708 0</pose>
+          <geometry><cone><radius>0.025</radius><length>0.08</length></cone></geometry>
+        </collision>
+      </link>
+    </model>
+
+    <!-- ===================== BOXES (3 cm cubes, 20 g) ===================== -->
+    <!-- Inertia for a cube: m * (a^2 + a^2) / 12 = 0.02 * 0.0018 / 12 = 3e-6 -->
+
+    <model name="box_red">
+      <pose>1.5 0.4 0.015 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.02</mass>
+          <inertia>
+            <ixx>3e-6</ixx><iyy>3e-6</iyy><izz>3e-6</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
+          <material>
+            <ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse><specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="box_green">
+      <pose>1.5 0.0 0.015 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.02</mass>
+          <inertia>
+            <ixx>3e-6</ixx><iyy>3e-6</iyy><izz>3e-6</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
+          <material>
+            <ambient>0 1 0 1</ambient><diffuse>0 1 0 1</diffuse><specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="box_blue">
+      <pose>1.5 -0.4 0.015 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.02</mass>
+          <inertia>
+            <ixx>3e-6</ixx><iyy>3e-6</iyy><izz>3e-6</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
+          <material>
+            <ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse><specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>
