@@ -35,23 +35,26 @@ def parse_start_marker_pose(world_file):
         pose = model.find('pose')
 
         if pose is None or not pose.text:
-            raise RuntimeError(
+            print(
                 f"El modelo 'start_marker' no tiene una pose en: {world_file}"
             )
+            return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
         values = [float(value) for value in pose.text.split()]
 
         if len(values) != 6:
-            raise RuntimeError(
+            print(
                 "La pose de 'start_marker' debe contener "
                 "6 valores: x y z roll pitch yaw"
             )
+            values = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
         return values
 
-    raise RuntimeError(
+    print(
         f"No se encontró el modelo 'start_marker' en: {world_file}"
     )
+    return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
 
 def launch_setup(context):
