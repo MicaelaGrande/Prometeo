@@ -33,7 +33,6 @@ struct hcsr04_t
     QueueHandle_t rx_queue;
     rmt_receive_config_t rx_config;
     rmt_symbol_word_t rx_buffer[RX_BUFFER_SYMBOLS];
-    int64_t last_trigger_us;
 };
 
 /* Se ejecuta (en interrupcion) cuando el RX termino de recibir el eco.
@@ -94,7 +93,6 @@ esp_err_t hcsr04_new(const hcsr04_config_t *config, hcsr04_handle_t *out_handle)
     ESP_GOTO_ON_ERROR(rmt_enable(h->tx_chan), err, TAG, "fallo enable TX");
     ESP_GOTO_ON_ERROR(rmt_enable(h->rx_chan), err, TAG, "fallo enable RX");
 
-    h->last_trigger_us = esp_timer_get_time() - HCSR04_MIN_CYCLE_US;
     *out_handle = h;
     return ESP_OK;
 
@@ -103,38 +101,38 @@ err:
     return ret;
 }
 
-esp_err_t hcsr04_measure_cm(hcsr04_handle_t h, float *distance_cm)
+/* Ultimo disparo de CUALQUIER sensor: los 60 ms se respetan entre turnos de
+ * todos los sensores, para que los rebotes de un pulso no lleguen al siguiente. */
+static int64_t s_last_trigger_us = INT64_MIN / 2;
+
+/* Arma el receptor y manda el pulso de TRIG. No espera el eco. */
+static esp_err_t start(hcsr04_handle_t h)
 {
-    ESP_RETURN_ON_FALSE(h && distance_cm, ESP_ERR_INVALID_ARG, TAG, "argumento nulo");
-
-    /* 1) Respetar >= 60 ms desde el ultimo disparo */
-    int64_t elapsed = esp_timer_get_time() - h->last_trigger_us;
-    if (elapsed < HCSR04_MIN_CYCLE_US)
-    {
-        uint32_t wait_ms = (uint32_t)((HCSR04_MIN_CYCLE_US - elapsed + 999) / 1000);
-        vTaskDelay(pdMS_TO_TICKS(wait_ms) + 1);
-    }
-
-    /* 2) Armar el receptor ANTES de disparar (el eco llega pocos cientos de us despues) */
+    /* Armar el receptor ANTES de disparar (el eco llega pocos cientos de us despues) */
     xQueueReset(h->rx_queue);
     ESP_RETURN_ON_ERROR(rmt_receive(h->rx_chan, h->rx_buffer, sizeof(h->rx_buffer), &h->rx_config),
                         TAG, "fallo rmt_receive");
 
-    /* 3) Pulso de trigger: 10 us en alto y luego bajo */
-    const rmt_symbol_word_t trigger_symbol = {
+    /* Pulso de trigger: 10 us en alto y luego bajo */
+    static const rmt_symbol_word_t trigger_symbol = {
         .level0 = 1,
         .duration0 = TRIGGER_TICKS,
         .level1 = 0,
         .duration1 = 1,
     };
     const rmt_transmit_config_t tx_cfg = {.loop_count = 0};
-    h->last_trigger_us = esp_timer_get_time();
     ESP_RETURN_ON_ERROR(rmt_transmit(h->tx_chan, h->copy_encoder, &trigger_symbol,
                                      sizeof(trigger_symbol), &tx_cfg),
                         TAG, "fallo rmt_transmit");
+    return ESP_OK;
+}
+
+/* Espera el eco de un sensor ya disparado y lo convierte a cm. */
+static esp_err_t finish(hcsr04_handle_t h, float *distance_cm)
+{
     ESP_RETURN_ON_ERROR(rmt_tx_wait_all_done(h->tx_chan, 100), TAG, "TX no termino");
 
-    /* 4) Esperar el resultado del RX (eco hasta ~23 ms + 25 ms de silencio de cierre) */
+    /* Esperar el resultado del RX (eco hasta ~23 ms + 25 ms de silencio de cierre) */
     rmt_rx_done_event_data_t evt;
     if (xQueueReceive(h->rx_queue, &evt, pdMS_TO_TICKS(100)) != pdTRUE)
     {
@@ -144,7 +142,7 @@ esp_err_t hcsr04_measure_cm(hcsr04_handle_t h, float *distance_cm)
         return ESP_ERR_TIMEOUT;
     }
 
-    /* 5) Buscar el tramo en ALTO: su duracion (en ticks = us) es el ancho del eco */
+    /* Buscar el tramo en ALTO: su duracion (en ticks = us) es el ancho del eco */
     uint32_t echo_us = 0;
     for (size_t i = 0; i < evt.num_symbols; i++)
     {
@@ -169,6 +167,46 @@ esp_err_t hcsr04_measure_cm(hcsr04_handle_t h, float *distance_cm)
 
     *distance_cm = (float)echo_us / HCSR04_US_PER_CM;
     return ESP_OK;
+}
+
+esp_err_t hcsr04_measure_group_cm(const hcsr04_handle_t *hs, size_t n,
+                                  float *distance_cm, esp_err_t *errs)
+{
+    ESP_RETURN_ON_FALSE(hs && n > 0 && distance_cm && errs, ESP_ERR_INVALID_ARG, TAG, "argumento nulo");
+
+    /* 1) Respetar >= 60 ms desde el ultimo disparo de cualquier sensor */
+    int64_t elapsed = esp_timer_get_time() - s_last_trigger_us;
+    if (elapsed < HCSR04_MIN_CYCLE_US)
+    {
+        uint32_t wait_ms = (uint32_t)((HCSR04_MIN_CYCLE_US - elapsed + 999) / 1000);
+        vTaskDelay(pdMS_TO_TICKS(wait_ms) + 1);
+    }
+
+    /* 2) Disparar todos los sensores del grupo casi a la vez (unos pocos us de diferencia) */
+    s_last_trigger_us = esp_timer_get_time();
+    for (size_t i = 0; i < n; i++)
+    {
+        errs[i] = hs[i] ? start(hs[i]) : ESP_ERR_INVALID_ARG;
+    }
+
+    /* 3) Recoger el eco de cada uno */
+    for (size_t i = 0; i < n; i++)
+    {
+        if (errs[i] == ESP_OK)
+        {
+            errs[i] = finish(hs[i], &distance_cm[i]);
+        }
+    }
+    return ESP_OK;
+}
+
+esp_err_t hcsr04_measure_cm(hcsr04_handle_t h, float *distance_cm)
+{
+    ESP_RETURN_ON_FALSE(h && distance_cm, ESP_ERR_INVALID_ARG, TAG, "argumento nulo");
+
+    esp_err_t err;
+    hcsr04_measure_group_cm(&h, 1, distance_cm, &err);
+    return err;
 }
 
 esp_err_t hcsr04_del(hcsr04_handle_t h)

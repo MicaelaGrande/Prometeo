@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include <stddef.h>
 #include "esp_err.h"
 #include "driver/gpio.h"
 
@@ -40,7 +41,8 @@ esp_err_t hcsr04_new(const hcsr04_config_t *config, hcsr04_handle_t *out_handle)
 /**
  * @brief Hace UNA medicion y devuelve la distancia en centimetros.
  *
- * Respeta internamente los 60 ms minimos entre disparos que pide el datasheet.
+ * Respeta internamente los 60 ms minimos entre disparos que pide el datasheet
+ * (contados desde el ultimo disparo de CUALQUIER sensor, no solo de este).
  * La funcion bloquea hasta ~50 ms mientras espera el eco.
  *
  * @return ESP_OK                    medicion valida
@@ -48,6 +50,22 @@ esp_err_t hcsr04_new(const hcsr04_config_t *config, hcsr04_handle_t *out_handle)
  *         ESP_ERR_INVALID_RESPONSE  eco fuera del rango 2 cm - 400 cm (sin objeto, muy cerca o muy lejos)
  */
 esp_err_t hcsr04_measure_cm(hcsr04_handle_t handle, float *distance_cm);
+
+/**
+ * @brief Dispara VARIOS sensores a la vez y devuelve la distancia de cada uno.
+ *
+ * Usar solo con sensores que no se interfieran entre si (por ejemplo los dos
+ * laterales, que apuntan en direcciones opuestas). Respeta los 60 ms minimos
+ * desde el ultimo disparo de cualquier sensor. Bloquea hasta ~50 ms.
+ *
+ * @param hs           handles de los sensores del grupo
+ * @param n            cantidad de sensores
+ * @param distance_cm  salida: distancia de cada sensor (valida solo si errs[i] == ESP_OK)
+ * @param errs         salida: resultado de cada sensor, con los mismos codigos que hcsr04_measure_cm()
+ * @return ESP_OK, o ESP_ERR_INVALID_ARG si algun puntero es nulo
+ */
+esp_err_t hcsr04_measure_group_cm(const hcsr04_handle_t *hs, size_t n,
+                                  float *distance_cm, esp_err_t *errs);
 
 /** Libera los canales RMT y la memoria. */
 esp_err_t hcsr04_del(hcsr04_handle_t handle);
