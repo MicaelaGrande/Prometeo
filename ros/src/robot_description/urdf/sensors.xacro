@@ -11,7 +11,7 @@
         <gz_frame_id>camera_optical_frame</gz_frame_id>
         <camera>
           <horizontal_fov>1.047</horizontal_fov>
-          <image><width>640</width><height>480</height></image>
+          <image><width>320</width><height>240</height></image>
           <clip><near>0.05</near><far>10</far></clip>
         </camera>
       </sensor>
