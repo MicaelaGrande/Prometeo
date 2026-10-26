@@ -174,8 +174,8 @@
     <xacro:wall x="1" y="1" px="0" />
     <xacro:wall x="1" y="-1" px="0" />
     <xacro:wall x="1" y="-2" px="0" />
-    <xacro:arrow x="1" y="-1" px="0" pd="1" L="0.070" r="1" g="0" b="0" />
-    <xacro:arrow x="1" y="0" px="0" pd="1" L="0.070" r="0" g="1" b="0" />
-    <xacro:arrow x="1" y="1" px="0" pd="1" L="0.070" r="0" g="0" b="1" />
+    <xacro:arrow x="1" y="-1" px="0" pd="1" L="0.030" r="1" g="0" b="0" />
+    <xacro:arrow x="1" y="0"  px="0" pd="1" L="0.060" r="0" g="1" b="0" />
+    <xacro:arrow x="1" y="1"  px="0" pd="1" L="0.100" r="0" g="0" b="1" />
   </world>
 </sdf>
