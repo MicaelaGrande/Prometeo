@@ -50,8 +50,24 @@ class VisionNode(Node):
             Image, '/camera/image_raw', self.image_cb, 10)
         self.debug_pub = self.create_publisher(Image, '/vision/annotated', 10)
 
-    def image_cb(self, msg):
-        frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+    def angle_to_dir(self, angle, tolerance):
+        cases = {
+            'right': 0,
+            'up': 90,
+            'left': 180,
+            'down': 270
+        }
+        for key, val in cases.items():
+            if val-tolerance <= angle < val+tolerance:
+                return key
+
+        return "UNK"
+
+
+    def find_arrows(self, frame):
+        """ Formato de salida color, tamaño, angulo (0 izq, 180 der)"""
+        arrow_list = []
+
         frame = cv2.resize(frame, (640, 480))
         blurred = cv2.GaussianBlur(frame, (5, 5), 0)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
@@ -70,7 +86,6 @@ class VisionNode(Node):
             mask = cv2.morphologyEx(
                 mask, cv2.MORPH_CLOSE,
                 cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9)))
-
             contours, _ = cv2.findContours(
                 mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -78,28 +93,32 @@ class VisionNode(Node):
                   area = cv2.contourArea(c)
                   if area < MIN_AREA:
                       continue
-                  is_arrow, direction, tip, arr_len = classify_arrow(c)
+                  is_arrow, direction, tip, size = classify_arrow(c)
                   if not is_arrow:
                       continue
-                  hull = cv2.convexHull(c)
 
                   cv2.drawContours(annotated, [c], -1, (0, 255, 0), 2)
 
                   angle = np.degrees(np.arctan2(-direction[1], direction[0]))  # minus because image y points down
-                  tag = f"{label}, {arr_len}cm, "
-                  if 0-TOLERANCE <= angle <= 0+TOLERANCE:
-                    tag +=  "right"
-                  elif 180-TOLERANCE <= angle <= 180+TOLERANCE:
-                    tag += "left"
 
-                  cv2.putText(annotated, f'{tag}', np.add(tuple(tip.astype(int)), (4, -4)),
+                  dir = self.angle_to_dir(angle, tolerance=15)
+
+                  cv2.putText(annotated, f'{label}, {size}, {dir}', np.add(tuple(tip.astype(int)), (4, -4)),
                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 2)
 
                   cv2.circle(annotated, center=tuple(tip.astype(int)), radius=2, color=(0, 255, 0), thickness=2)
 
         debug_msg = self.bridge.cv2_to_imgmsg(annotated, 'bgr8')
-        debug_msg.header = msg.header
+        debug_msg.header = self.msg.header
         self.debug_pub.publish(debug_msg)
+        return arrow_list
+
+    def image_cb(self, msg):
+        self.msg = msg
+        frame = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+        arrows = self.find_arrows(frame)
+
+
 
 def main():
     rclpy.init()
