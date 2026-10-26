@@ -5,7 +5,7 @@ project(gazebo_worlds)
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY models worlds
+  DIRECTORY worlds
   DESTINATION share/${PROJECT_NAME}
 )
 
