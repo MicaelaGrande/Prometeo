@@ -1,136 +1,241 @@
-#include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-#include "hcsr04.h"
+#include "esp_wifi.h"
 
-static const char *TAG = "main";
+// Nuestras librerías de motores y sensores
+#include "motores.h"
+#include "sensores.h"
 
-enum { IZQ, DER, FRENTE, NUM_SENSORS };
+// Librerías base de micro-ROS
+#include <uros_network_interfaces.h>
+#include <rcl/rcl.h>
+#include <rcl/error_handling.h>
+#include <rclc/rclc.h>
+#include <rclc/executor.h>
+#include <rmw_microros/rmw_microros.h>
+#include <std_msgs/msg/string.h>
+#include <std_msgs/msg/float32_multi_array.h>
+#include <geometry_msgs/msg/twist.h>
 
-static const char *NOMBRES[NUM_SENSORS] = { "IZQ", "DER", "FRENTE" };
+// Stack y prioridad de las tareas
+#define MICRO_ROS_TASK_STACK 16000
+#define MICRO_ROS_TASK_PRIO  5
 
-/* ================== Calibracion (cm). Cambiar aca. ================== */
+#define PING_PERIODO_MS 1000   // cada cuánto se chequea que el agente siga vivo
+#define DIST_PERIODO_MS 200    // cada cuánto se publica /distancias (5 Hz)
 
-/* 1) Error propio de cada modulo (hardware). Poner un objeto a distancia
- *    conocida (medida con regla) y anotar: offset = crudo - real.
- *    Ej: el monitor muestra "crudo 21.0" y la regla dice 20.0 -> 1.0f */
-float offset_sensor_cm[NUM_SENSORS] = {
-    [IZQ]    = 0.0f,
-    [DER]    = 0.0f,
-    [FRENTE] = 0.0f,
-};
+static const char *TAG = "microROS_motores";
 
-/* 2) Distancia desde el frente del sensor hasta el borde del robot
- *    (positivo si el sensor esta metido hacia adentro del robot).
- *    Todavia no definido: dejar en 0 hasta armar el robot. */
-float pos_sensor_cm[NUM_SENSORS] = {
-    [IZQ]    = 0.0f,
-    [DER]    = 0.0f,
-    [FRENTE] = 0.0f,
-};
+static const char *volatile estado_actual = "ESPERANDO ORDENES";
 
-/* distancia final = mediana(crudo) - offset_sensor_cm - pos_sensor_cm */
+// =========================================================
+// OBJETOS DE MICRO-ROS
+// =========================================================
+static rcl_allocator_t allocator;
+static rcl_init_options_t init_options;
+static rmw_init_options_t *rmw_options;
+static rclc_support_t support;
+static rcl_node_t node;
+static rcl_publisher_t publisher;
+static rcl_publisher_t pub_dist;
+static rcl_subscription_t sub_cmd_vel;
+static rcl_timer_t timer;
+static rcl_timer_t timer_dist;
+static rclc_executor_t executor;
+static std_msgs__msg__String msg_estado;
+static std_msgs__msg__Float32MultiArray msg_dist;
+static float buf_dist[NUM_SENSORS];
+static geometry_msgs__msg__Twist msg_cmd_vel;
 
-/* ==================================================================== */
+#define RCRET(fn) { if ((fn) != RCL_RET_OK) { \
+    ESP_LOGE(TAG, "Fallo en linea %d", __LINE__); return false; } }
+#define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if ((temp_rc != RCL_RET_OK)) { \
+    ESP_LOGW(TAG, "Fallo en linea %d: %d. Continuando.", __LINE__, (int)temp_rc); } }
 
-/* Cantidad de lecturas que usa la mediana (impar) */
-#define VENTANA 3
-
-/* Valor que se guarda cuando el sensor no ve nada (fuera de rango): asi
- * "no hay pared" cuenta como lejos y la mediana lo trata como un dato mas */
-#define DIST_LEJOS_CM 400.0f
-
-/* Ultimas lecturas de cada sensor, para la mediana */
-typedef struct {
-    float lecturas[VENTANA];
-    int cant;       /* cuantas lecturas validas hay guardadas (hasta VENTANA) */
-    int prox;       /* posicion donde se escribe la proxima */
-} historial_t;
-
-static void historial_agregar(historial_t *h, float cm)
+// =========================================================
+// LLEGA UNA ORDEN POR /cmd_vel
+// =========================================================
+static void cmd_vel_callback(const void *msgin)
 {
-    h->lecturas[h->prox] = cm;
-    h->prox = (h->prox + 1) % VENTANA;
-    if (h->cant < VENTANA) {
-        h->cant++;
+    const geometry_msgs__msg__Twist *m = (const geometry_msgs__msg__Twist *)msgin;
+
+    float avance = (float)m->linear.x;    // + adelante, - atrás
+    float giro   = (float)m->angular.z;   // + izquierda, - derecha
+
+    // Cinemática diferencial (versión simple, valores -1..1)
+    float izq = avance - giro;
+    float der = avance + giro;
+
+    motores_set(izq, der);   // la librería limita a -1..1 y alimenta el failsafe
+    estado_actual = "MOVIENDO";
+}
+
+// =========================================================
+// PUBLICAR ESTADO cada 500 ms
+// =========================================================
+static void timer_callback(rcl_timer_t * t, int64_t last_call_time)
+{
+    RCLC_UNUSED(last_call_time);
+    if (t != NULL) {
+        const char *estado = motores_en_falla() ? "FAILSAFE" : estado_actual;
+        msg_estado.data.data = (char *)estado;
+        msg_estado.data.size = strlen(estado);
+        msg_estado.data.capacity = msg_estado.data.size + 1;
+        RCSOFTCHECK(rcl_publish(&publisher, &msg_estado, NULL));
     }
 }
 
-/* Ordena una copia de las lecturas y devuelve la del medio */
-static float historial_mediana(const historial_t *h)
+// =========================================================
+// PUBLICAR DISTANCIAS cada 200 ms: [izq, der, frente] en cm
+// (-1 = sin eco, 400 = lejos)
+// =========================================================
+static void dist_timer_callback(rcl_timer_t * t, int64_t last_call_time)
 {
-    float v[VENTANA];
-    for (int i = 0; i < h->cant; i++) {
-        v[i] = h->lecturas[i];
+    RCLC_UNUSED(last_call_time);
+    if (t != NULL) {
+        sensores_leer(buf_dist);
+        RCSOFTCHECK(rcl_publish(&pub_dist, &msg_dist, NULL));
     }
-    /* Insercion: con 3 valores es lo mas simple */
-    for (int i = 1; i < h->cant; i++) {
-        float x = v[i];
-        int j = i - 1;
-        while (j >= 0 && v[j] > x) {
-            v[j + 1] = v[j];
-            j--;
+}
+
+// =========================================================
+// CREAR / DESTRUIR micro-ROS
+// =========================================================
+static bool crear_entidades(void)
+{
+    RCRET(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
+    RCRET(rclc_node_init_default(&node, "nodo_motores_esp32", "", &support));
+
+    RCRET(rclc_publisher_init_default(&publisher, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "estado_motores"));
+
+    RCRET(rclc_publisher_init_default(&pub_dist, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "distancias"));
+
+    RCRET(rclc_subscription_init_default(&sub_cmd_vel, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
+
+    RCRET(rclc_timer_init_default(&timer, &support, RCL_MS_TO_NS(500), timer_callback));
+    RCRET(rclc_timer_init_default(&timer_dist, &support, RCL_MS_TO_NS(DIST_PERIODO_MS),
+          dist_timer_callback));
+
+    executor = rclc_executor_get_zero_initialized_executor();
+    RCRET(rclc_executor_init(&executor, &support.context, 3, &allocator));  // 2 timers + suscripción
+    RCRET(rclc_executor_add_timer(&executor, &timer));
+    RCRET(rclc_executor_add_timer(&executor, &timer_dist));
+    RCRET(rclc_executor_add_subscription(&executor, &sub_cmd_vel, &msg_cmd_vel,
+          &cmd_vel_callback, ON_NEW_DATA));
+    return true;
+}
+
+static void destruir_entidades(void)
+{
+    rmw_context_t *rmw_context = rcl_context_get_rmw_context(&support.context);
+    (void) rmw_uros_set_context_entity_destroy_session_timeout(rmw_context, 0);
+
+    (void) rcl_subscription_fini(&sub_cmd_vel, &node);
+    (void) rcl_publisher_fini(&publisher, &node);
+    (void) rcl_publisher_fini(&pub_dist, &node);
+    (void) rcl_timer_fini(&timer);
+    (void) rcl_timer_fini(&timer_dist);
+    (void) rclc_executor_fini(&executor);
+    (void) rcl_node_fini(&node);
+    (void) rclc_support_fini(&support);
+}
+
+// =========================================================
+// TAREA DE MICRO-ROS con reconexión
+// =========================================================
+typedef enum {
+    ESPERANDO_AGENTE,
+    AGENTE_DISPONIBLE,
+    CONECTADO,
+    DESCONECTADO
+} estado_uros_t;
+
+static void micro_ros_task(void * arg)
+{
+    allocator = rcl_get_default_allocator();
+    init_options = rcl_get_zero_initialized_init_options();
+    rcl_init_options_init(&init_options, allocator);
+    rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
+    rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options);
+
+    // El mensaje de distancias usa un buffer fijo: no se pide memoria dinámica
+    msg_dist.data.data = buf_dist;
+    msg_dist.data.size = NUM_SENSORS;
+    msg_dist.data.capacity = NUM_SENSORS;
+
+    estado_uros_t estado = ESPERANDO_AGENTE;
+    int ms_desde_ping = 0;
+
+    while (1) {
+        switch (estado) {
+
+        case ESPERANDO_AGENTE:
+            if (rmw_uros_ping_agent_options(200, 1, rmw_options) == RMW_RET_OK) {
+                ESP_LOGI(TAG, "Agente encontrado");
+                estado = AGENTE_DISPONIBLE;
+            } else {
+                ESP_LOGW(TAG, "Buscando agente en %s:%s ...",
+                         CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT);
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
+            break;
+
+        case AGENTE_DISPONIBLE:
+            if (crear_entidades()) {
+                ESP_LOGI(TAG, "CONECTADO. Escuchando /cmd_vel, publicando /distancias");
+                estado = CONECTADO;
+                ms_desde_ping = 0;
+            } else {
+                destruir_entidades();
+                estado = ESPERANDO_AGENTE;
+            }
+            break;
+
+        case CONECTADO:
+            if (ms_desde_ping >= PING_PERIODO_MS) {
+                ms_desde_ping = 0;
+                if (rmw_uros_ping_agent(100, 3) != RMW_RET_OK) {
+                    estado = DESCONECTADO;
+                    break;
+                }
+            }
+            rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+            vTaskDelay(pdMS_TO_TICKS(10));
+            ms_desde_ping += 20;
+            break;
+
+        case DESCONECTADO:
+            ESP_LOGE(TAG, "Agente PERDIDO -> FRENO y reconexion");
+            motores_frenar();
+            destruir_entidades();
+            estado_actual = "ESPERANDO ORDENES";
+            estado = ESPERANDO_AGENTE;
+            break;
         }
-        v[j + 1] = x;
-    }
-    return v[h->cant / 2];
-}
-
-/* Arma el texto de un sensor: distancia final y cruda, o el motivo del error */
-static void formatear(char *buf, size_t len, bool hay_dato, esp_err_t err,
-                      float crudo, float final)
-{
-    if (!hay_dato) {
-        snprintf(buf, len, "%s", err == ESP_ERR_TIMEOUT ? "sin eco" : esp_err_to_name(err));
-    } else if (crudo >= DIST_LEJOS_CM) {
-        snprintf(buf, len, "lejos");
-    } else {
-        snprintf(buf, len, "%5.1f cm (crudo %5.1f)", final, crudo);
     }
 }
 
 void app_main(void)
 {
-    /* Un config por sensor: TRIG y ECHO propios */
-    hcsr04_config_t cfg[NUM_SENSORS] = {
-        [IZQ]    = { .trig_gpio = GPIO_NUM_18, .echo_gpio = GPIO_NUM_19 },
-        [DER]    = { .trig_gpio = GPIO_NUM_21, .echo_gpio = GPIO_NUM_22 },
-        [FRENTE] = { .trig_gpio = GPIO_NUM_25, .echo_gpio = GPIO_NUM_26 },
-    };
-    hcsr04_handle_t sensors[NUM_SENSORS] = { NULL };
+    // 1. Iniciar la librería de motores (arranca frenado)
+    motores_init();
 
-    for (int i = 0; i < NUM_SENSORS; i++) {
-        ESP_ERROR_CHECK(hcsr04_new(&cfg[i], &sensors[i]));
-    }
+    // 2. Iniciar los sensores (miden en su propia tarea, aunque no haya agente)
+    ESP_ERROR_CHECK(sensores_init());
 
-    float cm[NUM_SENSORS] = { 0 };
-    esp_err_t errs[NUM_SENSORS];
-    historial_t hist[NUM_SENSORS] = { 0 };
+    // 3. Conectarse al WiFi
+    ESP_ERROR_CHECK(uros_network_interface_initialize());
 
-    while (1) {
-        /* Turno 1: los laterales juntos (apuntan en direcciones opuestas, no se interfieren) */
-        hcsr04_measure_group_cm(&sensors[IZQ], 2, &cm[IZQ], &errs[IZQ]);
-        /* Turno 2: el frente solo, 60 ms despues para que se apaguen los rebotes */
-        hcsr04_measure_group_cm(&sensors[FRENTE], 1, &cm[FRENTE], &errs[FRENTE]);
+    // Sin ahorro de energía: si no, la radio duerme ~300 ms entre escuchas,
+    // los /cmd_vel llegan amontonados, salta el failsafe y se "pierde" el agente
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 
-        char txt[NUM_SENSORS][40];
-        for (int i = 0; i < NUM_SENSORS; i++) {
-            /* Guardar la lectura: valida tal cual, fuera de rango como "lejos".
-             * Un timeout (sin eco) no se guarda: es un problema de cableado. */
-            if (errs[i] == ESP_OK) {
-                historial_agregar(&hist[i], cm[i]);
-            } else if (errs[i] == ESP_ERR_INVALID_RESPONSE) {
-                historial_agregar(&hist[i], DIST_LEJOS_CM);
-            }
-
-            bool hay_dato = hist[i].cant > 0 && errs[i] != ESP_ERR_TIMEOUT;
-            float crudo = hay_dato ? historial_mediana(&hist[i]) : 0.0f;
-            float final = crudo - offset_sensor_cm[i] - pos_sensor_cm[i];
-            formatear(txt[i], sizeof(txt[i]), hay_dato, errs[i], crudo, final);
-        }
-        ESP_LOGI(TAG, "%s: %s | %s: %s | %s: %s",
-                 NOMBRES[IZQ], txt[IZQ], NOMBRES[DER], txt[DER], NOMBRES[FRENTE], txt[FRENTE]);
-    }
+    // 4. Iniciar micro-ROS
+    xTaskCreate(micro_ros_task, "micro_ros_task", MICRO_ROS_TASK_STACK, NULL, MICRO_ROS_TASK_PRIO, NULL);
 }
