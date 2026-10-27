@@ -7,3 +7,4 @@ sdkconfig.old
 .vscode
 log/
 install/
+__pycache__/
