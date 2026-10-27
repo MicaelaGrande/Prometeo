@@ -1,3 +1,24 @@
 build/
 managed_components/
 sdkconfig.old
+
+# ESP32-CAM
+firmware/esp32_cam/build/
+firmware/esp32_cam/managed_components/
+firmware/esp32_cam/sdkconfig
+firmware/esp32_cam/sdkconfig.old
+firmware/esp32_cam/.vscode/
+
+# ROS 2
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+
+# Archivos locales de pruebas de camara
+firmware/esp32_cam/calibracion/imagenes/
+firmware/esp32_cam/calibracion/resultados/
+firmware/esp32_cam/calibracion/pruebas_flechas/
