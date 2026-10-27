@@ -3,3 +3,4 @@ managed_components/
 sdkconfig.old
 log/
 install/
+__pycache__/
