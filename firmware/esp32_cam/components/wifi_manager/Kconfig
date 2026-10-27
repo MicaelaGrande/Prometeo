@@ -1,0 +1,12 @@
+
+menu "Prometeo Wi-Fi"
+
+    config PROMETEO_WIFI_SSID
+        string "Nombre de la red Wi-Fi"
+        default ""
+
+    config PROMETEO_WIFI_PASSWORD
+        string "Contrasena de la red Wi-Fi"
+        default ""
+
+endmenu
