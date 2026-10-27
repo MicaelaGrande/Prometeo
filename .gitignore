@@ -2,3 +2,6 @@ build/
 log/
 install/
 __pycache__/
+managed_components/
+sdkconfig.old
+.vscode
