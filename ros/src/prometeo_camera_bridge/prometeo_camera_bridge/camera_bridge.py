@@ -47,7 +47,14 @@ class CameraBridge(Node):
 
         while not self.stop_event.is_set():
             self.get_logger().info(f'Conectando a {url}')
-            cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+            cap = cv2.VideoCapture(
+                url,
+                cv2.CAP_FFMPEG,
+                [
+                    cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000,
+                    cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000
+                ]
+            )
             if not cap.isOpened():
                 self.get_logger().warning('No se pudo abrir el stream. Reintentando...')
                 cap.release()
@@ -57,7 +64,12 @@ class CameraBridge(Node):
             self.get_logger().info('Stream conectado')
             try:
                 while not self.stop_event.is_set():
+
                     ok, frame = cap.read()
+
+                    if self.stop_event.is_set():
+                        break
+
                     if not ok or frame is None:
                         self.get_logger().warning('Se perdio el stream; reconectando...')
                         break
@@ -72,10 +84,17 @@ class CameraBridge(Node):
                         continue
 
                     msg = self.bridge.cv2_to_imgmsg(frame, encoding='bgr8')
-                    # Hora de recepcion en Ubuntu, no la hora exacta de captura en la ESP32.
+
+                    # Hora de recepción en Ubuntu.
                     msg.header.stamp = self.get_clock().now().to_msg()
                     msg.header.frame_id = frame_id
+
+                    # Evitar publicar cuando el nodo está cerrándose.
+                    if self.stop_event.is_set() or not rclpy.ok():
+                        break
+
                     self.publisher.publish(msg)
+
             except Exception as exc:
                 self.get_logger().error(f'Error recibiendo/publicando: {exc}')
             finally:
@@ -84,7 +103,8 @@ class CameraBridge(Node):
 
     def stop(self):
         self.stop_event.set()
-        self.worker.join(timeout=2.0)
+        self.worker.join()
+
 
 
 def main(args=None):
