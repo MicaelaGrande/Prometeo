@@ -1,0 +1,41 @@
+# Default parameters for huggin_vision/object_recognition (node name: vision_node).
+# Loaded by launch/vision.launch.py; pass another file with  vision_params:=/path/to/file.yaml
+# Values below equal the defaults declared in object_recognition.py.
+vision_node:
+  ros__parameters:
+    # Fixed frame the cube markers (/vision/cube_markers) are published in
+    world_frame: odom
+
+    # Frames are resized to this size before detection; camera_info is scaled to match
+    frame_width: 640
+    frame_height: 480
+
+    # Edge length of the cubes (meters)
+    cube_size: 0.02
+
+    # Direction tolerance when classifying arrows (degrees)
+    arrow_tolerance_deg: 15.0
+
+    # Minimum blob area (pixels, at frame_width x frame_height)
+    min_area:
+      cube: 500
+      arrow: 500
+      zone: 500
+
+    # HSV thresholds per color: [H (0-179), S (0-255), V (0-255)]
+    hsv:
+      red:
+        lower: [0, 120, 80]
+        upper: [10, 255, 255]
+      blue:
+        lower: [100, 120, 80]
+        upper: [130, 255, 255]
+      green:
+        lower: [40, 80, 80]
+        upper: [80, 255, 255]
+
+    # RGB (0-1) used for the RViz cube markers and the annotated image
+    marker_color:
+      red: [1.0, 0.0, 0.0]
+      blue: [0.0, 0.0, 1.0]
+      green: [0.0, 1.0, 0.0]
