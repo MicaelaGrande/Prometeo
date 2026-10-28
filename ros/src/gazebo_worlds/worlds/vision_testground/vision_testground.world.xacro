@@ -66,7 +66,9 @@
         <xacro:side_outer  y="-9"  x="0" px="${EAST}" />
         <xacro:entry_outer x="-9" y="0" px="${SOUTH}" />
         <!-- OUTER WALL END -->
-        <xacro:box x="${9*0.32}" y="0" name ="1" rgb="1 0 0"/>
+        <xacro:box x="${7*0.32}" y="${1*0.32}"  name ="r1" rgb="1 0 0"/>
+        <xacro:box x="${7*0.32}" y="${0*0.32}"  name ="b1" rgb="0 0 1"/>
+        <xacro:box x="${7*0.32}" y="${-1*0.32}" name ="g1" rgb="0 1 0"/>
         <!--xacro:arrow x="1" y="-1" px="0" pd="1" L="0.030" r="1" g="0" b="0" /-->
         <!--xacro:arrow x="1" y="0"  px="0" pd="1" L="0.060" r="0" g="1" b="0" /-->
         <!--xacro:arrow x="1" y="1"  px="0" pd="1" L="0.100" r="0" g="0" b="1" /-->
