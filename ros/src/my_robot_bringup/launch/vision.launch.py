@@ -25,9 +25,10 @@ def generate_launch_description():
             description="rviz config file to use"
         ),
         DeclareLaunchArgument(
-            "world_frame",
-            default_value="odom",
-            description="fixed frame the cube markers are published in"
+            "vision_params",
+            default_value=PathJoinSubstitution(
+                [bringup_pkg_path, 'config', 'vision.yaml']),
+            description="parameter file for the vision node"
         ),
     ]
 
@@ -46,10 +47,10 @@ def generate_launch_description():
         package='huggin_vision',
         executable='object_recognition',
         name='vision_node',
-        parameters=[{
-            'use_sim_time': True,
-            'world_frame': LaunchConfiguration('world_frame'),
-        }],
+        parameters=[
+            LaunchConfiguration('vision_params'),
+            {'use_sim_time': True},
+        ],
         output='screen',
     )
 
