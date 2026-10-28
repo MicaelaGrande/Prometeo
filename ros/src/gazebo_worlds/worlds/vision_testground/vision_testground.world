@@ -2099,21 +2099,22 @@
     </model>
     <model name="cylinder">
       <!-- Raised by half the height so the base rests on the ground plane -->
-      <pose>2.88 0 0.04 0 0 0</pose>
+      <static>true</static>
+      <pose>2.88 0 0.05 0 0 0</pose>
       <link name="cylinder_1">
         <collision name="cylinder_collision">
           <geometry>
             <cylinder>
-              <radius>0.08</radius>
-              <length>0.08</length>
+              <radius>0.02</radius>
+              <length>0.1</length>
             </cylinder>
           </geometry>
         </collision>
         <visual name="cylinder_visual">
           <geometry>
             <cylinder>
-              <radius>0.08</radius>
-              <length>0.08</length>
+              <radius>0.02</radius>
+              <length>0.1</length>
             </cylinder>
           </geometry>
           <material>
@@ -2125,14 +2126,14 @@
       </link>
     </model>
     <model name="box_1">
-      <pose>2.88 0 0.121 0 0 0</pose>
+      <pose>2.88 0 0.111 0 0 0</pose>
       <link name="link">
         <inertial>
           <mass>0.02</mass>
           <inertia>
-            <ixx>2.1333333333333338e-05</ixx>
-            <iyy>2.1333333333333338e-05</iyy>
-            <izz>2.1333333333333338e-05</izz>
+            <ixx>1.3333333333333336e-06</ixx>
+            <iyy>1.3333333333333336e-06</iyy>
+            <izz>1.3333333333333336e-06</izz>
             <ixy>0</ixy>
             <ixz>0</ixz>
             <iyz>0</iyz>
@@ -2141,14 +2142,14 @@
         <collision name="collision">
           <geometry>
             <box>
-              <size>0.08 0.08 0.08</size>
+              <size>0.02 0.02 0.02</size>
             </box>
           </geometry>
         </collision>
         <visual name="visual">
           <geometry>
             <box>
-              <size>0.08 0.08 0.08</size>
+              <size>0.02 0.02 0.02</size>
             </box>
           </geometry>
           <material>

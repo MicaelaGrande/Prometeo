@@ -41,10 +41,10 @@
   <xacro:property name="EAST"  value="3"/>
   <xacro:property name="SOUTH" value="2"/>
 
-  <xacro:property name="cylinder_height" value="0.08"/>
-  <xacro:property name="cylinder_radius" value="0.08"/>
-  <xacro:property name="arrow_base_z" value="0.5"/>
-  <xacro:property name="box_size"     value="0.08"/>
+  <xacro:property name="box_size"     value="0.02"/>
   <xacro:property name="box_mass"     value="0.02"/>
+  <xacro:property name="cylinder_height" value="0.1"/>
+  <xacro:property name="cylinder_radius" value="${box_size}"/>
+  <xacro:property name="arrow_base_z" value="0.5"/>
   <xacro:property name="spacing"      value="0.4"/>
 </sdf>
