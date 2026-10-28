@@ -1,0 +1,50 @@
+<?xml version="1.0" ?>
+<!--
+  xacro version of colored_objects.sdf
+
+  Generate the SDF, then run it in Gazebo:
+      xacro colored_objects.sdf.xacro -o colored_objects.sdf
+      gz sim -r colored_objects.sdf
+
+  Override any argument from the command line:
+      xacro colored_objects.sdf.xacro head_w:=0.08 thick:=0.01 -o colored_objects.sdf
+
+  Layout (seen from the robot at the origin; +X forward, +Y left):
+      wall at x = 2.0, three arrows on its face, three 3 cm boxes on the floor in front of it.
+-->
+<sdf version="1.9" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- ===== Command-line arguments (defaults in meters) ===== -->
+  <xacro:arg name="body_w" default="0.030"/>
+  <xacro:arg name="head_w" default="0.070"/>
+  <xacro:arg name="head_h" default="0.050"/>
+  <xacro:arg name="thick"  default="0.005"/>
+
+  <!-- ===== Properties ===== -->
+  <xacro:property name="body_w" value="$(arg body_w)"/>
+  <xacro:property name="head_w" value="$(arg head_w)"/>
+  <xacro:property name="head_h" value="$(arg head_h)"/>
+  <xacro:property name="thick"  value="$(arg thick)"/>
+
+  <xacro:property name="wall_x"      value="2.0"/>
+  <xacro:property name="wall_thick"  value="0.01"/>
+  <xacro:property name="wall_width"  value="0.32"/>
+  <xacro:property name="wall_height" value="0.16"/>
+
+  <xacro:property name="area_size" value="0.8"/>
+  <xacro:property name="start_x" value="3.2"/>
+  <xacro:property name="start_y" value="0"/>
+  <xacro:property name="end_x" value="-3.2"/>
+  <xacro:property name="end_y" value="0"/>
+
+  <xacro:property name="NORTH" value="0"/>
+  <xacro:property name="WEST"  value="1"/>
+  <xacro:property name="EAST"  value="3"/>
+  <xacro:property name="SOUTH" value="2"/>
+
+  <xacro:property name="cylinder_height" value="0.08"/>
+  <xacro:property name="cylinder_radius" value="0.08"/>
+  <xacro:property name="arrow_base_z" value="0.5"/>
+  <xacro:property name="box_size"     value="0.08"/>
+  <xacro:property name="box_mass"     value="0.02"/>
+  <xacro:property name="spacing"      value="0.4"/>
+</sdf>
