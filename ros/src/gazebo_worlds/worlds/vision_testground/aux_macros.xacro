@@ -67,6 +67,7 @@
   <xacro:macro name="box" params="name x y rgb">
     <model name="cylinder">
     <!-- Raised by half the height so the base rests on the ground plane -->
+        <static>true</static>
         <pose>${x} ${y} ${cylinder_height / 2} 0 0 0</pose>
         <link name="cylinder_${name}">
             <collision name="cylinder_collision">
