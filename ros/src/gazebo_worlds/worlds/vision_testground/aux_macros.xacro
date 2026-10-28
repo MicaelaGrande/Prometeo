@@ -1,0 +1,191 @@
+<?xml version="1.0" ?>
+<!--
+  xacro version of colored_objects.sdf
+
+  Generate the SDF, then run it in Gazebo:
+      xacro colored_objects.sdf.xacro -o colored_objects.sdf
+      gz sim -r colored_objects.sdf
+
+  Override any argument from the command line:
+      xacro colored_objects.sdf.xacro head_w:=0.08 thick:=0.01 -o colored_objects.sdf
+
+  Layout (seen from the robot at the origin; +X forward, +Y left):
+      wall at x = 2.0, three arrows on its face, three 3 cm boxes on the floor in front of it.
+-->
+<sdf version="1.9" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- ===== Macros ===== -->
+
+  <!-- Flat block arrow pointing up on the wall. L = body length (m), r/g/b = color 0..1, y = position -->
+  <xacro:macro name="arrow" params="x y px pd L r g b">
+    <model name="arrow_${x}${y}_${r}${g}${b}">
+      <static>true</static>
+      <pose>${x*wall_width} ${y*wall_width} ${wall_height/2 - 0.01} ${pd*pi} 0 ${px * pi/2}</pose>
+      <link name="link">
+        <visual name="visual">
+          <pose>${wall_width/2 - wall_thick} ${-L} 0 0 ${pi/2} 0</pose>
+          <geometry>
+            <polyline>
+              <point>${-body_w / 2} 0</point>
+              <point>${body_w / 2} 0</point>
+              <point>${body_w / 2} ${L}</point>
+              <point>${head_w / 2} ${L}</point>
+              <point>0 ${L + head_h}</point>
+              <point>${-head_w / 2} ${L}</point>
+              <point>${-body_w / 2} ${L}</point>
+              <height>${thick}</height>
+            </polyline>
+          </geometry>
+          <material>
+            <ambient>${r} ${g} ${b} 1</ambient>
+            <diffuse>${r} ${g} ${b} 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </xacro:macro>
+
+  <!-- Area of colored ground -->
+  <xacro:macro name="zone" params="name x y px r g b">
+    <model name="${name}">
+      <static>true</static>
+      <pose>${x} ${y} -0.019 0 0 ${px}</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>${area_size} ${area_size} 0.04</size></box></geometry>
+          <material>
+            <ambient>${r} ${g} ${b} 1</ambient>
+            <diffuse>${r} ${g} ${b} 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </xacro:macro>
+
+  <!-- Small cube resting on the floor. Inertia is computed from the mass and size. -->
+  <xacro:macro name="box" params="name x y rgb">
+    <model name="cylinder">
+    <!-- Raised by half the height so the base rests on the ground plane -->
+        <pose>${x} ${y} ${cylinder_height / 2} 0 0 0</pose>
+        <link name="cylinder_${name}">
+            <collision name="cylinder_collision">
+                <geometry>
+                    <cylinder>
+                        <radius>${cylinder_radius}</radius>
+                        <length>${cylinder_height}</length>
+                    </cylinder>
+                </geometry>
+            </collision>
+            <visual name="cylinder_visual">
+                <geometry>
+                    <cylinder>
+                        <radius>${cylinder_radius}</radius>
+                        <length>${cylinder_height}</length>
+                    </cylinder>
+                </geometry>
+                <material>
+                    <ambient>0.1 0.1 0.1 1</ambient>
+                    <diffuse>0.1 0.1 0.1 1</diffuse>
+                    <specular>0.1 0.1 0.1 1</specular>
+                </material>
+            </visual>
+        </link>
+    </model>
+    <model name="box_${name}">
+      <pose>${x} ${y} ${cylinder_height + box_size / 2 + 0.001} 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>${box_mass}</mass>
+          <inertia>
+            <ixx>${box_mass * 2 * box_size**2 / 12}</ixx>
+            <iyy>${box_mass * 2 * box_size**2 / 12}</iyy>
+            <izz>${box_mass * 2 * box_size**2 / 12}</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><box><size>${box_size} ${box_size} ${box_size}</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>${box_size} ${box_size} ${box_size}</size></box></geometry>
+          <material>
+            <ambient>${rgb} 1</ambient>
+            <diffuse>${rgb} 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </xacro:macro>
+
+  <xacro:macro name="wall" params="x y px">
+      <model name="wall_${x}${y}${px}">
+          <static>true</static>
+          <pose>${x * wall_width} ${y * wall_width} ${wall_height / 2 - 0.01} 0 0 ${px * pi / 2}</pose>
+          <link name="link">
+              <collision name="collision">
+                  <pose>${wall_width/2} 0 0 0 0 0</pose>
+                  <geometry>
+                      <box><size>${wall_thick} ${wall_width} ${wall_height}</size></box>
+                  </geometry>
+              </collision>
+              <visual name="visual">
+                  <pose>${wall_width/2} 0 0 0 0 0</pose>
+                  <geometry>
+                      <box><size>${wall_thick} ${wall_width} ${wall_height}</size></box>
+                  </geometry>
+                  <material>
+                      <ambient>0.92 0.92 0.92 1</ambient>
+                      <diffuse>0.92 0.92 0.92 1</diffuse>
+                      <specular>0.05 0.05 0.05 1</specular>
+                  </material>
+              </visual>
+          </link>
+      </model>
+  </xacro:macro>
+
+  <xacro:macro name="entry_outer" params="x y px">
+    <xacro:wall x="${x}" y="${y+9}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y+8}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y+7}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y+6}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y+5}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y+4}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y+3}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y+2}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y+1}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y-1}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y-2}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y-3}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y-4}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y-5}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y-6}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y-7}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y-8}"  px="${px}" />
+    <xacro:wall x="${x}" y="${y-9}"  px="${px}" />
+  </xacro:macro>
+
+  <xacro:macro name="side_outer" params="x y px">
+      <xacro:wall y="${y}" x="${x+9}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x+8}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x+7}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x+6}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x+5}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x+4}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x+3}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x+2}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x+1}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x}"    px="${px}" />
+      <xacro:wall y="${y}" x="${x-1}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x-2}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x-3}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x-4}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x-5}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x-6}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x-7}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x-8}"  px="${px}" />
+      <xacro:wall y="${y}" x="${x-9}"  px="${px}" />
+  </xacro:macro>
+
+</sdf>
