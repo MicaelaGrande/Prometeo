@@ -55,6 +55,9 @@ static hcsr04_handle_t sensors[NUM_SENSORS] = { NULL };
 /* Ultima distancia de cada sensor: la escribe la tarea de sensores y la lee
  * quien llame a sensores_leer() (el timer de micro-ROS), por eso el mux */
 static float distancias_cm[NUM_SENSORS] = { DIST_SIN_DATO, DIST_SIN_DATO, DIST_SIN_DATO };
+/* Ultima lectura sin mediana (ya calibrada): la usa el freno de emergencia */
+static float crudas_cm[NUM_SENSORS] = { DIST_SIN_DATO, DIST_SIN_DATO, DIST_SIN_DATO };
+static uint32_t num_medicion = 0;   /* aumenta con cada juego de distancias nuevo */
 static portMUX_TYPE dist_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static void historial_agregar(historial_t *h, float cm)
@@ -117,8 +120,18 @@ static void sensores_task(void *arg)
         bool loguear = (++ciclo >= LOG_CADA_CICLOS);
         char txt[NUM_SENSORS][40];
         float nuevas[NUM_SENSORS];
+        float crudas[NUM_SENSORS];
 
         for (int i = 0; i < NUM_SENSORS; i++) {
+            /* Lectura de este ciclo, sin mediana, con la misma calibracion y codigos */
+            if (errs[i] == ESP_OK && cm[i] < DIST_LEJOS_CM) {
+                crudas[i] = cm[i] - offset_sensor_cm[i] - pos_sensor_cm[i];
+            } else if (errs[i] == ESP_OK || errs[i] == ESP_ERR_INVALID_RESPONSE) {
+                crudas[i] = DIST_LEJOS_CM;
+            } else {
+                crudas[i] = DIST_SIN_DATO;
+            }
+
             /* Guardar la lectura: valida tal cual, fuera de rango como "lejos".
              * Un timeout (sin eco) no se guarda: es un problema de cableado. */
             if (errs[i] == ESP_OK) {
@@ -146,6 +159,8 @@ static void sensores_task(void *arg)
 
         taskENTER_CRITICAL(&dist_mux);
         memcpy(distancias_cm, nuevas, sizeof(distancias_cm));
+        memcpy(crudas_cm, crudas, sizeof(crudas_cm));
+        num_medicion++;
         taskEXIT_CRITICAL(&dist_mux);
 
         if (loguear) {
@@ -181,9 +196,20 @@ esp_err_t sensores_init(void)
     return ESP_OK;
 }
 
-void sensores_leer(float out_cm[NUM_SENSORS])
+uint32_t sensores_leer(float out_cm[NUM_SENSORS])
 {
     taskENTER_CRITICAL(&dist_mux);
     memcpy(out_cm, distancias_cm, sizeof(distancias_cm));
+    uint32_t n = num_medicion;
     taskEXIT_CRITICAL(&dist_mux);
+    return n;
+}
+
+uint32_t sensores_leer_crudo(float out_cm[NUM_SENSORS])
+{
+    taskENTER_CRITICAL(&dist_mux);
+    memcpy(out_cm, crudas_cm, sizeof(crudas_cm));
+    uint32_t n = num_medicion;
+    taskEXIT_CRITICAL(&dist_mux);
+    return n;
 }
