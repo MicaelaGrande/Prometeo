@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <string.h>
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -9,6 +10,7 @@
 #include "motores.h"
 #include "sensores.h"
 #include "seguridad.h"
+#include "mg90s.h"
 
 // Librerías base de micro-ROS
 #include <uros_network_interfaces.h>
@@ -19,6 +21,7 @@
 #include <rmw_microros/rmw_microros.h>
 #include <std_msgs/msg/string.h>
 #include <std_msgs/msg/bool.h>
+#include <std_msgs/msg/float32.h>
 #include <std_msgs/msg/float32_multi_array.h>
 #include <geometry_msgs/msg/twist.h>
 
@@ -27,6 +30,21 @@
 #define MICRO_ROS_TASK_PRIO  5
 
 #define PING_PERIODO_MS 1000   // cada cuánto se chequea que el agente siga vivo
+
+// ===== SERVOS =====
+// Todos los servos se mueven a la misma velocidad. AJUSTAR probando.
+#define SERVO_VEL_GPS 60.0f    // grados por segundo
+
+// Qué servo físico es cada articulación (AJUSTAR según el cableado)
+#define SERVO_CAMARA  SERVO_1  // giro izq/der de la cámara
+#define SERVO_BASE    SERVO_2  // giro izq/der del brazo
+#define SERVO_HOMBRO  SERVO_3
+#define SERVO_CODO    SERVO_4
+#define SERVO_GARRA   SERVO_5
+
+// Orden de los valores en /brazo/cmd: [base, hombro, codo, garra]
+#define BRAZO_JUNTAS 4
+static const servo_id_t brazo[BRAZO_JUNTAS] = { SERVO_BASE, SERVO_HOMBRO, SERVO_CODO, SERVO_GARRA };
 
 static const char *TAG = "microROS_motores";
 
@@ -45,6 +63,8 @@ static rcl_publisher_t pub_dist;
 static rcl_publisher_t pub_freno;
 static rcl_subscription_t sub_cmd_vel;
 static rcl_subscription_t sub_seguridad;
+static rcl_subscription_t sub_camara;
+static rcl_subscription_t sub_brazo;
 static rcl_timer_t timer;
 static rclc_executor_t executor;
 static std_msgs__msg__String msg_estado;
@@ -55,6 +75,9 @@ static std_msgs__msg__Bool msg_freno;
 static int freno_publicado = -1;       // último valor publicado en /freno_emergencia (-1 = ninguno)
 static std_msgs__msg__Bool msg_seguridad;
 static geometry_msgs__msg__Twist msg_cmd_vel;
+static std_msgs__msg__Float32 msg_camara;
+static std_msgs__msg__Float32MultiArray msg_brazo;
+static float buf_brazo[BRAZO_JUNTAS];
 
 #define RCRET(fn) { if ((fn) != RCL_RET_OK) { \
     ESP_LOGE(TAG, "Fallo en linea %d", __LINE__); return false; } }
@@ -87,6 +110,35 @@ static void seguridad_callback(const void *msgin)
 {
     const std_msgs__msg__Bool *m = (const std_msgs__msg__Bool *)msgin;
     seguridad_habilitar(m->data);
+// LLEGA UNA ORDEN POR /camara/cmd: ángulo de la cámara (grados)
+// =========================================================
+static void camara_callback(const void *msgin)
+{
+    const std_msgs__msg__Float32 *m = (const std_msgs__msg__Float32 *)msgin;
+
+    if (!isnan(m->data)) {
+        servo_mover(SERVO_CAMARA, m->data, SERVO_VEL_GPS);   // la librería limita al rango
+    }
+}
+
+// =========================================================
+// LLEGA UNA ORDEN POR /brazo/cmd: [base, hombro, codo, garra] en grados
+// (NaN = dejar esa articulación como está)
+// =========================================================
+static void brazo_callback(const void *msgin)
+{
+    const std_msgs__msg__Float32MultiArray *m = (const std_msgs__msg__Float32MultiArray *)msgin;
+
+    if (m->data.size != BRAZO_JUNTAS) {
+        ESP_LOGW(TAG, "/brazo/cmd: se esperaban %d valores y llegaron %d",
+                 BRAZO_JUNTAS, (int)m->data.size);
+        return;
+    }
+    for (int i = 0; i < BRAZO_JUNTAS; i++) {
+        if (!isnan(m->data.data[i])) {
+            servo_mover(brazo[i], m->data.data[i], SERVO_VEL_GPS);
+        }
+    }
 }
 
 // =========================================================
@@ -160,11 +212,17 @@ static bool crear_entidades(void)
 
     RCRET(rclc_subscription_init_default(&sub_seguridad, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "seguridad_habilitada"));
+    RCRET(rclc_subscription_init_default(&sub_camara, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "camara/cmd"));
+
+    RCRET(rclc_subscription_init_default(&sub_brazo, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "brazo/cmd"));
 
     RCRET(rclc_timer_init_default(&timer, &support, RCL_MS_TO_NS(500), timer_callback));
 
     executor = rclc_executor_get_zero_initialized_executor();
     RCRET(rclc_executor_init(&executor, &support.context, 3, &allocator));  // timer + 2 suscripciones
+    RCRET(rclc_executor_init(&executor, &support.context, 5, &allocator));  // 2 timers + 3 suscripciones
     RCRET(rclc_executor_add_timer(&executor, &timer));
     RCRET(rclc_executor_add_subscription(&executor, &sub_cmd_vel, &msg_cmd_vel,
           &cmd_vel_callback, ON_NEW_DATA));
@@ -172,6 +230,10 @@ static bool crear_entidades(void)
           &seguridad_callback, ON_NEW_DATA));
 
     freno_publicado = -1;   // al (re)conectar se publica el estado actual
+    RCRET(rclc_executor_add_subscription(&executor, &sub_camara, &msg_camara,
+          &camara_callback, ON_NEW_DATA));
+    RCRET(rclc_executor_add_subscription(&executor, &sub_brazo, &msg_brazo,
+          &brazo_callback, ON_NEW_DATA));
     return true;
 }
 
@@ -182,6 +244,8 @@ static void destruir_entidades(void)
 
     (void) rcl_subscription_fini(&sub_cmd_vel, &node);
     (void) rcl_subscription_fini(&sub_seguridad, &node);
+    (void) rcl_subscription_fini(&sub_camara, &node);
+    (void) rcl_subscription_fini(&sub_brazo, &node);
     (void) rcl_publisher_fini(&publisher, &node);
     (void) rcl_publisher_fini(&pub_dist, &node);
     (void) rcl_publisher_fini(&pub_freno, &node);
@@ -214,6 +278,12 @@ static void micro_ros_task(void * arg)
     msg_dist.data.size = NUM_SENSORS;
     msg_dist.data.capacity = NUM_SENSORS;
 
+    // El mensaje de /brazo/cmd también usa un buffer fijo (layout.dim queda vacío:
+    // quien publique no debe llenar el layout)
+    msg_brazo.data.data = buf_brazo;
+    msg_brazo.data.size = 0;
+    msg_brazo.data.capacity = BRAZO_JUNTAS;
+
     estado_uros_t estado = ESPERANDO_AGENTE;
     int ms_desde_ping = 0;
 
@@ -233,7 +303,7 @@ static void micro_ros_task(void * arg)
 
         case AGENTE_DISPONIBLE:
             if (crear_entidades()) {
-                ESP_LOGI(TAG, "CONECTADO. Escuchando /cmd_vel, publicando /distancias");
+                ESP_LOGI(TAG, "CONECTADO. Escuchando /cmd_vel, /camara/cmd y /brazo/cmd, publicando /distancias");
                 estado = CONECTADO;
                 ms_desde_ping = 0;
             } else {
@@ -261,6 +331,7 @@ static void micro_ros_task(void * arg)
             ESP_LOGE(TAG, "Agente PERDIDO -> FRENO y reconexion");
             motores_frenar();
             seguridad_habilitar(true);   // sin ROS nadie puede pedir modo recoger: freno activo
+            servos_detener();   // los servos se quedan donde están
             destruir_entidades();
             estado_actual = "ESPERANDO ORDENES";
             estado = ESPERANDO_AGENTE;
@@ -273,6 +344,9 @@ void app_main(void)
 {
     // 1. Iniciar la librería de motores (arranca frenado)
     motores_init();
+
+    // 1b. Iniciar los servos (van a su posición home sin saltos)
+    servos_init();
 
     // 2. Iniciar los sensores (miden en su propia tarea, aunque no haya agente)
     ESP_ERROR_CHECK(sensores_init());

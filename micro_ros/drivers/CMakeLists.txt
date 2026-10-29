@@ -2,6 +2,8 @@
 # y sumar su .c a SRCS y su carpeta a INCLUDE_DIRS.
 idf_component_register(SRCS "hcsr04/hcsr04.c"
                             "motores/motores.c"
+                            "mg90s/mg90s.c"
                        INCLUDE_DIRS "hcsr04"
                        "motores"
+                       "mg90s"
                        REQUIRES driver esp_timer esp_driver_ledc)
