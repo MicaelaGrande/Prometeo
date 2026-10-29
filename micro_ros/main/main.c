@@ -110,6 +110,9 @@ static void seguridad_callback(const void *msgin)
 {
     const std_msgs__msg__Bool *m = (const std_msgs__msg__Bool *)msgin;
     seguridad_habilitar(m->data);
+}
+
+// =========================================================
 // LLEGA UNA ORDEN POR /camara/cmd: ángulo de la cámara (grados)
 // =========================================================
 static void camara_callback(const void *msgin)
@@ -221,19 +224,18 @@ static bool crear_entidades(void)
     RCRET(rclc_timer_init_default(&timer, &support, RCL_MS_TO_NS(500), timer_callback));
 
     executor = rclc_executor_get_zero_initialized_executor();
-    RCRET(rclc_executor_init(&executor, &support.context, 3, &allocator));  // timer + 2 suscripciones
-    RCRET(rclc_executor_init(&executor, &support.context, 5, &allocator));  // 2 timers + 3 suscripciones
+    RCRET(rclc_executor_init(&executor, &support.context, 5, &allocator));  // timer + 4 suscripciones
     RCRET(rclc_executor_add_timer(&executor, &timer));
     RCRET(rclc_executor_add_subscription(&executor, &sub_cmd_vel, &msg_cmd_vel,
           &cmd_vel_callback, ON_NEW_DATA));
     RCRET(rclc_executor_add_subscription(&executor, &sub_seguridad, &msg_seguridad,
           &seguridad_callback, ON_NEW_DATA));
-
-    freno_publicado = -1;   // al (re)conectar se publica el estado actual
     RCRET(rclc_executor_add_subscription(&executor, &sub_camara, &msg_camara,
           &camara_callback, ON_NEW_DATA));
     RCRET(rclc_executor_add_subscription(&executor, &sub_brazo, &msg_brazo,
           &brazo_callback, ON_NEW_DATA));
+
+    freno_publicado = -1;   // al (re)conectar se publica el estado actual
     return true;
 }
 
