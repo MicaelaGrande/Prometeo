@@ -11,6 +11,7 @@
 #include "sensores.h"
 #include "seguridad.h"
 #include "mg90s.h"
+#include "encoder.h"
 
 // Librerías base de micro-ROS
 #include <uros_network_interfaces.h>
@@ -78,6 +79,13 @@ static geometry_msgs__msg__Twist msg_cmd_vel;
 static std_msgs__msg__Float32 msg_camara;
 static std_msgs__msg__Float32MultiArray msg_brazo;
 static float buf_brazo[BRAZO_JUNTAS];
+
+// /velocidad_ruedas: [vel_izq m/s, vel_der m/s, rpm_izq, rpm_der]
+#define VEL_RUEDAS_LEN 4
+static rcl_publisher_t pub_vel_ruedas;
+static rcl_timer_t timer_ruedas;
+static std_msgs__msg__Float32MultiArray msg_vel_ruedas;
+static float buf_vel_ruedas[VEL_RUEDAS_LEN];
 
 #define RCRET(fn) { if ((fn) != RCL_RET_OK) { \
     ESP_LOGE(TAG, "Fallo en linea %d", __LINE__); return false; } }
@@ -163,6 +171,23 @@ static void timer_callback(rcl_timer_t * t, int64_t last_call_time)
 }
 
 // =========================================================
+// PUBLICAR VELOCIDAD DE LAS RUEDAS cada PERIOD_MS (lo mismo que tarda el
+// driver en recalcularla). Siempre >= 0: el encoder tiene un solo canal y
+// no sabe para qué lado gira.
+// =========================================================
+static void timer_ruedas_callback(rcl_timer_t * t, int64_t last_call_time)
+{
+    RCLC_UNUSED(last_call_time);
+    if (t != NULL) {
+        buf_vel_ruedas[0] = encoder_get_vel_izq();
+        buf_vel_ruedas[1] = encoder_get_vel_der();
+        buf_vel_ruedas[2] = encoder_get_rpm_izq();
+        buf_vel_ruedas[3] = encoder_get_rpm_der();
+        RCSOFTCHECK(rcl_publish(&pub_vel_ruedas, &msg_vel_ruedas, NULL));
+    }
+}
+
+// =========================================================
 // PUBLICAR DISTANCIAS apenas hay una medición nueva (~cada 120 ms):
 // [izq, der, frente] en cm (-1 = sin eco, 400 = lejos)
 // Se llama desde micro_ros_task: rcl no se puede usar desde otra tarea.
@@ -206,6 +231,10 @@ static bool crear_entidades(void)
     RCRET(rclc_publisher_init_best_effort(&pub_dist, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "distancias"));
 
+    // Igual que /distancias: escuchar con QoS best effort
+    RCRET(rclc_publisher_init_best_effort(&pub_vel_ruedas, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "velocidad_ruedas"));
+
     RCRET(rclc_subscription_init_best_effort(&sub_cmd_vel, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
 
@@ -222,10 +251,12 @@ static bool crear_entidades(void)
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "brazo/cmd"));
 
     RCRET(rclc_timer_init_default(&timer, &support, RCL_MS_TO_NS(500), timer_callback));
+    RCRET(rclc_timer_init_default(&timer_ruedas, &support, RCL_MS_TO_NS(PERIOD_MS), timer_ruedas_callback));
 
     executor = rclc_executor_get_zero_initialized_executor();
-    RCRET(rclc_executor_init(&executor, &support.context, 5, &allocator));  // timer + 4 suscripciones
+    RCRET(rclc_executor_init(&executor, &support.context, 6, &allocator));  // 2 timers + 4 suscripciones
     RCRET(rclc_executor_add_timer(&executor, &timer));
+    RCRET(rclc_executor_add_timer(&executor, &timer_ruedas));
     RCRET(rclc_executor_add_subscription(&executor, &sub_cmd_vel, &msg_cmd_vel,
           &cmd_vel_callback, ON_NEW_DATA));
     RCRET(rclc_executor_add_subscription(&executor, &sub_seguridad, &msg_seguridad,
@@ -251,7 +282,9 @@ static void destruir_entidades(void)
     (void) rcl_publisher_fini(&publisher, &node);
     (void) rcl_publisher_fini(&pub_dist, &node);
     (void) rcl_publisher_fini(&pub_freno, &node);
+    (void) rcl_publisher_fini(&pub_vel_ruedas, &node);
     (void) rcl_timer_fini(&timer);
+    (void) rcl_timer_fini(&timer_ruedas);
     (void) rclc_executor_fini(&executor);
     (void) rcl_node_fini(&node);
     (void) rclc_support_fini(&support);
@@ -280,6 +313,10 @@ static void micro_ros_task(void * arg)
     msg_dist.data.size = NUM_SENSORS;
     msg_dist.data.capacity = NUM_SENSORS;
 
+    msg_vel_ruedas.data.data = buf_vel_ruedas;
+    msg_vel_ruedas.data.size = VEL_RUEDAS_LEN;
+    msg_vel_ruedas.data.capacity = VEL_RUEDAS_LEN;
+
     // El mensaje de /brazo/cmd también usa un buffer fijo (layout.dim queda vacío:
     // quien publique no debe llenar el layout)
     msg_brazo.data.data = buf_brazo;
@@ -305,7 +342,7 @@ static void micro_ros_task(void * arg)
 
         case AGENTE_DISPONIBLE:
             if (crear_entidades()) {
-                ESP_LOGI(TAG, "CONECTADO. Escuchando /cmd_vel, /camara/cmd y /brazo/cmd, publicando /distancias");
+                ESP_LOGI(TAG, "CONECTADO. Escuchando /cmd_vel, /camara/cmd y /brazo/cmd, publicando /distancias y /velocidad_ruedas");
                 estado = CONECTADO;
                 ms_desde_ping = 0;
             } else {
@@ -346,6 +383,9 @@ void app_main(void)
 {
     // 1. Iniciar la librería de motores (arranca frenado)
     motores_init();
+
+    // 1a. Iniciar los encoders (cuentan pulsos por interrupción aunque no haya agente)
+    encoders_init();
 
     // 1b. Iniciar los servos (van a su posición home sin saltos)
     servos_init();

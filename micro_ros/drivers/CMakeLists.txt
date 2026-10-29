@@ -3,7 +3,9 @@
 idf_component_register(SRCS "hcsr04/hcsr04.c"
                             "motores/motores.c"
                             "mg90s/mg90s.c"
+                            "encoders/encoder.c"
                        INCLUDE_DIRS "hcsr04"
                        "motores"
                        "mg90s"
+                       "encoders"
                        REQUIRES driver esp_timer esp_driver_ledc)
