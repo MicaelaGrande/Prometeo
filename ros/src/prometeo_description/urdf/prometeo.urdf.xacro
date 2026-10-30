@@ -43,6 +43,10 @@
   <xacro:property name="ultrasonido_frente_z" value="0.037"/>  <!-- altura sobre la placa -->
   <xacro:property name="camara_x" value="0.10"/>            <!-- a ojo: respecto del centro; positivo es adelante -->
 
+  <!-- Masas (en kg): estimadas, hay que pesar el robot real -->
+  <xacro:property name="masa_cuerpo" value="0.9"/>
+  <xacro:property name="masa_rueda" value="0.08"/>
+
   <!-- Colores. Definidos una vez aca para poder usarlos en todas las piezas.
        El orden es rojo, verde, azul y opacidad, de 0 a 1. -->
   <material name="negro">
@@ -78,6 +82,25 @@
       </geometry>
       <material name="acrilico"/>
     </visual>
+
+    <!-- collision: la forma con la que choca en el simulador. Es una caja simple
+         porque calcular choques con un modelo 3D detallado es mucho mas lento. -->
+    <collision>
+      <origin xyz="0 0 ${alto_cuerpo/2}"/>
+      <geometry>
+        <box size="${largo_cuerpo} ${ancho_cuerpo} ${alto_cuerpo}"/>
+      </geometry>
+    </collision>
+
+    <!-- inertial: la masa, y que tan dificil es hacerlo girar. El simulador lo
+         necesita para mover el robot. Son las formulas de una caja maciza. -->
+    <inertial>
+      <origin xyz="0 0 ${alto_cuerpo/2}"/>
+      <mass value="${masa_cuerpo}"/>
+      <inertia ixx="${masa_cuerpo * (ancho_cuerpo**2 + alto_cuerpo**2) / 12}" ixy="0" ixz="0"
+               iyy="${masa_cuerpo * (largo_cuerpo**2 + alto_cuerpo**2) / 12}" iyz="0"
+               izz="${masa_cuerpo * (largo_cuerpo**2 + ancho_cuerpo**2) / 12}"/>
+    </inertial>
   </link>
 
   <!-- ===== UNION DEL PISO CON EL CUERPO ===== -->
@@ -159,6 +182,22 @@
         </geometry>
         <material name="negro"/>
       </visual>
+
+      <!-- Para chocar y apoyarse en el piso, la rueda es un cilindro acostado -->
+      <collision>
+        <origin rpy="${-pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${radio_rueda}" length="${ancho_rueda}"/>
+        </geometry>
+      </collision>
+
+      <!-- Las formulas de un cilindro macizo que gira sobre el eje y -->
+      <inertial>
+        <mass value="${masa_rueda}"/>
+        <inertia ixx="${masa_rueda * (3 * radio_rueda**2 + ancho_rueda**2) / 12}" ixy="0" ixz="0"
+                 iyy="${masa_rueda * radio_rueda**2 / 2}" iyz="0"
+                 izz="${masa_rueda * (3 * radio_rueda**2 + ancho_rueda**2) / 12}"/>
+      </inertial>
     </link>
 
     <!-- continuous: una union que gira sin limite, como una rueda -->
@@ -239,5 +278,9 @@
     <!-- Altura: el techo del chasis mas la mitad de la plaquita, asi queda apoyada -->
     <origin xyz="${camara_x} 0 ${alto_cuerpo + espesor_placa + alto_camara/2}"/>
   </joint>
+
+  <!-- ===== SIMULADOR ===== -->
+  <!-- Lo que solo le importa a Gazebo esta en otro archivo. RViz lo ignora. -->
+  <xacro:include filename="prometeo.gazebo.xacro"/>
 
 </robot>

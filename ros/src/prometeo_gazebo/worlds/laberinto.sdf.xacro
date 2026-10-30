@@ -1,0 +1,125 @@
+<?xml version="1.0"?>
+<!--
+  Laberinto de prueba, con las medidas del reglamento.
+
+  SDF es el formato de los mundos de Gazebo. Aca tambien usamos xacro para no
+  repetir lo mismo por cada pared.
+
+  Visto desde arriba (el robot arranca en R, mirando a la derecha):
+
+        +=======================+
+        | rama izq  T  rama der |
+        +=======+       +=======+
+                |       |
+                |       |   2 segmentos
+        +=======+       |
+        | R             |   3 segmentos y una curva
+        +===============+
+
+  No hace falta que sea el laberinto de la competencia, porque cambia entre
+  fases. Sirve para probar lo que importa: una recta, una curva y una bifurcacion.
+-->
+<sdf version="1.9" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <world name="laberinto">
+
+    <!-- ===== MEDIDAS (en metros) ===== -->
+    <xacro:property name="segmento" value="0.32"/>  <!-- largo de un segmento recto -->
+    <xacro:property name="pasillo" value="0.40"/>   <!-- ancho libre del pasillo -->
+    <xacro:property name="alto_pared" value="0.20"/>
+    <xacro:property name="espesor" value="0.02"/>   <!-- no figura en el reglamento -->
+
+    <!-- Las paredes se dibujan por su linea central. Le sumamos un espesor para que
+         el espacio libre entre las dos caras siga siendo el ancho del pasillo. -->
+    <xacro:property name="ancho" value="${pasillo + espesor}"/>
+
+    <!-- Las lineas del plano. x positivo es adelante del robot e y positivo es izquierda. -->
+    <xacro:property name="x_oeste" value="${-ancho/2}"/>            <!-- atras del robot -->
+    <xacro:property name="x_curva" value="${3 * segmento}"/>        <!-- termina la primera recta -->
+    <xacro:property name="x_este" value="${x_curva + ancho}"/>      <!-- pared exterior de la curva -->
+    <xacro:property name="x_rama_izq" value="${x_curva - segmento}"/>
+    <xacro:property name="x_rama_der" value="${x_este + segmento}"/>
+    <xacro:property name="y_sur" value="${-ancho/2}"/>
+    <xacro:property name="y_norte" value="${ancho/2}"/>
+    <xacro:property name="y_ramas" value="${y_norte + 2 * segmento}"/>  <!-- empieza la bifurcacion -->
+    <xacro:property name="y_fondo" value="${y_ramas + ancho}"/>         <!-- pared del fondo -->
+
+    <!-- ===== PLUGINS DEL SIMULADOR ===== -->
+    <!-- La fisica: gravedad y choques -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <!-- Permite agregar el robot al mundo mientras el simulador corre -->
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <!-- Le pasa a la ventana de Gazebo lo que tiene que dibujar -->
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+
+    <light type="directional" name="sol">
+      <pose>0 0 5 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- ===== PISO ===== -->
+    <model name="piso">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane><normal>0 0 1</normal><size>10 10</size></plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane><normal>0 0 1</normal><size>10 10</size></plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ===== PAREDES ===== -->
+    <!-- Un molde: recibe los dos extremos de la pared y calcula su centro,
+         su largo y su giro. static significa que no se mueve aunque la choquen. -->
+    <xacro:macro name="pared" params="nombre x1 y1 x2 y2">
+      <!-- Suma un espesor para que las esquinas queden cerradas -->
+      <xacro:property name="largo" value="${sqrt((x2 - x1)**2 + (y2 - y1)**2) + espesor}"/>
+      <xacro:property name="medidas" value="${largo} ${espesor} ${alto_pared}"/>
+
+      <model name="${nombre}">
+        <static>true</static>
+        <pose>${(x1 + x2)/2} ${(y1 + y2)/2} ${alto_pared/2} 0 0 ${atan2(y2 - y1, x2 - x1)}</pose>
+        <link name="link">
+          <collision name="collision">
+            <geometry><box><size>${medidas}</size></box></geometry>
+          </collision>
+          <visual name="visual">
+            <geometry><box><size>${medidas}</size></box></geometry>
+            <material>
+              <ambient>0.45 0.45 0.5 1</ambient>
+              <diffuse>0.45 0.45 0.5 1</diffuse>
+            </material>
+          </visual>
+        </link>
+      </model>
+    </xacro:macro>
+
+    <!-- Primera recta y curva -->
+    <xacro:pared nombre="atras" x1="${x_oeste}" y1="${y_sur}" x2="${x_oeste}" y2="${y_norte}"/>
+    <xacro:pared nombre="sur" x1="${x_oeste}" y1="${y_sur}" x2="${x_este}" y2="${y_sur}"/>
+    <xacro:pared nombre="norte" x1="${x_oeste}" y1="${y_norte}" x2="${x_curva}" y2="${y_norte}"/>
+
+    <!-- Segunda recta, hacia la bifurcacion -->
+    <xacro:pared nombre="este" x1="${x_este}" y1="${y_sur}" x2="${x_este}" y2="${y_ramas}"/>
+    <xacro:pared nombre="oeste" x1="${x_curva}" y1="${y_norte}" x2="${x_curva}" y2="${y_ramas}"/>
+
+    <!-- Bifurcacion: una rama para cada lado, las dos sin salida -->
+    <xacro:pared nombre="fondo" x1="${x_rama_izq}" y1="${y_fondo}" x2="${x_rama_der}" y2="${y_fondo}"/>
+    <xacro:pared nombre="rama_izq" x1="${x_rama_izq}" y1="${y_ramas}" x2="${x_curva}" y2="${y_ramas}"/>
+    <xacro:pared nombre="rama_der" x1="${x_este}" y1="${y_ramas}" x2="${x_rama_der}" y2="${y_ramas}"/>
+    <xacro:pared nombre="fin_izq" x1="${x_rama_izq}" y1="${y_ramas}" x2="${x_rama_izq}" y2="${y_fondo}"/>
+    <xacro:pared nombre="fin_der" x1="${x_rama_der}" y1="${y_ramas}" x2="${x_rama_der}" y2="${y_fondo}"/>
+
+  </world>
+</sdf>
