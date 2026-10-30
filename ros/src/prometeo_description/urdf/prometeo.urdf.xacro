@@ -1,0 +1,243 @@
+<?xml version="1.0"?>
+<!--
+  Descripcion del robot Prometeo.
+
+  Un URDF describe el cuerpo del robot con dos tipos de piezas:
+    - link:  una parte del robot (el cuerpo, una rueda, un sensor).
+    - joint: la union entre dos links. Dice donde va uno respecto del otro
+             y si esa union se mueve o queda fija.
+
+  Este archivo es un "xacro": un URDF con variables y cuentas. Para ver el URDF
+  final, con todo ya calculado, correr:  xacro urdf/prometeo.urdf.xacro
+
+  Las formas de chasis y ruedas son modelos 3D (archivos .STL, carpeta meshes/).
+  Un modelo 3D tiene su tamano fijo: estas variables no lo agrandan ni lo achican.
+  Sirven para ubicar las piezas y calcular donde va cada cosa.
+-->
+
+<!-- xmlns:xacro habilita las etiquetas que empiezan con "xacro:" -->
+<robot name="prometeo" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===== MEDIDAS (en metros) ===== -->
+  <!-- Una variable se usa escribiendo ${nombre}. -->
+
+  <!-- Cuerpo: tomadas de los modelos 3D -->
+  <xacro:property name="largo_cuerpo" value="0.26"/>    <!-- de punta a punta -->
+  <xacro:property name="ancho_cuerpo" value="0.163"/>   <!-- ancho de los parachoques -->
+  <xacro:property name="alto_cuerpo" value="0.056"/>    <!-- alto de los parachoques -->
+  <xacro:property name="espesor_placa" value="0.004"/>  <!-- cada placa de acrilico -->
+
+  <!-- Ruedas: tomadas de los modelos 3D -->
+  <xacro:property name="radio_rueda" value="0.0345"/>
+  <xacro:property name="ancho_rueda" value="0.03"/>
+  <xacro:property name="separacion_ruedas" value="0.13"/>   <!-- entre centros, izquierda a derecha -->
+  <xacro:property name="distancia_ejes" value="0.111"/>     <!-- entre centros, adelante a atras -->
+  <xacro:property name="eje_bajo_placa" value="0.01375"/>   <!-- cuanto mas abajo que la placa va el eje -->
+
+  <!-- Sensores -->
+  <xacro:property name="largo_ultrasonido" value="0.015"/>  <!-- HC-SR04: profundidad -->
+  <xacro:property name="ancho_ultrasonido" value="0.045"/>  <!-- HC-SR04: largo de la plaquita -->
+  <xacro:property name="alto_ultrasonido" value="0.02"/>    <!-- HC-SR04: alto de la plaquita -->
+  <xacro:property name="ultrasonido_lateral_x" value="0.10"/>  <!-- agujeros de los costados en el parachoques -->
+  <xacro:property name="ultrasonido_lateral_z" value="0.028"/> <!-- altura sobre la placa -->
+  <xacro:property name="ultrasonido_frente_z" value="0.037"/>  <!-- altura sobre la placa -->
+  <xacro:property name="camara_x" value="0.10"/>            <!-- a ojo: respecto del centro; positivo es adelante -->
+
+  <!-- Colores. Definidos una vez aca para poder usarlos en todas las piezas.
+       El orden es rojo, verde, azul y opacidad, de 0 a 1. -->
+  <material name="negro">
+    <color rgba="0.1 0.1 0.1 1"/>
+  </material>
+  <material name="gris">
+    <color rgba="0.3 0.3 0.33 1"/>
+  </material>
+  <material name="acrilico">
+    <color rgba="0.8 0.85 0.9 0.5"/>  <!-- opacidad 0.5: semitransparente -->
+  </material>
+  <material name="plateado">
+    <color rgba="0.75 0.75 0.75 1"/>
+  </material>
+  <material name="azul">
+    <color rgba="0.1 0.3 0.8 1"/>
+  </material>
+
+  <!-- ===== PUNTO EN EL PISO ===== -->
+  <!-- No tiene forma: es solo un punto en el piso, justo debajo del robot.
+       Nav2 lo usa como referencia de donde esta el robot en el mapa. -->
+  <link name="base_footprint"/>
+
+  <!-- ===== CUERPO: PLACA INFERIOR ===== -->
+  <!-- base_link es la placa de abajo. Todas las demas piezas se ubican respecto de ella. -->
+  <link name="base_link">
+    <!-- visual: como se ve el link. Solo afecta el dibujo, no la fisica. -->
+    <visual>
+      <geometry>
+        <!-- mesh dibuja un modelo 3D. "package://" significa: buscalo dentro de
+             este paquete, sin importar en que carpeta de la PC este instalado. -->
+        <mesh filename="package://prometeo_description/meshes/base.STL"/>
+      </geometry>
+      <material name="acrilico"/>
+    </visual>
+  </link>
+
+  <!-- ===== UNION DEL PISO CON EL CUERPO ===== -->
+  <!-- fixed: esta union no se mueve, el cuerpo siempre queda a la misma altura -->
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>  <!-- la pieza de referencia -->
+    <child link="base_link"/>        <!-- la pieza que se ubica respecto de la anterior -->
+
+    <!-- Donde queda la placa respecto del punto en el piso.
+         x: adelante, y: izquierda, z: arriba.
+         Altura: el eje de la rueda esta a un radio del piso, y la placa va un poco mas arriba. -->
+    <origin xyz="0 0 ${radio_rueda + eje_bajo_placa}"/>
+  </joint>
+
+  <!-- ===== CUERPO: PLACA SUPERIOR ===== -->
+  <!-- Reusamos el mismo modelo de la placa de abajo, apoyado sobre los parachoques -->
+  <link name="placa_superior_link">
+    <visual>
+      <geometry>
+        <mesh filename="package://prometeo_description/meshes/base.STL"/>
+      </geometry>
+      <material name="acrilico"/>
+    </visual>
+  </link>
+
+  <joint name="placa_superior_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="placa_superior_link"/>
+    <origin xyz="0 0 ${alto_cuerpo + espesor_placa/2}"/>
+  </joint>
+
+  <!-- ===== PARACHOQUES ===== -->
+  <!-- Cada modelo 3D trae su propio punto de origen, que no coincide con el centro
+       del robot. Estos numeros lo llevan a su lugar: se miden, no se calculan.
+       yaw gira la pieza vista desde arriba: pi/2 son 90 grados. -->
+  <link name="parachoques_delantero_link">
+    <visual>
+      <geometry>
+        <mesh filename="package://prometeo_description/meshes/front_plate.STL"/>
+      </geometry>
+      <material name="gris"/>
+    </visual>
+  </link>
+
+  <joint name="parachoques_delantero_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="parachoques_delantero_link"/>
+    <origin xyz="0.135 -0.085 0" rpy="0 0 ${pi/2}"/>
+  </joint>
+
+  <link name="parachoques_trasero_link">
+    <visual>
+      <geometry>
+        <mesh filename="package://prometeo_description/meshes/back_plate.STL"/>
+      </geometry>
+      <material name="gris"/>
+    </visual>
+  </link>
+
+  <joint name="parachoques_trasero_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="parachoques_trasero_link"/>
+    <origin xyz="-0.137 0.09 0" rpy="0 0 ${-pi/2}"/>
+  </joint>
+
+  <!-- ===== RUEDAS ===== -->
+  <!-- Un macro es un molde: se escribe una vez y se usa varias veces.
+       Las 4 ruedas son iguales, solo cambia lo que recibe en params. -->
+  <xacro:macro name="rueda" params="nombre malla x y desplazamiento">
+
+    <link name="${nombre}_link">
+      <visual>
+        <!-- El modelo 3D nace acostado: lo paramos girandolo 90 grados.
+             Ademas tiene su origen en una cara, no en el medio: desplazamiento
+             lo corre medio ancho para que gire sobre su centro. -->
+        <origin xyz="0 ${desplazamiento} 0" rpy="${-pi/2} 0 0"/>
+        <geometry>
+          <mesh filename="package://prometeo_description/meshes/${malla}"/>
+        </geometry>
+        <material name="negro"/>
+      </visual>
+    </link>
+
+    <!-- continuous: una union que gira sin limite, como una rueda -->
+    <joint name="${nombre}_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${nombre}_link"/>
+      <origin xyz="${x} ${y} ${-eje_bajo_placa}"/>
+
+      <!-- Eje de giro: y, el que va de izquierda a derecha -->
+      <axis xyz="0 1 0"/>
+    </joint>
+
+  </xacro:macro>
+
+  <!-- Usamos el molde una vez por rueda.
+       x positivo es adelante e y positivo es izquierda. -->
+  <xacro:rueda nombre="rueda_delantera_izq" malla="left_wheel.STL"  x="${distancia_ejes/2}"
+               y="${separacion_ruedas/2}"  desplazamiento="${ancho_rueda/2}"/>
+  <xacro:rueda nombre="rueda_delantera_der" malla="right_wheel.STL" x="${distancia_ejes/2}"
+               y="${-separacion_ruedas/2}" desplazamiento="${-ancho_rueda/2}"/>
+  <xacro:rueda nombre="rueda_trasera_izq"   malla="left_wheel.STL"  x="${-distancia_ejes/2}"
+               y="${separacion_ruedas/2}"  desplazamiento="${ancho_rueda/2}"/>
+  <xacro:rueda nombre="rueda_trasera_der"   malla="right_wheel.STL" x="${-distancia_ejes/2}"
+               y="${-separacion_ruedas/2}" desplazamiento="${-ancho_rueda/2}"/>
+
+  <!-- ===== ULTRASONIDOS ===== -->
+  <!-- Los 3 van en el parachoques delantero. Cada uno es una plaquita, y lo que
+       importa es su eje x (el rojo en RViz): tiene que apuntar hacia donde mide.
+       yaw gira el sensor sobre el eje z, visto desde arriba: 0 mira adelante,
+       pi/2 (90 grados) mira a la izquierda y -pi/2 mira a la derecha.
+       roll lo gira sobre su eje x: con pi/2 la plaquita queda parada, en vertical.
+       Nav2 usa esta posicion y este giro para ubicar en el mapa lo que mide. -->
+  <xacro:macro name="ultrasonido" params="nombre x y z roll yaw">
+
+    <link name="${nombre}_link">
+      <visual>
+        <geometry>
+          <box size="${largo_ultrasonido} ${ancho_ultrasonido} ${alto_ultrasonido}"/>
+        </geometry>
+        <material name="plateado"/>
+      </visual>
+    </link>
+
+    <joint name="${nombre}_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${nombre}_link"/>
+      <origin xyz="${x} ${y} ${z}" rpy="${roll} 0 ${yaw}"/>
+    </joint>
+
+  </xacro:macro>
+
+  <xacro:ultrasonido nombre="ultrasonido_frente"
+                     x="${largo_cuerpo/2}" y="0" z="${ultrasonido_frente_z}" roll="0" yaw="0"/>
+  <xacro:ultrasonido nombre="ultrasonido_izq"
+                     x="${ultrasonido_lateral_x}" y="${ancho_cuerpo/2}" z="${ultrasonido_lateral_z}"
+                     roll="${pi/2}" yaw="${pi/2}"/>
+  <xacro:ultrasonido nombre="ultrasonido_der"
+                     x="${ultrasonido_lateral_x}" y="${-ancho_cuerpo/2}" z="${ultrasonido_lateral_z}"
+                     roll="${pi/2}" yaw="${-pi/2}"/>
+
+  <!-- ===== CAMARA ===== -->
+  <!-- La ESP32-CAM, arriba del chasis, cerca de los sensores. En el robot real
+       gira con un servo; por ahora queda fija, mirando hacia adelante. -->
+  <xacro:property name="alto_camara" value="0.04"/>  <!-- plaquita ESP32-CAM -->
+
+  <link name="camara_link">
+    <visual>
+      <geometry>
+        <box size="0.01 0.027 ${alto_camara}"/>
+      </geometry>
+      <material name="azul"/>
+    </visual>
+  </link>
+
+  <joint name="camara_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camara_link"/>
+    <!-- Altura: el techo del chasis mas la mitad de la plaquita, asi queda apoyada -->
+    <origin xyz="${camara_x} 0 ${alto_cuerpo + espesor_placa + alto_camara/2}"/>
+  </joint>
+
+</robot>
