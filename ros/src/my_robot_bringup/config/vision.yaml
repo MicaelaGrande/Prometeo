@@ -1,26 +1,49 @@
 # Default parameters for huggin_vision/object_recognition (node name: vision_node).
 # Loaded by launch/vision.launch.py; pass another file with  vision_params:=/path/to/file.yaml
-# Values below equal the defaults declared in object_recognition.py.
+# Values below equal the defaults declared in the Python code.
 vision_node:
   ros__parameters:
-    # Fixed frame the cube markers (/vision/cube_markers) are published in
-    world_frame: odom
+    # Floor frame detections are published in (x forward, y left, z up,
+    # origin on the floor)
+    output_frame: base_footprint
 
     # Frames are resized to this size before detection; camera_info is scaled to match
     frame_width: 640
     frame_height: 480
 
+    # Images are processed at most this many times per second (0 = all)
+    max_fps: 15.0
+
+    camera:
+      # false: camera pose from the values below and the pan servo angle.
+      # true: from TF (simulation)
+      use_tf: false
+      # Std_msgs/Float32 with the servo angle in degrees, as sent to the ESP32
+      pan_topic: camara/cmd
+      # Mount of the camera relative to the output frame (meters / degrees)
+      x: 0.09
+      y: 0.0
+      height: 0.127  # above the floor
+      pitch_deg: 0.0  # tilted down
+      pan_center_deg: 90.0  # servo angle that looks straight ahead
+      pan_sign: 1.0  # +1 if a higher servo angle turns the camera left
+
     # Edge length of the cubes (meters)
     cube_size: 0.02
 
-    # Direction tolerance when classifying arrows (degrees)
+    # Side of the zones (meters) and how far a measured side may differ (fraction)
+    zone_size: 0.40
+    zone_tolerance: 0.25
+
+    # How far an arrow may be from right/up/left/down to be named so (degrees)
     arrow_tolerance_deg: 15.0
 
-    # Minimum blob area (pixels, at frame_width x frame_height)
+    # Minimum blob area (pixels, at frame_width x frame_height). Blobs at
+    # least as big as min_area.zone are zones.
     min_area:
       cube: 500
-      arrow: 500
-      zone: 500
+      arrow: 100
+      zone: 4000
 
     # HSV thresholds per color: [H (0-179), S (0-255), V (0-255)]
     hsv:
@@ -34,7 +57,7 @@ vision_node:
         lower: [40, 80, 80]
         upper: [80, 255, 255]
 
-    # RGB (0-1) used for the RViz cube markers and the annotated image
+    # RGB (0-1) used for the RViz markers and the annotated image
     marker_color:
       red: [1.0, 0.0, 0.0]
       blue: [0.0, 0.0, 1.0]

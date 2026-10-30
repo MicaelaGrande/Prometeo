@@ -42,14 +42,16 @@ def generate_launch_description():
         }.items(),
     )
 
-    # Cube detection: /vision/cubes/*, /vision/cube_markers, /vision/annotated
+    # Detection: /vision/detections, /vision/markers, /vision/cubes/*, /vision/annotated
     vision_node = Node(
         package='huggin_vision',
         executable='object_recognition',
         name='vision_node',
         parameters=[
             LaunchConfiguration('vision_params'),
-            {'use_sim_time': True},
+            # In simulation the camera pose comes from TF
+            {'use_sim_time': True, 'camera.use_tf': True,
+             'output_frame': 'base_footprint'},
         ],
         output='screen',
     )

@@ -15,7 +15,7 @@ setup(
     zip_safe=True,
     maintainer='ifacello',
     maintainer_email='ignacio.facello@mi.unc.edu.ar',
-    description='TODO: Package description',
+    description='Colored cube detection and pose estimation from the robot camera',
     license='Apache-2.0',
     extras_require={
         'test': [

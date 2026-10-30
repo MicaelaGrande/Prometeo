@@ -172,7 +172,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /vision/cube_markers
+        Value: /vision/markers
       Value: true
   Enabled: true
   Global Options:

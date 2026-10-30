@@ -3,11 +3,17 @@
 <package format="3">
   <name>huggin_vision</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Colored cube detection and pose estimation from the robot camera</description>
   <maintainer email="ignacio.facello@mi.unc.edu.ar">ifacello</maintainer>
   <license>Apache-2.0</license>
 
+  <depend>rclpy</depend>
+  <depend>cv_bridge</depend>
+  <depend>python3-opencv</depend>
+  <depend>python3-numpy</depend>
   <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>huggin_vision_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>tf2_ros_py</depend>
   <depend>tf2_geometry_msgs</depend>
