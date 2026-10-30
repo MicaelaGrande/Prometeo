@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<!--
+  Lo que solo le importa a Gazebo: como se mueve el robot simulado.
+
+  Un plugin es una pieza que se le agrega al simulador para sumarle una funcion.
+  Reemplazan a lo que en el robot real hacen el ESP32 y los encoders.
+
+  Este archivo se incluye desde prometeo.urdf.xacro, por eso puede usar
+  sus variables, como ${radio_rueda}.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <gazebo>
+    <!-- Traccion diferencial: recibe /cmd_vel y hace girar las ruedas de cada lado.
+         Es lo mismo que motores_set(izq, der) en el robot real.
+         Va un left_joint y un right_joint por cada rueda porque son 4. -->
+    <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+      <left_joint>rueda_delantera_izq_joint</left_joint>
+      <left_joint>rueda_trasera_izq_joint</left_joint>
+      <right_joint>rueda_delantera_der_joint</right_joint>
+      <right_joint>rueda_trasera_der_joint</right_joint>
+
+      <wheel_separation>${separacion_ruedas}</wheel_separation>
+      <wheel_radius>${radio_rueda}</wheel_radius>
+
+      <!-- Topics de entrada y de salida, del lado de Gazebo -->
+      <topic>/cmd_vel</topic>
+      <odom_topic>/odom</odom_topic>
+      <tf_topic>/tf</tf_topic>
+
+      <!-- La odometria dice donde esta base_footprint respecto de odom,
+           que es el punto donde arranco el robot -->
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+      <odom_publish_frequency>50</odom_publish_frequency>
+
+      <!-- Cuanto puede acelerar, para que no arranque de golpe -->
+      <max_linear_acceleration>1.0</max_linear_acceleration>
+      <max_angular_acceleration>2.0</max_angular_acceleration>
+    </plugin>
+
+    <!-- Publica el angulo de cada rueda, como harian los encoders -->
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <topic>/joint_states</topic>
+    </plugin>
+  </gazebo>
+
+  <!-- Agarre de cada rueda con el piso. Este robot gira arrastrando las ruedas de
+       costado, asi que un valor muy alto le haria costar doblar. Hay que ajustarlo
+       comparando con el robot real. -->
+  <xacro:macro name="agarre_rueda" params="nombre">
+    <gazebo reference="${nombre}_link">
+      <mu1>0.8</mu1>
+      <mu2>0.8</mu2>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:agarre_rueda nombre="rueda_delantera_izq"/>
+  <xacro:agarre_rueda nombre="rueda_delantera_der"/>
+  <xacro:agarre_rueda nombre="rueda_trasera_izq"/>
+  <xacro:agarre_rueda nombre="rueda_trasera_der"/>
+
+</robot>

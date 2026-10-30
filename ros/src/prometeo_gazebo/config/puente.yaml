@@ -1,0 +1,41 @@
+# Puente de topics entre Gazebo y ROS 2.
+#
+# Gazebo y ROS 2 son dos sistemas distintos y cada uno tiene sus propios topics.
+# El puente funciona como un traductor: lee un mensaje de un lado y lo publica
+# del otro. Cada bloque traduce un topic, en la direccion que indica.
+
+# El reloj del simulador. Los nodos de ROS tienen que usar esta hora, y no la de
+# la PC, porque la simulacion puede ir mas lenta que el tiempo real.
+- ros_topic_name: "/clock"
+  gz_topic_name: "/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: GZ_TO_ROS
+
+# Las ordenes de velocidad. Es lo unico que va de ROS hacia Gazebo.
+- ros_topic_name: "/cmd_vel"
+  gz_topic_name: "/cmd_vel"
+  ros_type_name: "geometry_msgs/msg/Twist"
+  gz_type_name: "gz.msgs.Twist"
+  direction: ROS_TO_GZ
+
+# La odometria: cuanto cree el robot que se movio. En el robot real sale de los encoders.
+- ros_topic_name: "/odom"
+  gz_topic_name: "/odom"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "gz.msgs.Odometry"
+  direction: GZ_TO_ROS
+
+# La misma odometria, como relacion entre los marcos odom y base_footprint
+- ros_topic_name: "/tf"
+  gz_topic_name: "/tf"
+  ros_type_name: "tf2_msgs/msg/TFMessage"
+  gz_type_name: "gz.msgs.Pose_V"
+  direction: GZ_TO_ROS
+
+# El angulo de las ruedas, para que robot_state_publisher las ubique
+- ros_topic_name: "/joint_states"
+  gz_topic_name: "/joint_states"
+  ros_type_name: "sensor_msgs/msg/JointState"
+  gz_type_name: "gz.msgs.Model"
+  direction: GZ_TO_ROS
