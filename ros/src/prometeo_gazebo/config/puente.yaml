@@ -39,3 +39,22 @@
   ros_type_name: "sensor_msgs/msg/JointState"
   gz_type_name: "gz.msgs.Model"
   direction: GZ_TO_ROS
+
+# Los rayos de cada ultrasonido. Los lee el nodo hcsr04_sim.
+- ros_topic_name: "/ultrasonido/izq/rayos"
+  gz_topic_name: "/ultrasonido/izq/rayos"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/ultrasonido/der/rayos"
+  gz_topic_name: "/ultrasonido/der/rayos"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/ultrasonido/frente/rayos"
+  gz_topic_name: "/ultrasonido/frente/rayos"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS

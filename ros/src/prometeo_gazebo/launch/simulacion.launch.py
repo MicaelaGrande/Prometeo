@@ -24,6 +24,7 @@ def generate_launch_description():
 
     archivo_urdf = os.path.join(descripcion, 'urdf', 'prometeo.urdf.xacro')
     archivo_puente = os.path.join(paquete, 'config', 'puente.yaml')
+    archivo_hcsr04 = os.path.join(paquete, 'config', 'hcsr04.yaml')
 
     # Gazebo no entiende xacro: convertimos el mundo a SDF y lo guardamos en un
     # archivo temporal, que es el que le pasamos
@@ -72,10 +73,26 @@ def generate_launch_description():
         parameters=[{'config_file': archivo_puente, 'use_sim_time': True}],
     )
 
+    # Reemplaza al ESP32: convierte los rayos de Gazebo en /distancias
+    hcsr04_sim = Node(
+        package='prometeo_gazebo',
+        executable='hcsr04_sim.py',
+        parameters=[archivo_hcsr04, {'use_sim_time': True}],
+    )
+
+    # Publica un sensor_msgs/Range por ultrasonido. Es el mismo nodo del robot real.
+    distancias_a_range = Node(
+        package='prometeo_sensores',
+        executable='distancias_a_range',
+        parameters=[{'use_sim_time': True}],
+    )
+
     return LaunchDescription([
         ruta_modelos,
         gazebo,
         robot_state_publisher,
         agregar_robot,
         puente,
+        hcsr04_sim,
+        distancias_a_range,
     ])

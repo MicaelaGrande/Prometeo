@@ -1,0 +1,28 @@
+# Parametros del HC-SR04 simulado (nodo hcsr04_sim).
+#
+# Todos son estimados: hay que ajustarlos midiendo con el robot real frente a una
+# pared, a distancias y angulos conocidos.
+
+hcsr04_sim:
+  ros__parameters:
+    # Mas inclinada que esto, una pared no devuelve el eco (grados)
+    angulo_max_rebote_deg: 20.0
+
+    # Ruido de cada medicion: ruido_base_cm + ruido_proporcional * distancia
+    ruido_base_cm: 0.3
+    ruido_proporcional: 0.002
+
+    # Chance de perder una lectura, de 0 a 1. Una lectura perdida da 400.
+    prob_eco_perdido: 0.01
+
+    # El firmware asume una velocidad del sonido fija. Con otra temperatura, mide
+    # un poco de mas o de menos.
+    temperatura_c: 20.0
+
+    # Error fijo de cada modulo (cm). Es lo que en sensores.c se llama offset_sensor_cm.
+    sesgo_izq_cm: 0.0
+    sesgo_der_cm: 0.0
+    sesgo_frente_cm: 0.0
+
+    # Con la misma semilla, el ruido sale igual: sirve para repetir una prueba
+    semilla: 42

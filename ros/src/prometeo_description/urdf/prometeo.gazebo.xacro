@@ -61,4 +61,50 @@
   <xacro:agarre_rueda nombre="rueda_trasera_izq"/>
   <xacro:agarre_rueda nombre="rueda_trasera_der"/>
 
+  <!-- Rayos de cada ultrasonido. Gazebo no trae un sensor de ultrasonido, asi que le
+       pedimos un abanico de rayos que cubre el cono del HC-SR04 (mas o menos 15 grados).
+       Los rayos solo dicen a que distancia hay algo: el nodo hcsr04_sim decide con
+       ellos que mediria el sensor real.
+
+       roll_abanico endereza el abanico: los laterales estan girados en el URDF y, sin
+       esto, sus rayos saldrian hacia arriba y abajo en lugar de a los costados.
+
+       El rango minimo de 1 cm evita que los rayos choquen con el propio robot. -->
+  <xacro:macro name="rayos_ultrasonido" params="nombre roll_abanico">
+    <gazebo reference="ultrasonido_${nombre}_link">
+      <sensor name="ultrasonido_${nombre}" type="gpu_lidar">
+        <pose>0 0 0 ${roll_abanico} 0 0</pose>
+        <topic>/ultrasonido/${nombre}/rayos</topic>
+        <update_rate>20</update_rate>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>21</samples>
+              <resolution>1</resolution>
+              <min_angle>${-15 * pi / 180}</min_angle>
+              <max_angle>${15 * pi / 180}</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.01</min>
+            <max>4.5</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+      </sensor>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:rayos_ultrasonido nombre="frente" roll_abanico="0"/>
+  <xacro:rayos_ultrasonido nombre="izq" roll_abanico="${-pi/2}"/>
+  <xacro:rayos_ultrasonido nombre="der" roll_abanico="${-pi/2}"/>
+
 </robot>
