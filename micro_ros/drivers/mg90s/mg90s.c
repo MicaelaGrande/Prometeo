@@ -29,18 +29,20 @@ typedef struct {
     float lim_max;
     float home;        // posición inicial (grados)
     bool  invertido;
+    float vel;
 } config_servo_t;
 
 // AJUSTAR: pines libres (los de motores y sensores HC-SR04 ya están usados).
 // 2, 5, 12 y 15 son pines de arranque: no conectar nada que los fuerce al encender.
 // AJUSTAR: us_min / us_max y límites según cada servo (sacar el rango real probando con servo_set_us).
 static const config_servo_t cfg[CANT_SERVOS] = {
-    //  pin  us_min us_max lim_min lim_max home  invertido
-    {   5,   500,   2400,  0,      180,    90,   false },  // SERVO_1
-    {  14,   500,   2400,  0,      180,    90,   false },  // SERVO_2
-    {  15,   500,   2400,  0,      180,    90,   false },  // SERVO_3
-    {   2,   500,   2400,  0,      180,    90,   false },  // SERVO_4
-    {  12,   500,   2400,  0,      180,    90,   false },  // SERVO_5 (GPIO12 = MTDI, el más delicado)
+    //  pin  us_min us_max lim_min lim_max home  invertido  vel(gps)
+    {   5,   500,   2400,  0,      180,    90,   false,     180     },  // SERVO_1 CAMARA
+    {  14,   500,   2400,  40,     140,    90,   false,     45      },  // SERVO_2 BASE   BLANCO
+    {  15,   500,   2400,  0,      150,    35,   false,     45      },  // SERVO_3 HOMBRO MORADO
+    {   2,   500,   2400,  0,      150,    45,   true,      45      },  // SERVO_4 CODO   AMARILLO
+    {  12,   500,   2400,  30,     100,    80,   false,     180     },  // SERVO_5 GARRA  VERDE
+    // (GPIO12 = MTDI, el más delicado)
 };
 
 // ===== ESTADO COMPARTIDO =====
@@ -68,6 +70,11 @@ static float limitar(float v, float lo, float hi)
 static float limitar_angulo(int s, float grados)
 {
     return limitar(grados, cfg[s].lim_min, cfg[s].lim_max);
+}
+
+static float limitar_velocidad(int s, float vel)
+{
+    return limitar(vel, 0, cfg[s].vel);
 }
 
 // Ángulo -> pulso en us: limita, invierte si hace falta y mapea 0..180 -> us_min..us_max
@@ -185,7 +192,7 @@ void servo_mover(servo_id_t s, float grados, float vel)
     grados = limitar_angulo(s, grados);
     portENTER_CRITICAL(&cerrojo);
     objetivo[s] = grados;
-    vel_gps[s] = vel;
+    vel_gps[s] = limitar_velocidad(s, vel);
     us_crudo[s] = 0;
     portEXIT_CRITICAL(&cerrojo);
 }
