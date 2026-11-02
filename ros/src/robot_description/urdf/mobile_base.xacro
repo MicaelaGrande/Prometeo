@@ -85,8 +85,8 @@
 <!-- ================================ Sensors =============================== -->
 <!-- ======================================================================== -->
 
-<!-- 1 ESP32-CAM sobre el servo de giro (camera_servo.xacro) -->
-<xacro:esp32_cam name="camera" parent="camera_pan_link" x="0.025" y="0" z="${bracket_height + 0.04/2}"/>
+<!-- 1 ESP32-CAM sobre el servo de giro (cam.xacro) -->
+<xacro:esp32_cam name="camera" x="0" y="0" z="${bracket_height + 0.04/2}"/>
 
 <!-- 3 HC-SR04 en el parachoques delantero frente, izquierda y derecha -->
 <xacro:ultrasonic name="frente" x="${us_body_length/2}" y="0" z="${us_front_z}"
