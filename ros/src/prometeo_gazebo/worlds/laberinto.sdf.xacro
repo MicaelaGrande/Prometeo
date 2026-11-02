@@ -1,47 +1,62 @@
 <?xml version="1.0"?>
 <!--
-  Laberinto de prueba, con las medidas del reglamento.
+  Laberinto de prueba, con una isla y pasillos de distintos anchos.
 
   SDF es el formato de los mundos de Gazebo. Aca tambien usamos xacro para no
   repetir lo mismo por cada pared.
 
   Visto desde arriba (el robot arranca en R, mirando a la derecha):
 
-        +=======================+
-        | rama izq  T  rama der |
-        +=======+       +=======+
-                |       |
-                |       |   2 segmentos
-        +=======+       |
-        | R             |   3 segmentos y una curva
-        +===============+
+        +==========================+
+        |      norte: 60 cm        |
+        |    +==============+      |
+        | 40 |              |  50  +=========+
+        | cm |     ISLA     |  cm    rama 40 |  sin salida
+        |    |              |      +=========+
+        |    +==============+      |
++=======+                          |
+| R     A     sur: 40 cm           |
++==================================+
+
+  En A el robot elige entre seguir recto o doblar a la izquierda: los dos caminos
+  dan la vuelta a la isla. La rama del lado este es un callejon.
 
   No hace falta que sea el laberinto de la competencia, porque cambia entre
-  fases. Sirve para probar lo que importa: una recta, una curva y una bifurcacion.
+  fases. Sirve para probar lo que importa: bifurcaciones, un callejon y una vuelta
+  cerrada, en pasillos de distintos anchos.
 -->
 <sdf version="1.9" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <world name="laberinto">
 
     <!-- ===== MEDIDAS (en metros) ===== -->
-    <xacro:property name="segmento" value="0.32"/>  <!-- largo de un segmento recto -->
-    <xacro:property name="pasillo" value="0.40"/>   <!-- ancho libre del pasillo -->
+    <xacro:property name="pasillo" value="0.40"/>        <!-- ancho libre minimo -->
+    <xacro:property name="pasillo_este" value="0.50"/>   <!-- a la derecha de la isla -->
+    <xacro:property name="pasillo_norte" value="0.60"/>  <!-- arriba de la isla -->
+    <xacro:property name="largo_entrada" value="0.81"/>  <!-- de la pared de atras hasta A -->
+    <xacro:property name="largo_isla" value="0.80"/>
+    <xacro:property name="fondo_isla" value="0.77"/>
+    <xacro:property name="altura_rama" value="0.29"/>    <!-- cuanto arriba de la isla sur arranca la rama -->
+    <xacro:property name="largo_rama" value="0.64"/>
     <xacro:property name="alto_pared" value="0.20"/>
-    <xacro:property name="espesor" value="0.02"/>   <!-- no figura en el reglamento -->
+    <xacro:property name="espesor" value="0.02"/>        <!-- no figura en el reglamento -->
 
     <!-- Las paredes se dibujan por su linea central. Le sumamos un espesor para que
          el espacio libre entre las dos caras siga siendo el ancho del pasillo. -->
     <xacro:property name="ancho" value="${pasillo + espesor}"/>
 
     <!-- Las lineas del plano. x positivo es adelante del robot e y positivo es izquierda. -->
-    <xacro:property name="x_oeste" value="${-ancho/2}"/>            <!-- atras del robot -->
-    <xacro:property name="x_curva" value="${3 * segmento}"/>        <!-- termina la primera recta -->
-    <xacro:property name="x_este" value="${x_curva + ancho}"/>      <!-- pared exterior de la curva -->
-    <xacro:property name="x_rama_izq" value="${x_curva - segmento}"/>
-    <xacro:property name="x_rama_der" value="${x_este + segmento}"/>
+    <xacro:property name="x_atras" value="${-ancho/2}"/>                <!-- atras del robot -->
+    <xacro:property name="x_oeste" value="${x_atras + largo_entrada}"/> <!-- el punto A -->
+    <xacro:property name="x_isla_oeste" value="${x_oeste + ancho}"/>
+    <xacro:property name="x_isla_este" value="${x_isla_oeste + largo_isla}"/>
+    <xacro:property name="x_este" value="${x_isla_este + pasillo_este + espesor}"/>
+    <xacro:property name="x_fin_rama" value="${x_este + largo_rama}"/>
     <xacro:property name="y_sur" value="${-ancho/2}"/>
-    <xacro:property name="y_norte" value="${ancho/2}"/>
-    <xacro:property name="y_ramas" value="${y_norte + 2 * segmento}"/>  <!-- empieza la bifurcacion -->
-    <xacro:property name="y_fondo" value="${y_ramas + ancho}"/>         <!-- pared del fondo -->
+    <xacro:property name="y_isla_sur" value="${ancho/2}"/>              <!-- misma linea que la entrada -->
+    <xacro:property name="y_isla_norte" value="${y_isla_sur + fondo_isla}"/>
+    <xacro:property name="y_norte" value="${y_isla_norte + pasillo_norte + espesor}"/>
+    <xacro:property name="y_rama_sur" value="${y_isla_sur + altura_rama}"/>
+    <xacro:property name="y_rama_norte" value="${y_rama_sur + ancho}"/>
 
     <!-- ===== PLUGINS DEL SIMULADOR ===== -->
     <!-- La fisica: gravedad y choques -->
@@ -105,21 +120,27 @@
       </model>
     </xacro:macro>
 
-    <!-- Primera recta y curva -->
-    <xacro:pared nombre="atras" x1="${x_oeste}" y1="${y_sur}" x2="${x_oeste}" y2="${y_norte}"/>
-    <xacro:pared nombre="sur" x1="${x_oeste}" y1="${y_sur}" x2="${x_este}" y2="${y_sur}"/>
-    <xacro:pared nombre="norte" x1="${x_oeste}" y1="${y_norte}" x2="${x_curva}" y2="${y_norte}"/>
+    <!-- Entrada y contorno -->
+    <xacro:pared nombre="atras" x1="${x_atras}" y1="${y_sur}" x2="${x_atras}" y2="${y_isla_sur}"/>
+    <xacro:pared nombre="sur" x1="${x_atras}" y1="${y_sur}" x2="${x_este}" y2="${y_sur}"/>
+    <xacro:pared nombre="entrada" x1="${x_atras}" y1="${y_isla_sur}" x2="${x_oeste}" y2="${y_isla_sur}"/>
+    <xacro:pared nombre="oeste" x1="${x_oeste}" y1="${y_isla_sur}" x2="${x_oeste}" y2="${y_norte}"/>
+    <xacro:pared nombre="norte" x1="${x_oeste}" y1="${y_norte}" x2="${x_este}" y2="${y_norte}"/>
 
-    <!-- Segunda recta, hacia la bifurcacion -->
-    <xacro:pared nombre="este" x1="${x_este}" y1="${y_sur}" x2="${x_este}" y2="${y_ramas}"/>
-    <xacro:pared nombre="oeste" x1="${x_curva}" y1="${y_norte}" x2="${x_curva}" y2="${y_ramas}"/>
+    <!-- Lado este: son dos paredes porque en el medio se abre la rama -->
+    <xacro:pared nombre="este_abajo" x1="${x_este}" y1="${y_sur}" x2="${x_este}" y2="${y_rama_sur}"/>
+    <xacro:pared nombre="este_arriba" x1="${x_este}" y1="${y_rama_norte}" x2="${x_este}" y2="${y_norte}"/>
 
-    <!-- Bifurcacion: una rama para cada lado, las dos sin salida -->
-    <xacro:pared nombre="fondo" x1="${x_rama_izq}" y1="${y_fondo}" x2="${x_rama_der}" y2="${y_fondo}"/>
-    <xacro:pared nombre="rama_izq" x1="${x_rama_izq}" y1="${y_ramas}" x2="${x_curva}" y2="${y_ramas}"/>
-    <xacro:pared nombre="rama_der" x1="${x_este}" y1="${y_ramas}" x2="${x_rama_der}" y2="${y_ramas}"/>
-    <xacro:pared nombre="fin_izq" x1="${x_rama_izq}" y1="${y_ramas}" x2="${x_rama_izq}" y2="${y_fondo}"/>
-    <xacro:pared nombre="fin_der" x1="${x_rama_der}" y1="${y_ramas}" x2="${x_rama_der}" y2="${y_fondo}"/>
+    <!-- Rama sin salida -->
+    <xacro:pared nombre="rama_sur" x1="${x_este}" y1="${y_rama_sur}" x2="${x_fin_rama}" y2="${y_rama_sur}"/>
+    <xacro:pared nombre="rama_norte" x1="${x_este}" y1="${y_rama_norte}" x2="${x_fin_rama}" y2="${y_rama_norte}"/>
+    <xacro:pared nombre="rama_fin" x1="${x_fin_rama}" y1="${y_rama_sur}" x2="${x_fin_rama}" y2="${y_rama_norte}"/>
+
+    <!-- Isla: cuatro paredes sueltas en el medio -->
+    <xacro:pared nombre="isla_sur" x1="${x_isla_oeste}" y1="${y_isla_sur}" x2="${x_isla_este}" y2="${y_isla_sur}"/>
+    <xacro:pared nombre="isla_este" x1="${x_isla_este}" y1="${y_isla_sur}" x2="${x_isla_este}" y2="${y_isla_norte}"/>
+    <xacro:pared nombre="isla_norte" x1="${x_isla_oeste}" y1="${y_isla_norte}" x2="${x_isla_este}" y2="${y_isla_norte}"/>
+    <xacro:pared nombre="isla_oeste" x1="${x_isla_oeste}" y1="${y_isla_sur}" x2="${x_isla_oeste}" y2="${y_isla_norte}"/>
 
   </world>
 </sdf>
