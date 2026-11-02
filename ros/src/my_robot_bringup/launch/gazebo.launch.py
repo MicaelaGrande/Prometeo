@@ -47,17 +47,19 @@ def generate_launch_description():
         launch_arguments={'xacro_file': LaunchConfiguration('xacro_file')}.items(),
     )
 
-    ros_control = IncludeLaunchDescription(
-        PathJoinSubstitution(
-            [
-                get_package_share_directory('teleop_twist_joy'),
-                'launch',
-                'teleop-launch.py'
-            ]
-        ),
-        launch_arguments={
-            'joy_config': 'xbox',  # Replace with your own world file
-        }.items(),
+    # Lee el joystick y lo publica en /joy
+    joy_node = Node(
+        package='joy',
+        executable='joy_node',
+        output='screen',
+    )
+
+    # Un solo nodo maneja el robot, el brazo y la camara. Start cambia entre manejo y brazo
+    arm_teleop = Node(
+        package='my_robot_bringup',
+        executable='arm_teleop.py',
+        parameters=[{'use_sim_time': True}],
+        output='screen',
     )
 
     gazebo_nodes = IncludeLaunchDescription(
@@ -94,6 +96,7 @@ def generate_launch_description():
             gazebo_nodes,
             hcsr04_sim,
             distancias_a_range,
-            ros_control,
+            joy_node,
+            arm_teleop,
         ]
     )

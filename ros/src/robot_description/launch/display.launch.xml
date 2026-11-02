@@ -8,7 +8,7 @@
         output="log"
     >
         <param name="robot_description"
-               value="$(command 'xacro $(var urdf_path)')" />
+               value="$(command 'xacro $(var urdf_path) mimic:=true')" />
     </node>
 
     <node pkg="joint_state_publisher_gui" exec="joint_state_publisher_gui"

@@ -50,6 +50,36 @@
     <xacro:wheel_grip name="right_front_wheel"/>
     <xacro:wheel_grip name="right_back_wheel"/>
 
+    <!-- Controlador de posicion de una articulacion. Recibe el angulo en radianes por el topic -->
+    <xacro:macro name="position_controller" params="joint topic p d effort i:=0.0">
+        <gazebo>
+            <plugin
+                filename="gz-sim-joint-position-controller-system"
+                name="gz::sim::systems::JointPositionController">
+                <joint_name>${joint}</joint_name>
+                <topic>${topic}</topic>
+                <p_gain>${p}</p_gain>
+                <i_gain>${i}</i_gain>
+                <i_max>${effort}</i_max>
+                <i_min>${-effort}</i_min>
+                <d_gain>${d}</d_gain>
+                <cmd_max>${effort}</cmd_max>
+                <cmd_min>${-effort}</cmd_min>
+            </plugin>
+        </gazebo>
+    </xacro:macro>
+
+    <!-- Servo de la camara y brazo. Las articulaciones pasivas (compensacion y muneca) tambien
+         reciben su angulo, calculado por el nodo arm_teleop, para no depender del mimic -->
+    <xacro:position_controller joint="camera_pan_joint" topic="/camera/pan/cmd_pos" p="0.05" d="0.002" effort="0.2"/>
+    <xacro:position_controller joint="arm_base_yaw_joint" topic="/arm/base_yaw/cmd_pos" p="2.0" d="0.1" effort="1.0"/>
+    <xacro:position_controller joint="arm_shoulder_joint" topic="/arm/shoulder/cmd_pos" p="40.0" d="1.2" i="8.0" effort="3.0"/>
+    <xacro:position_controller joint="arm_elbow_joint" topic="/arm/elbow/cmd_pos" p="25.0" d="5.0" i="20.0" effort="3.0"/>
+    <xacro:position_controller joint="arm_elbow_compensation_joint" topic="/arm/elbow_compensation/cmd_pos" p="50.0" d="1.0" i="20.0" effort="3.0"/>
+    <xacro:position_controller joint="arm_wrist_elbow_joint" topic="/arm/wrist/cmd_pos" p="2.0" d="0.02" i="0.2" effort="0.5"/>
+    <xacro:position_controller joint="gripper_joint" topic="/arm/gripper/cmd_pos" p="0.2" d="0.005" effort="0.2"/>
+    <xacro:position_controller joint="gripper_right_joint" topic="/arm/gripper_right/cmd_pos" p="0.2" d="0.005" effort="0.2"/>
+
     </xacro:macro>
 
 </robot>

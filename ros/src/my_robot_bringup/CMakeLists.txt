@@ -9,7 +9,7 @@ install(
 )
 
 # Nodos de Python (simulacion del HC-SR04): van a lib/, que es donde buscan los launch
-install(PROGRAMS scripts/hcsr04_sim.py scripts/modelo_hcsr04.py
+install(PROGRAMS scripts/hcsr04_sim.py scripts/modelo_hcsr04.py scripts/arm_teleop.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

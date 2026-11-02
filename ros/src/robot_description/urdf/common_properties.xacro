@@ -5,6 +5,10 @@
     <xacro:arg name="package_name" default="robot_description" />
     <xacro:arg name="mesh_dir" default="meshes" />
 
+    <!-- Con true las articulaciones pasivas del brazo siguen a las otras con mimic, para RViz.
+         En Gazebo va en false porque su fisica no lo soporta, y las mueve arm_teleop. -->
+    <xacro:arg name="mimic" default="false" />
+
     <!-- Colores. Definidos una vez para poder usarlos en todas las piezas.
          El orden es rojo, verde, azul y opacidad, de 0 a 1. -->
     <material name="negro">

@@ -52,7 +52,7 @@
       <origin xyz="${servo_x} 0 ${robot_height}"/>
       <axis xyz="0 0 1"/>
       <limit lower="${-pi/2}" upper="${pi/2}" effort="0.2" velocity="3.0"/>
-      <dynamics damping="0.05" friction="0.2"/>
+      <dynamics damping="0.05" friction="0.0"/>
     </joint>
 
 </robot>
