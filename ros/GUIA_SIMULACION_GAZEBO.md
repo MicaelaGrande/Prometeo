@@ -3,6 +3,23 @@
 Explica qué se agregó en el paso 3 de `GUIA_TICKET_NAVEGACION.md`, qué hace cada archivo y
 cómo se conectan. Para correrlo, andá a [Cómo se prueba](#cómo-se-prueba).
 
+> **Nota (rama `feature/ros/sim-merge`):** los paquetes `prometeo_description` y `prometeo_gazebo`
+> se fusionaron con la simulación de `main`. Las secciones de abajo describen cada archivo con los
+> nombres originales; esta tabla dice dónde quedó cada uno ahora.
+>
+> | Antes | Ahora |
+> |---|---|
+> | `prometeo_description/urdf/prometeo.urdf.xacro` (ultrasonidos, placa superior) | `robot_description/urdf/sensors.xacro` (macro `ultrasonic`), `mobile_base.xacro`, `common_properties.xacro` |
+> | `prometeo_description/urdf/prometeo.gazebo.xacro` (rayos) | dentro de la macro `ultrasonic` de `sensors.xacro` |
+> | `prometeo_gazebo/worlds/laberinto.world.xacro` | `gazebo_worlds/worlds/laberinto/laberinto.world.xacro` (y `laberinto.world` generado) |
+> | `prometeo_gazebo/config/puente.yaml` | `my_robot_bringup/config/bridge.yaml` |
+> | `prometeo_gazebo/config/hcsr04.yaml`, `scripts/`, `test/` | `my_robot_bringup/config/`, `scripts/`, `test/` |
+> | `prometeo_gazebo/launch/simulacion.launch.py` | `my_robot_bringup/launch/gazebo.launch.py` + `gz.launch.py` |
+>
+> Los nombres de links y topics de los ultrasonidos (`ultrasonido_*_link`, `/ultrasonido/*/rayos`)
+> no cambiaron. Las variables en español (`largo_cuerpo`, etc.) ahora son `us_*` en
+> `common_properties.xacro`.
+
 **Estado:** el laberinto con isla y los ultrasonidos ya se probaron con el teclado en Gazebo. Falta
 calibrar los ultrasonidos con el robot real.
 
@@ -22,7 +39,7 @@ Comparado con el robot real, cada parte tiene su reemplazo:
 | El ESP32 y los motores | Plugin de tracción diferencial |
 | Los encoders | La odometría y los ángulos que calcula Gazebo |
 | Los HC-SR04 y su firmware | Rayos de Gazebo y el nodo `hcsr04_sim` |
-| El laberinto de la competencia | `laberinto.sdf.xacro` |
+| El laberinto de la competencia | `laberinto.world.xacro` |
 | La conexión Wi-Fi entre robot y PC | El puente de topics |
 
 ## Palabras nuevas
@@ -285,7 +302,7 @@ cd ros
 source /opt/ros/jazzy/setup.bash
 colcon build
 source install/setup.bash
-ros2 launch prometeo_gazebo simulacion.launch.py
+ros2 launch my_robot_bringup gazebo.launch.py world_name:=laberinto
 ```
 
 **Terminal 2:**
@@ -328,7 +345,7 @@ Tenés que comprobar que:
 Las pruebas del modelo se corren sin abrir Gazebo, desde la carpeta `ros`:
 
 ```bash
-python3 -m pytest src/prometeo_gazebo/test
+python3 -m pytest src/my_robot_bringup/test
 ```
 
 ## Qué valores son provisorios
@@ -338,13 +355,13 @@ python3 -m pytest src/prometeo_gazebo/test
 | Masa de 0,9 kg del cuerpo y 0,08 kg por rueda | `prometeo.urdf.xacro` | Estimado: hay que pesar el robot |
 | Separación entre ruedas de 0,13 m | `prometeo.urdf.xacro` | Sale del modelo 3D: hay que medirla |
 | Agarre `mu` de 0,8 | `prometeo.gazebo.xacro` | Estimado: se ajusta comparando con el robot real |
-| Pasillos de 40, 50 y 60 cm | `laberinto.sdf.xacro` | Elegidos para probar: el laberinto real está hecho a mano y el pasillo mide 40 cm como mínimo, sin máximo conocido |
+| Pasillos de 40, 50 y 60 cm | `laberinto.world.xacro` | Elegidos para probar: el laberinto real está hecho a mano y el pasillo mide 40 cm como mínimo, sin máximo conocido |
 | Ángulo máximo de rebote de 20° | `hcsr04.yaml` | Estimado: depende del material de las paredes |
 | Ruido de 0,3 cm + 0,2 % de la distancia | `hcsr04.yaml` | Estimado: hay que medirlo con el sensor real |
 | Eco perdido en 1 % de las lecturas | `hcsr04.yaml` | Estimado: hay que medirlo con el sensor real |
 | Error fijo de cada sensor en 0 cm | `hcsr04.yaml` | Sin medir: es `offset_sensor_cm` en `sensores.c` |
-| Paredes de 20 cm de alto | `laberinto.sdf.xacro` | Sale del reglamento en Google Docs, que describe otro formato de pista |
-| Paredes de 2 cm de espesor | `laberinto.sdf.xacro` | Estimado: no figura en el reglamento |
+| Paredes de 20 cm de alto | `laberinto.world.xacro` | Sale del reglamento en Google Docs, que describe otro formato de pista |
+| Paredes de 2 cm de espesor | `laberinto.world.xacro` | Estimado: no figura en el reglamento |
 
 ## Qué sigue
 

@@ -70,8 +70,8 @@ Rama: `feature/ros/navigation`.
 Hecho:
 - Demo de Nav2 con TurtleBot, solo para aprender: objetivo, varios puntos, obstáculo,
   nodos y topics.
-- Paquete `ros/src/prometeo_description`: `urdf/prometeo.urdf.xacro`, `meshes/`,
-  `launch/display.launch.py` y `rviz/prometeo.rviz`.
+- Descripción del robot (ahora en `ros/src/robot_description`, ex `prometeo_description`):
+  `urdf/`, `meshes/`, `launch/display.launch.xml` y `rviz/urdf_config.rviz`.
 - Los 5 STL de chasis y ruedas se copiaron, sin merge, de `feature/ros/gazebo_simulation`.
 - El URDF pasó `check_urdf` y el paquete compila.
 
@@ -147,5 +147,5 @@ cd <carpeta del repo>/ros
 source /opt/ros/jazzy/setup.bash
 colcon build
 source install/setup.bash
-ros2 launch prometeo_description display.launch.py
+ros2 launch robot_description display.launch.xml
 ```
