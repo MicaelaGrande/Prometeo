@@ -14,7 +14,7 @@ que miden los sensores y no por distancias fijas.
 
 | Orden | Ticket | Hito | Depende de | Estado |
 |---|---|---|---|---|
-| 1 | T1. Base de simulación | Llegar al cubo | Nada | Falta visión, flechas y cubos |
+| 1 | T1. Base de simulación | Llegar al cubo | Nada | Falta calibrar ultrasonidos |
 | 2 | T2. Navegación alta | Llegar al cubo | T1 | Sin empezar |
 | 3 | T3. Mapeo: libreta del recorrido | Llegar al cubo | T2 | Solo los datos |
 | 4 | T4. Exploración con memoria | Llegar al cubo | T3 | Sin empezar |
@@ -113,16 +113,14 @@ Los nombres de topics y acciones son propuestas, a confirmar entre los equipos.
     - [x] El robot se mueve por el laberinto de prueba con el teclado.
     - [ ] Cada ultrasonido publica una distancia parecida a la real.
     - [x] Hay un laberinto con al menos una isla y pasillos de distintos anchos, desde 40 cm.
-    - [ ] Ese laberinto tiene cubos de 20 mm y flechas en las paredes.
-    - [ ] El robot tiene cámara simulada y `huggin_vision` funciona con ella. La cámara ya publica en `sim-merge`.
+    - [x] `vision_testground` tiene cubos de 20 mm, flechas, islas, obstáculos y una zona roja, con las medidas reales.
+    - [x] El robot tiene cámara simulada y `huggin_vision` funciona con ella.
     - [x] La simulación usa las medidas de las ruedas de los modelos 3D: separación 0,1305 m y radio 0,0345 m.
 
 El laberinto con isla y los ultrasonidos simulados ya se probaron con el teclado en Gazebo. Falta
 calibrar los ultrasonidos con el robot real.
 
-`feature/ros/sim-merge` une las dos simulaciones y sigue en desarrollo. Ahí se probó sin ventanas el
-laberinto: el robot se mueve y publican los ultrasonidos y la cámara. Todavía no tiene la visión
-nueva, y en `vision_testground` hay cubos, pero sus flechas están comentadas.
+`feature/ros/navegacion-alta` tiene la simulación unida, la visión nueva y `vision_testground` con las medidas reales. Se probó sin ventanas: el robot se mueve, publican los ultrasonidos y la cámara, y pasa al costado de los obstáculos. El laberinto es un ejemplo y no se precarga en el robot.
 
 ### T2. Navegación alta
 
@@ -150,7 +148,7 @@ bloqueados, usar control por ultrasonidos. Los demás nodos no cambian, porque s
 | 60 mm | `normal` | 2 | Unos 64 cm | Unos 104 cm |
 | 100 mm | `far` | 3 o más | Desde unos 96 cm | Desde unos 136 cm |
 
-Un segmento es un tramo de pared de 32 cm. Entre centros de curvas se suma el ancho del pasillo. `vision_testground` usa celdas de 41 cm por tramo, así que sus distancias son más cortas que las reales: T2 debe tener largo de tramo y ancho de pasillo como parámetros.
+Un segmento es un tramo de pared de 32 cm. Entre centros de curvas se suma el ancho del pasillo. `vision_testground` ya usa estas medidas. T2 debe tener largo de tramo y ancho de pasillo como parámetros.
 
 Es una referencia y puede tener error: `far` es solo un mínimo. Sirve para ajustar la velocidad, pero la curva se confirma con los ultrasonidos. La punta mide lo mismo en todas las flechas, así que lo que distingue cada largo es el cuerpo.
 
@@ -214,10 +212,10 @@ que inclinar la cámara o resolver ese tramo de otra forma, y medirlo en el robo
     - [x] De frente, clasifica los 3 largos entre 0,75 y 2 m, usando la proporción largo/cabeza.
     - [x] Cada flecha visible se publica como una detección propia.
     - [ ] `feature/claude/vision` está mergeada a `main`.
-    - [ ] Detecta flechas cercanas. Hoy se descartan como zonas a menos de 0,5 o 0,75 m. Corrección probada en una copia: en `detect_blobs`, mirar la forma antes que el tamaño. En `vision_testground`, las 11 flechas se leen bien entre 30 y 52 cm de la cámara; sin la corrección, ninguna entre 10 y 39 cm. Más cerca, las flechas bajas se salen de la imagen.
+    - [x] Detecta flechas cercanas. Hoy se descartan como zonas a menos de 0,5 o 0,75 m. Corrección probada en una copia: en `detect_blobs`, mirar la forma antes que el tamaño. En `vision_testground`, las 11 flechas se leen bien entre 30 y 70 cm de la cámara; sin la corrección, ninguna entre 10 y 39 cm. Más cerca, las flechas bajas se salen de la imagen.
     - [ ] Da una dirección con flechas inclinadas hasta ±30 grados. Hoy `arrow_tolerance_deg` está en 15.
     - [ ] Se decide qué hacer con flechas vistas de costado. El largo falla desde unos 30 grados.
-    - [ ] Funciona en Gazebo con flechas habilitadas.
+    - [x] Funciona en Gazebo con flechas habilitadas.
 
 - **Medidas reales:** cabeza de 70 × 50 mm, cuerpo de 30 mm de ancho, pared de 20 cm y pasillo de 40 cm como mínimo. `vision_testground` ya las usa, igual que `arrow.py`.
 
