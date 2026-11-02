@@ -92,6 +92,7 @@
 
   <!-- Small cube on a black pedestal. Inertia is computed from the mass and size. -->
   <xacro:macro name="box" params="name x y material">
+    <xacro:zone name="objective_marker_${name}" x="${x}" y="${y}" px="0" material="azul" />
     <model name="cylinder_${name}">
     <!-- Raised by half the height so the base rests on the ground plane -->
         <static>true</static>
@@ -137,6 +138,41 @@
         </visual>
       </link>
     </model>
+  </xacro:macro>
+
+  <!-- Open-top container: colored floor plus four grey walls. x, y in meters, material = color of the cube it takes -->
+  <xacro:macro name="container" params="name x y material">
+    <xacro:property name="half" value="${container_size / 2 - container_thick / 2}"/>
+    <model name="container_${name}">
+      <static>true</static>
+      <pose>${x} ${y} 0 0 0 0</pose>
+      <link name="link">
+        <collision name="floor_collision">
+          <pose>0 0 ${container_thick / 2} 0 0 0</pose>
+          <geometry><box><size>${container_size} ${container_size} ${container_thick}</size></box></geometry>
+        </collision>
+        <visual name="floor_visual">
+          <pose>0 0 ${container_thick / 2} 0 0 0</pose>
+          <geometry><box><size>${container_size} ${container_size} ${container_thick}</size></box></geometry>
+          <xacro:paint material="${material}"/>
+        </visual>
+        <xacro:container_side name="n" px="0" py="${half}" sx="${container_size}" sy="${container_thick}"/>
+        <xacro:container_side name="s" px="0" py="${-half}" sx="${container_size}" sy="${container_thick}"/>
+        <xacro:container_side name="e" px="${half}" py="0" sx="${container_thick}" sy="${container_size}"/>
+        <xacro:container_side name="w" px="${-half}" py="0" sx="${container_thick}" sy="${container_size}"/>
+      </link>
+    </model>
+  </xacro:macro>
+  <xacro:macro name="container_side" params="name px py sx sy">
+    <collision name="side_${name}_collision">
+      <pose>${px} ${py} ${container_height / 2} 0 0 0</pose>
+      <geometry><box><size>${sx} ${sy} ${container_height}</size></box></geometry>
+    </collision>
+    <visual name="side_${name}_visual">
+      <pose>${px} ${py} ${container_height / 2} 0 0 0</pose>
+      <geometry><box><size>${sx} ${sy} ${container_height}</size></box></geometry>
+      <xacro:paint material="wall"/>
+    </visual>
   </xacro:macro>
 
   <!-- Wall between grid cells: x, y = cell, px = side (0: east of the cell, 1: north, 2: west, 3: south) -->

@@ -59,7 +59,11 @@
         <!-- 3.2,0 START ZONE (GREEN) -->
         <xacro:zone name="start_marker" x="${11*0.32}" y="${0*0.32}" px="${pi}" material="verde" />
         <!-- -3.2,0 END ZONE (BLUE) -->
-        <xacro:zone name="end_marker" x="${-11*0.32}" y="${0*0.32}" px="0" material="azul" />
+
+        <!-- CONTAINERS: one per cube color, behind the start position -->
+        <xacro:container name="rojo"  x="4.0" y="0.25"  material="rojo" />
+        <xacro:container name="verde" x="4.0" y="0"     material="verde" />
+        <xacro:container name="azul"  x="4.0" y="-0.25" material="azul" />
         <!-- OUTER WALL START -->
         <xacro:entry_outer x="9"  y="0" px="${NORTH}" />
         <xacro:side_outer  y="9"  x="0" px="${WEST}" />
