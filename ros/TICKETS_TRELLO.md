@@ -355,7 +355,7 @@ Prueba con flechas dibujadas de tamaño real y la cámara simulada:
 
 - De frente, clasifica bien los 3 largos entre 0,75 y 2 m.
 - A menos de 0,5 o 0,75 m la mancha pasa los 4000 píxeles, se trata como zona y se descarta. En un pasillo de 40 cm, una flecha lateral podría no verse nunca.
-- Corrección probada en una copia: en `detect_blobs`, mirar la forma antes que el tamaño. En `vision_testground`, las 11 flechas se leen bien entre 30 y 70 cm de la cámara; sin la corrección, ninguna entre 10 y 39 cm. Más cerca, las flechas bajas se salen de la imagen.
+- Corrección probada en una copia: en `detect_blobs`, mirar la forma antes que el tamaño. En `vision_testground`, las 11 flechas se leen bien a 39 y 52 cm de la cámara; a 30 cm fallan 2 azules bajas y a 70 cm falla 1; sin la corrección, ninguna entre 10 y 39 cm. Más cerca, las flechas bajas se salen de la imagen.
 - `direction` da `UNK` a partir de unos 15 grados de inclinación, aunque el ángulo se mida bien.
 - Vista de costado, el largo es confiable hasta unos 25 grados.
 - **Medidas reales:** cabeza de 70 × 50 mm, cuerpo de 30 mm de ancho, pared de 20 cm y pasillo de 40 cm como mínimo. `vision_testground` ya las usa, igual que `arrow.py`.

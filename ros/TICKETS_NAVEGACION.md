@@ -212,7 +212,7 @@ que inclinar la cámara o resolver ese tramo de otra forma, y medirlo en el robo
     - [x] De frente, clasifica los 3 largos entre 0,75 y 2 m, usando la proporción largo/cabeza.
     - [x] Cada flecha visible se publica como una detección propia.
     - [ ] `feature/claude/vision` está mergeada a `main`.
-    - [x] Detecta flechas cercanas. Hoy se descartan como zonas a menos de 0,5 o 0,75 m. Corrección probada en una copia: en `detect_blobs`, mirar la forma antes que el tamaño. En `vision_testground`, las 11 flechas se leen bien entre 30 y 70 cm de la cámara; sin la corrección, ninguna entre 10 y 39 cm. Más cerca, las flechas bajas se salen de la imagen.
+    - [x] Detecta flechas cercanas. Hoy se descartan como zonas a menos de 0,5 o 0,75 m. Corrección probada en una copia: en `detect_blobs`, mirar la forma antes que el tamaño. En `vision_testground`, las 11 flechas se leen bien a 39 y 52 cm de la cámara; a 30 cm fallan 2 azules bajas y a 70 cm falla 1; sin la corrección, ninguna entre 10 y 39 cm. Más cerca, las flechas bajas se salen de la imagen.
     - [ ] Da una dirección con flechas inclinadas hasta ±30 grados. Hoy `arrow_tolerance_deg` está en 15.
     - [ ] Se decide qué hacer con flechas vistas de costado. El largo falla desde unos 30 grados.
     - [x] Funciona en Gazebo con flechas habilitadas.
