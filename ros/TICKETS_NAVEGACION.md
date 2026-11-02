@@ -102,14 +102,15 @@ Los nombres de topics y acciones son propuestas, a confirmar entre los equipos.
 
 - **Objetivo:** tener el robot moviéndose en Gazebo y midiendo con sus 3 ultrasonidos.
 - **Entradas:** `/cmd_vel`.
-- **Salidas:** `/odom`, `/tf` y 3 topics `sensor_msgs/Range`.
+- **Salidas:** `/odom`, `/tf`, `/distancias` y 3 topics `sensor_msgs/Range`.
 - **Terminado cuando:**
-    - [ ] El robot se mueve por el laberinto de prueba con el teclado.
+    - [x] El robot se mueve por el laberinto de prueba con el teclado.
     - [ ] Cada ultrasonido publica una distancia parecida a la real.
-    - [ ] Hay un laberinto con al menos una isla y pasillos de distintos anchos, desde 40 cm.
+    - [x] Hay un laberinto con al menos una isla y pasillos de distintos anchos, desde 40 cm.
     - [ ] Ese laberinto tiene cubos de 20 mm, y el robot tiene cámara simulada.
 
-Ya están armados el robot, un primer laberinto y el puente, pero falta probarlos en la PC principal.
+El laberinto con isla y los ultrasonidos simulados ya se probaron con el teclado en Gazebo. Falta
+calibrar los ultrasonidos con el robot real, y sumar la cámara y los cubos.
 
 ### T2. Navegación alta
 
