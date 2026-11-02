@@ -41,9 +41,16 @@
 #define SERVO_CODO    SERVO_4
 #define SERVO_GARRA   SERVO_5
 
+#define SERVO_CAMARA_VEL  180
+#define SERVO_BASE_VEL    90
+#define SERVO_HOMBRO_VEL  90
+#define SERVO_CODO_VEL    90
+#define SERVO_GARRA_VEL   90
+
 // Orden de los valores en /brazo/cmd: [base, hombro, codo, garra]
 #define BRAZO_JUNTAS 4
-static const servo_id_t brazo[BRAZO_JUNTAS] = { SERVO_BASE, SERVO_HOMBRO, SERVO_CODO, SERVO_GARRA };
+static const servo_id_t brazo[BRAZO_JUNTAS]     = { SERVO_BASE, SERVO_HOMBRO, SERVO_CODO, SERVO_GARRA };
+static const servo_id_t brazo_vel_gps[BRAZO_JUNTAS] = { SERVO_BASE_VEL, SERVO_HOMBRO_VEL, SERVO_CODO_VEL, SERVO_GARRA_VEL };
 
 static const char *TAG = "microROS_motores";
 
@@ -104,7 +111,7 @@ static void camara_callback(const void *msgin)
     const std_msgs__msg__Float32 *m = (const std_msgs__msg__Float32 *)msgin;
 
     if (!isnan(m->data)) {
-        servo_mover(SERVO_CAMARA, m->data, SERVO_VEL_GPS);   // la librería limita al rango
+        servo_mover(SERVO_CAMARA, m->data, SERVO_CAMARA_VEL);   // la librería limita al rango
     }
 }
 
@@ -123,7 +130,7 @@ static void brazo_callback(const void *msgin)
     }
     for (int i = 0; i < BRAZO_JUNTAS; i++) {
         if (!isnan(m->data.data[i])) {
-            servo_mover(brazo[i], m->data.data[i], SERVO_VEL_GPS);
+            servo_mover(brazo[i], m->data.data[i], brazo_vel_gps[i]);
         }
     }
 }
