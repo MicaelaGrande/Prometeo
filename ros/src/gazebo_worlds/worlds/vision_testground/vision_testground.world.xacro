@@ -15,6 +15,7 @@
 <sdf version="1.9" xmlns:xacro="http://www.ros.org/wiki/xacro">
     <xacro:include filename="common_properties.xacro" />
     <xacro:include filename="aux_macros.xacro" />
+    <xacro:include filename="paredes.xacro" />
 
     <!-- ===== World ===== -->
     <world name="colored_objects">
@@ -56,84 +57,47 @@
             </link>
         </model>
 
-        <!-- 3.2,0 START ZONE (GREEN) -->
-        <xacro:zone name="start_marker" x="${11*0.32}" y="${0*0.32}" px="${pi}" material="verde" />
-        <!-- -3.2,0 END ZONE (BLUE) -->
+        <!-- MEASURES: corridors 40 cm wide, walls 20 cm high, one wall stretch = 32 cm.
+             Two curves n stretches apart are 0.32*n + 0.40 m between centers.
+             The walls come from generar_paredes.py -->
+        <xacro:paredes />
 
+        <!-- START: the robot enters and leaves by the same place -->
+        <xacro:zone name="start_marker" x="1.88" y="0" px="${pi}" material="verde" />
         <!-- CONTAINERS: one per cube color, behind the start position -->
-        <xacro:container name="rojo"  x="4.0" y="0.25"  material="rojo" />
-        <xacro:container name="verde" x="4.0" y="0"     material="verde" />
-        <xacro:container name="azul"  x="4.0" y="-0.25" material="azul" />
-        <!-- OUTER WALL START -->
-        <xacro:entry_outer x="9"  y="0" px="${NORTH}" />
-        <xacro:side_outer  y="9"  x="0" px="${WEST}" />
-        <xacro:side_outer  y="-9"  x="0" px="${EAST}" />
-        <xacro:entry_outer x="-9" y="0" px="${SOUTH}" />
-        <!-- OUTER WALL END -->
+        <xacro:container name="rojo"  x="2.43" y="0.25"  material="rojo" />
+        <xacro:container name="verde" x="2.43" y="0"     material="verde" />
+        <xacro:container name="azul"  x="2.43" y="-0.25" material="azul" />
 
-        <!-- INNER WALLS -->
-        <xacro:wall_col x="-9" y="-3" n="3" />
-        <xacro:wall_col x="-8" y="-2" n="3" />
-        <xacro:wall_col x="-3" y="7" n="3" />
-        <xacro:wall_col x="-2" y="-2" n="9" />
-        <xacro:wall_col x="-1" y="-3" n="8" />
-        <xacro:wall_col x="-1" y="6" n="1" />
-        <xacro:wall_col x="0" y="-2" n="3" />
-        <xacro:wall_col x="0" y="7" n="3" />
-        <xacro:wall_col x="1" y="1" n="4" />
-        <xacro:wall_col x="2" y="1" n="1" />
-        <xacro:wall_col x="2" y="3" n="3" />
-        <xacro:wall_col x="3" y="-7" n="3" />
-        <xacro:wall_col x="3" y="-2" n="3" />
-        <xacro:wall_col x="4" y="-4" n="4" />
-        <xacro:wall_col x="5" y="-4" n="3" />
-        <xacro:wall_col x="6" y="-7" n="3" />
-        <xacro:wall_col x="6" y="0" n="2" />
-        <xacro:wall_col x="7" y="-1" n="1" />
-        <xacro:wall_col x="7" y="1" n="2" />
-        <xacro:wall_row x="4" y="-8" n="3" />
-        <xacro:wall_row x="4" y="-5" n="1" />
-        <xacro:wall_row x="6" y="-5" n="1" />
-        <xacro:wall_row x="-8" y="-4" n="8" />
-        <xacro:wall_row x="-7" y="-3" n="6" />
-        <xacro:wall_row x="1" y="-3" n="3" />
-        <xacro:wall_row x="6" y="-2" n="2" />
-        <xacro:wall_row x="-9" y="-1" n="1" />
-        <xacro:wall_row x="5" y="-1" n="2" />
-        <xacro:wall_row x="8" y="-1" n="2" />
-        <xacro:wall_row x="-9" y="0" n="2" />
-        <xacro:wall_row x="1" y="0" n="1" />
-        <xacro:wall_row x="3" y="0" n="1" />
-        <xacro:wall_row x="8" y="0" n="2" />
-        <xacro:wall_row x="3" y="1" n="4" />
-        <xacro:wall_row x="3" y="2" n="5" />
-        <xacro:wall_row x="0" y="4" n="2" />
-        <xacro:wall_row x="0" y="5" n="3" />
-        <xacro:wall_row x="-2" y="6" n="1" />
-        <xacro:wall_row x="0" y="6" n="1" />
-        <!-- ISLANDS: one 3x3 room per box -->
-        <xacro:box name="rojo" x="${2*wall_width}" y="${-1*wall_width}" material="rojo" />
-        <xacro:box name="verde" x="${-1*wall_width}" y="${8*wall_width}" material="verde" />
-        <xacro:box name="azul" x="${5*wall_width}" y="${-6*wall_width}" material="azul" />
-        <!-- ARROWS: placed on the wall ahead of every curve, one per color whose route turns there -->
-        <!-- curve at cell -1,5 -->
-        <xacro:far_arrow name="verde_-1_5" x="-1" y="5" px="2" dir="1" material="verde" />
-        <!-- curve at cell 2,2 -->
-        <xacro:far_arrow name="rojo_2_2" x="2" y="2" px="2" dir="-1" material="rojo" />
-        <xacro:far_arrow name="verde_2_2" x="2" y="2" px="2" dir="1" material="verde" />
-        <!-- curve at cell 2,5 -->
-        <xacro:far_arrow name="verde_2_5" x="2" y="5" px="1" dir="-1" material="verde" />
-        <!-- curve at cell 5,-1 -->
-        <xacro:far_arrow name="azul_5_-1" x="5" y="-1" px="2" dir="-1" material="azul" />
-        <!-- curve at cell 7,-1 -->
-        <xacro:middle_arrow name="azul_7_-1" x="7" y="-1" px="3" dir="1" material="azul" />
-        <!-- curve at cell 7,0 -->
-        <xacro:middle_arrow name="rojo_7_0" x="7" y="0" px="2" dir="1" material="rojo" />
-        <xacro:middle_arrow name="verde_7_0" x="7" y="0" px="2" dir="1" material="verde" />
-        <xacro:close_arrow name="azul_7_0" x="7" y="0" px="2" dir="-1" material="azul" />
-        <!-- curve at cell 7,2 -->
-        <xacro:far_arrow name="rojo_7_2" x="7" y="2" px="1" dir="-1" material="rojo" />
-        <xacro:far_arrow name="verde_7_2" x="7" y="2" px="1" dir="-1" material="verde" />
+        <!-- CUBES: each one at the end of a corridor with no exit -->
+        <xacro:box name="rojo"  x="-2.80" y="-0.64" material="rojo" />
+        <xacro:box name="verde" x="-4.16" y="4.08"  material="verde" />
+        <xacro:box name="azul"  x="-1.04" y="-3.20" material="azul" />
+
+        <!-- FORBIDDEN ZONE: 40x40 cm. It closes the west side of the small island.
+             The big island stays free to go around it -->
+        <xacro:marked_zone name="prohibida_isla_chica" x="-1.56" y="-1.80" />
+
+        <!-- OBSTACLES: fixed blocks against a wall. They leave 20 cm of corridor free -->
+        <xacro:obstacle name="1" x="-2.70" y="0.00" />
+        <xacro:obstacle name="2" x="-2.70" y="1.72" />
+        <xacro:obstacle name="3" x="-4.26" y="3.20" />
+        <xacro:obstacle name="4" x="-0.94" y="-2.70" />
+        <xacro:obstacle name="5" x="-3.50" y="2.50" />
+
+        <!-- ARROWS: on the wall ahead of a curve. Islands have none.
+             close = 1 wall stretch to the next curve, middle = 2, far = 3 or more -->
+        <xacro:middle_arrow name="rojo_a" x="0" y="0" px="2" dir="1" material="rojo" />
+        <xacro:middle_arrow name="verde_a" x="0" y="0" px="2" dir="1" material="verde" />
+        <xacro:close_arrow name="azul_a" x="0" y="0" px="2" dir="-1" material="azul" />
+        <xacro:middle_arrow name="azul_b" x="0" y="-0.72" px="3" dir="1" material="azul" />
+        <xacro:close_arrow name="azul_c" x="-1.04" y="-0.72" px="2" dir="-1" material="azul" />
+        <xacro:close_arrow name="rojo_g" x="0" y="1.04" px="1" dir="-1" material="rojo" />
+        <xacro:close_arrow name="verde_g" x="0" y="1.04" px="1" dir="-1" material="verde" />
+        <xacro:far_arrow name="rojo_k" x="-2.80" y="1.04" px="2" dir="-1" material="rojo" />
+        <xacro:far_arrow name="verde_k" x="-2.80" y="1.04" px="2" dir="1" material="verde" />
+        <xacro:far_arrow name="verde_l" x="-2.80" y="2.40" px="1" dir="-1" material="verde" />
+        <xacro:far_arrow name="verde_m" x="-4.16" y="2.40" px="2" dir="1" material="verde" />
 
     </world>
 </sdf>

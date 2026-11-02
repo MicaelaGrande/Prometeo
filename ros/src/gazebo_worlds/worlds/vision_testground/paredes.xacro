@@ -1,0 +1,55 @@
+<?xml version="1.0" ?>
+<!-- Generado por generar_paredes.py: no editar a mano -->
+<sdf version="1.9" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="paredes">
+    <xacro:wall_box name="0" x="-5.4050" y="1.0400" sx="0.0100" sy="0.4200"/>
+    <xacro:wall_box name="1" x="-4.3650" y="2.7600" sx="0.0100" sy="3.0600"/>
+    <xacro:wall_box name="2" x="-3.9550" y="1.5200" sx="0.0100" sy="1.3800"/>
+    <xacro:wall_box name="3" x="-3.9550" y="3.4400" sx="0.0100" sy="1.7000"/>
+    <xacro:wall_box name="4" x="-3.0050" y="0.6800" sx="0.0100" sy="3.0600"/>
+    <xacro:wall_box name="5" x="-2.5950" y="0.0000" sx="0.0100" sy="1.7000"/>
+    <xacro:wall_box name="6" x="-2.5950" y="1.9200" sx="0.0100" sy="1.3800"/>
+    <xacro:wall_box name="7" x="-2.2850" y="0.5800" sx="0.0100" sy="0.5400"/>
+    <xacro:wall_box name="8" x="-2.2850" y="1.5000" sx="0.0100" sy="0.5400"/>
+    <xacro:wall_box name="9" x="-1.8750" y="1.0400" sx="0.0100" sy="0.6600"/>
+    <xacro:wall_box name="10" x="-1.7650" y="-1.8000" sx="0.0100" sy="1.1400"/>
+    <xacro:wall_box name="11" x="-1.3550" y="-1.8000" sx="0.0100" sy="0.3400"/>
+    <xacro:wall_box name="12" x="-1.2450" y="-2.8800" sx="0.0100" sy="1.0600"/>
+    <xacro:wall_box name="13" x="-1.2450" y="-0.8800" sx="0.0100" sy="0.7400"/>
+    <xacro:wall_box name="14" x="-0.9250" y="1.0400" sx="0.0100" sy="0.6600"/>
+    <xacro:wall_box name="15" x="-0.8350" y="-2.8800" sx="0.0100" sy="1.0600"/>
+    <xacro:wall_box name="16" x="-0.8350" y="-1.0800" sx="0.0100" sy="0.3400"/>
+    <xacro:wall_box name="17" x="-0.7250" y="-1.8000" sx="0.0100" sy="0.3400"/>
+    <xacro:wall_box name="18" x="-0.5150" y="0.5800" sx="0.0100" sy="0.5400"/>
+    <xacro:wall_box name="19" x="-0.5150" y="1.5000" sx="0.0100" sy="0.5400"/>
+    <xacro:wall_box name="20" x="-0.3150" y="-1.8000" sx="0.0100" sy="1.1400"/>
+    <xacro:wall_box name="21" x="-0.2050" y="0.1600" sx="0.0100" sy="1.3800"/>
+    <xacro:wall_box name="22" x="0.2050" y="-0.5600" sx="0.0100" sy="0.7400"/>
+    <xacro:wall_box name="23" x="0.2050" y="0.7200" sx="0.0100" sy="1.0600"/>
+    <xacro:wall_box name="24" x="-1.0400" y="-3.4050" sx="0.4200" sy="0.0100"/>
+    <xacro:wall_box name="25" x="-1.5000" y="-2.3650" sx="0.5400" sy="0.0100"/>
+    <xacro:wall_box name="26" x="-0.5800" y="-2.3650" sx="0.5400" sy="0.0100"/>
+    <xacro:wall_box name="27" x="-1.0400" y="-1.9550" sx="0.6600" sy="0.0100"/>
+    <xacro:wall_box name="28" x="-1.0400" y="-1.6450" sx="0.6600" sy="0.0100"/>
+    <xacro:wall_box name="29" x="-1.5000" y="-1.2350" sx="0.5400" sy="0.0100"/>
+    <xacro:wall_box name="30" x="-0.5800" y="-1.2350" sx="0.5400" sy="0.0100"/>
+    <xacro:wall_box name="31" x="-0.3200" y="-0.9250" sx="1.0600" sy="0.0100"/>
+    <xacro:wall_box name="32" x="-2.8000" y="-0.8450" sx="0.4200" sy="0.0100"/>
+    <xacro:wall_box name="33" x="-0.7200" y="-0.5150" sx="1.0600" sy="0.0100"/>
+    <xacro:wall_box name="34" x="0.8400" y="-0.2050" sx="1.3000" sy="0.0100"/>
+    <xacro:wall_box name="35" x="0.8400" y="0.2050" sx="1.3000" sy="0.0100"/>
+    <xacro:wall_box name="36" x="-1.4000" y="0.3150" sx="1.7800" sy="0.0100"/>
+    <xacro:wall_box name="37" x="-1.4000" y="0.7250" sx="0.9800" sy="0.0100"/>
+    <xacro:wall_box name="38" x="-4.6800" y="0.8350" sx="1.4600" sy="0.0100"/>
+    <xacro:wall_box name="39" x="-2.4400" y="0.8350" sx="0.3400" sy="0.0100"/>
+    <xacro:wall_box name="40" x="-0.3600" y="0.8350" sx="0.3400" sy="0.0100"/>
+    <xacro:wall_box name="41" x="-4.8800" y="1.2450" sx="1.0600" sy="0.0100"/>
+    <xacro:wall_box name="42" x="-2.4400" y="1.2450" sx="0.3400" sy="0.0100"/>
+    <xacro:wall_box name="43" x="-0.1600" y="1.2450" sx="0.7400" sy="0.0100"/>
+    <xacro:wall_box name="44" x="-1.4000" y="1.3550" sx="0.9800" sy="0.0100"/>
+    <xacro:wall_box name="45" x="-1.4000" y="1.7650" sx="1.7800" sy="0.0100"/>
+    <xacro:wall_box name="46" x="-3.4800" y="2.1950" sx="0.9800" sy="0.0100"/>
+    <xacro:wall_box name="47" x="-3.2800" y="2.6050" sx="1.3800" sy="0.0100"/>
+    <xacro:wall_box name="48" x="-4.1600" y="4.2850" sx="0.4200" sy="0.0100"/>
+  </xacro:macro>
+</sdf>

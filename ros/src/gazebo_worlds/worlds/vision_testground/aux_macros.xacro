@@ -25,14 +25,14 @@
   </xacro:macro>
 
   <!-- Flat arrow glued to the face of the wall ahead of a corridor cell.
-       x, y = cell (grid units), px = heading of the robot (same units as NORTH/WEST/... yaw/(pi/2)),
+       x, y = center of the corridor at the curve (m), px = heading of the robot (yaw/(pi/2)),
        dir = 1 points to the robot's right, -1 to its left, L = body length (m).
        The slot (height on the wall) depends on the color so up to three arrows fit one above the other. -->
   <xacro:macro name="arrow" params="name x y px dir L material">
     <model name="arrow_${name}">
       <static>true</static>
       <!-- Model +x = wall normal pointing at the robot, model +y = robot's right -->
-      <pose>${x*wall_width + cos(px*pi/2)*(wall_width/2 - wall_thick/2)} ${y*wall_width + sin(px*pi/2)*(wall_width/2 - wall_thick/2)} ${0.11 - 0.04*SLOT[material]} 0 0 ${(px+2)*pi/2}</pose>
+      <pose>${x + cos(px*pi/2)*(corridor_width/2 - thick/2)} ${y + sin(px*pi/2)*(corridor_width/2 - thick/2)} ${0.165 - 0.065*SLOT[material]} 0 0 ${(px+2)*pi/2}</pose>
       <link name="link">
         <visual name="visual">
           <pose>0 0 0 0 ${pi/2} 0</pose>
@@ -77,14 +77,53 @@
   </xacro:macro>
 
   <!-- Area of colored ground -->
-  <xacro:macro name="zone" params="name x y px material">
+  <xacro:macro name="zone" params="name x y px material size:=${area_size}">
     <model name="${name}">
       <static>true</static>
       <pose>${x} ${y} -0.019 0 0 ${px}</pose>
       <link name="link">
         <visual name="visual">
-          <geometry><box><size>${area_size} ${area_size} 0.04</size></box></geometry>
+          <geometry><box><size>${size} ${size} 0.04</size></box></geometry>
           <xacro:paint material="${material}"/>
+        </visual>
+      </link>
+    </model>
+  </xacro:macro>
+
+  <!-- Forbidden zone: a square marked on the floor with a red line -->
+  <xacro:macro name="zone_side" params="name px py sx sy">
+    <visual name="side_${name}">
+      <pose>${px} ${py} 0.001 0 0 0</pose>
+      <geometry><box><size>${sx} ${sy} 0.002</size></box></geometry>
+      <xacro:paint material="rojo"/>
+    </visual>
+  </xacro:macro>
+  <xacro:macro name="marked_zone" params="name x y">
+    <xacro:property name="half" value="${forbidden_size / 2 - zone_line / 2}"/>
+    <model name="${name}">
+      <static>true</static>
+      <pose>${x} ${y} 0 0 0 0</pose>
+      <link name="link">
+        <xacro:zone_side name="n" px="0" py="${half}" sx="${forbidden_size}" sy="${zone_line}"/>
+        <xacro:zone_side name="s" px="0" py="${-half}" sx="${forbidden_size}" sy="${zone_line}"/>
+        <xacro:zone_side name="e" px="${half}" py="0" sx="${zone_line}" sy="${forbidden_size}"/>
+        <xacro:zone_side name="w" px="${-half}" py="0" sx="${zone_line}" sy="${forbidden_size}"/>
+      </link>
+    </model>
+  </xacro:macro>
+
+  <!-- Grey block. x, y = center (m) -->
+  <xacro:macro name="obstacle" params="name x y">
+    <model name="obstaculo_${name}">
+      <static>true</static>
+      <pose>${x} ${y} ${obstacle_size / 2} 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>${obstacle_size} ${obstacle_size} ${obstacle_size}</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>${obstacle_size} ${obstacle_size} ${obstacle_size}</size></box></geometry>
+          <xacro:paint material="gris"/>
         </visual>
       </link>
     </model>
@@ -92,7 +131,6 @@
 
   <!-- Small cube on a black pedestal. Inertia is computed from the mass and size. -->
   <xacro:macro name="box" params="name x y material">
-    <xacro:zone name="objective_marker_${name}" x="${x}" y="${y}" px="0" material="azul" />
     <model name="cylinder_${name}">
     <!-- Raised by half the height so the base rests on the ground plane -->
         <static>true</static>
@@ -176,83 +214,21 @@
   </xacro:macro>
 
   <!-- Wall between grid cells: x, y = cell, px = side (0: east of the cell, 1: north, 2: west, 3: south) -->
-  <xacro:macro name="wall" params="x y px">
-      <model name="wall_${x}_${y}_${px}">
-          <static>true</static>
-          <pose>${x * wall_width} ${y * wall_width} ${wall_height / 2 - 0.01} 0 0 ${px * pi / 2}</pose>
-          <link name="link">
-              <collision name="collision">
-                  <pose>${wall_width/2} 0 0 0 0 0</pose>
-                  <geometry>
-                      <box><size>${wall_thick} ${wall_width} ${wall_height}</size></box>
-                  </geometry>
-              </collision>
-              <visual name="visual">
-                  <pose>${wall_width/2} 0 0 0 0 0</pose>
-                  <geometry>
-                      <box><size>${wall_thick} ${wall_width} ${wall_height}</size></box>
-                  </geometry>
-                  <xacro:paint material="wall"/>
-              </visual>
-          </link>
-      </model>
-  </xacro:macro>
-
-  <!-- Runs of n walls. wall_col: east of cells (x, y..y+n-1); wall_row: north of cells (x..x+n-1, y) -->
-  <xacro:macro name="wall_col" params="x y n">
-    <xacro:if value="${n > 0}">
-      <xacro:wall x="${x}" y="${y}" px="0" />
-      <xacro:wall_col x="${x}" y="${y+1}" n="${n-1}" />
-    </xacro:if>
-  </xacro:macro>
-  <xacro:macro name="wall_row" params="x y n">
-    <xacro:if value="${n > 0}">
-      <xacro:wall x="${x}" y="${y}" px="1" />
-      <xacro:wall_row x="${x+1}" y="${y}" n="${n-1}" />
-    </xacro:if>
-  </xacro:macro>
-
-  <xacro:macro name="entry_outer" params="x y px">
-    <xacro:wall x="${x}" y="${y+9}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y+8}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y+7}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y+6}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y+5}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y+4}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y+3}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y+2}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y+1}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y-1}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y-2}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y-3}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y-4}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y-5}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y-6}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y-7}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y-8}"  px="${px}" />
-    <xacro:wall x="${x}" y="${y-9}"  px="${px}" />
-  </xacro:macro>
-
-  <xacro:macro name="side_outer" params="x y px">
-      <xacro:wall y="${y}" x="${x+9}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x+8}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x+7}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x+6}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x+5}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x+4}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x+3}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x+2}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x+1}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x}"    px="${px}" />
-      <xacro:wall y="${y}" x="${x-1}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x-2}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x-3}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x-4}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x-5}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x-6}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x-7}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x-8}"  px="${px}" />
-      <xacro:wall y="${y}" x="${x-9}"  px="${px}" />
+  <!-- One wall. x, y = center (m), sx, sy = size (m). See generar_paredes.py -->
+  <xacro:macro name="wall_box" params="name x y sx sy">
+    <model name="pared_${name}">
+      <static>true</static>
+      <pose>${x} ${y} ${wall_height / 2} 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>${sx} ${sy} ${wall_height}</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>${sx} ${sy} ${wall_height}</size></box></geometry>
+          <xacro:paint material="wall"/>
+        </visual>
+      </link>
+    </model>
   </xacro:macro>
 
 </sdf>
