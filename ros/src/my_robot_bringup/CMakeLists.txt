@@ -8,4 +8,9 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+# Nodos de Python (simulacion del HC-SR04): van a lib/, que es donde buscan los launch
+install(PROGRAMS scripts/hcsr04_sim.py scripts/modelo_hcsr04.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

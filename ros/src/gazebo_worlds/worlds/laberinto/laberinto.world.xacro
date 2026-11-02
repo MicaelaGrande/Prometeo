@@ -78,6 +78,24 @@
       <direction>-0.5 0.1 -0.9</direction>
     </light>
 
+    <!-- ===== PUNTO DE PARTIDA ===== -->
+    <!-- gz.launch.py de my_robot_bringup busca este modelo y pone ahi al robot (R en el dibujo) -->
+    <model name="start_marker">
+      <static>true</static>
+      <pose>0 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <cylinder><radius>0.099</radius><length>0.024</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0 1 0 1</ambient>
+            <diffuse>0 1 0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
     <!-- ===== PISO ===== -->
     <model name="piso">
       <static>true</static>

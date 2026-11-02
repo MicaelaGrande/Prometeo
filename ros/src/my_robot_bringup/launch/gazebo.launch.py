@@ -67,12 +67,33 @@ def generate_launch_description():
         }.items(),
     )
 
+    # Reemplaza al ESP32: convierte los rayos de Gazebo en /distancias
+    hcsr04_sim = Node(
+        package='my_robot_bringup',
+        executable='hcsr04_sim.py',
+        parameters=[
+            PathJoinSubstitution([bringup_pkg_path, 'config', 'hcsr04.yaml']),
+            {'use_sim_time': True},
+        ],
+        output='screen',
+    )
+
+    # Publica un sensor_msgs/Range por ultrasonido (mismo nodo que el robot real)
+    distancias_a_range = Node(
+        package='prometeo_sensores',
+        executable='distancias_a_range',
+        parameters=[{'use_sim_time': True}],
+        output='screen',
+    )
+
     return LaunchDescription(
         arguments
         + [
             rviz_node,
             tf_node,
             gazebo_nodes,
+            hcsr04_sim,
+            distancias_a_range,
             ros_control,
         ]
     )

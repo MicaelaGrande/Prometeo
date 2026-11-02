@@ -44,3 +44,22 @@
   ros_type_name: "sensor_msgs/msg/CameraInfo"
   gz_type_name: "gz.msgs.CameraInfo"
   direction: GZ_TO_ROS
+
+# ===== Ultrasonidos (HC-SR04 simulado: abanico de rayos que consume hcsr04_sim) =====
+- ros_topic_name: "/ultrasonido/frente/rayos"
+  gz_topic_name: "/ultrasonido/frente/rayos"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/ultrasonido/izq/rayos"
+  gz_topic_name: "/ultrasonido/izq/rayos"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/ultrasonido/der/rayos"
+  gz_topic_name: "/ultrasonido/der/rayos"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
