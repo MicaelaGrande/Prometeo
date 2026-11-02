@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-    <!-- HC-SR04 simulado. Gazebo no trae sensor de ultrasonido: se pide un abanico de
+    <!-- HC-SR04 simulado. Gazebo no trae sensor de ultrasonido se pide un abanico de
          rayos (gpu_lidar, +-15 grados) que cubre el cono del sensor. El nodo
          hcsr04_sim (prometeo_sensores) los convierte en lo que mediria el real.
          Link y topic conservan los nombres en espanol (frente/izq/der) porque los
@@ -13,7 +13,7 @@
           <geometry>
             <box size="${us_depth} ${us_width} ${us_height}"/>
           </geometry>
-          <material name="silver"/>
+          <material name="plateado"/>
         </visual>
       </link>
 

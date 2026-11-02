@@ -1,0 +1,167 @@
+<?xml version="1.0"?>
+<!--
+  Brazo de 4 articulaciones giro de la base, hombro, codo y pinza.
+  Cada pieza es una caja o un cilindro con las medidas de los STL de la carpeta Documentacion
+  (en milimetros, por eso mm = 0.001). Sirve igual para ver y para chocar.
+  Con todas las articulaciones en 0 el brazo queda parado el brazo principal vertical y el
+  antebrazo hacia adelante y la pinza hacia abajo (siempre, ver la muneca pasiva).
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:property name="mm" value="0.001"/>
+
+  <!-- Donde se apoya la base del brazo, sobre la placa superior (x adelante, desde el centro) -->
+  <xacro:property name="arm_x" value="0.0"/>
+  <xacro:property name="arm_z" value="${robot_height + plate_thickness}"/>
+
+  <xacro:property name="arm_base_height" value="${5*mm}"/>
+  <xacro:property name="turntable_height" value="${21.1*mm}"/>     <!-- arandela + plato -->
+  <xacro:property name="support_height" value="${28*mm}"/>       <!-- soporte del servo del hombro -->
+  <xacro:property name="upper_arm_length" value="${80*mm}"/>       <!-- entre ejes -->
+  <xacro:property name="gripper_drop" value="0.05"/>  <!-- cuanto cuelga la pinza por debajo del antebrazo -->
+  <xacro:property name="forearm_length" value="${112*mm}"/>        <!-- del codo a la pinza -->
+
+  <!-- Macro de un link con una caja la misma forma se usa para ver, chocar y calcular la inercia -->
+  <xacro:macro name="box_part" params="name x y z mass material xyz">
+    <link name="${name}">
+      <xacro:box_visual x="${x}" y="${y}" z="${z}" material="${material}" xyz="${xyz}"/>
+      <xacro:box_collision x="${x}" y="${y}" z="${z}" xyz="${xyz}" rpy="0 0 0"/>
+      <xacro:box_inertia mass="${mass}" x="${x}" y="${y}" z="${z}" xyz="${xyz}" rpy="0 0 0"/>
+    </link>
+  </xacro:macro>
+
+  <!-- Base apoyada en la placa superior -->
+  <xacro:box_part name="arm_base_link" x="${80*mm}" y="${80*mm}" z="${arm_base_height}"
+                  mass="0.15" material="gris" xyz="0 0 ${arm_base_height/2}"/>
+  <joint name="arm_mount_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="arm_base_link"/>
+    <origin xyz="${arm_x} 0 ${arm_z}"/>
+  </joint>
+
+  <!-- Giro de la base (servo 1) gira el plato (cilindro) y el soporte del hombro (caja) -->
+  <link name="arm_turntable_link">
+    <xacro:cylinder_visual radius="${36*mm}" height="${turntable_height}" material="plateado"
+                           xyz="0 0 ${turntable_height/2}"/>
+    <xacro:box_visual x="${35*mm}" y="${28*mm}" z="${support_height}" material="gris"
+                      xyz="0 0 ${turntable_height + support_height/2}"/>
+    <xacro:box_collision x="${61.5*mm}" y="${52.3*mm}" z="${turntable_height + support_height}"
+                         xyz="0 0 ${(turntable_height + support_height)/2}" rpy="0 0 0"/>
+    <xacro:box_inertia mass="0.12" x="${61.5*mm}" y="${52.3*mm}" z="${turntable_height + support_height}"
+                       xyz="0 0 ${(turntable_height + support_height)/2}" rpy="0 0 0"/>
+  </link>
+  <joint name="arm_base_yaw_joint" type="revolute">
+    <parent link="arm_base_link"/>
+    <child link="arm_turntable_link"/>
+    <origin xyz="0 0 ${arm_base_height}"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${-pi/2}" upper="${pi/2}" effort="1.0" velocity="3.0"/>
+    <dynamics damping="0.1" friction="0.5"/>
+  </joint>
+
+  <!-- Hombro (servo 2) levanta el brazo principal. Positivo inclina hacia adelante -->
+  <xacro:box_part name="arm_upper_link" x="${15*mm}" y="${29*mm}" z="${92*mm}"
+                  mass="0.06" material="negro" xyz="0 0 ${38*mm}"/>
+  <joint name="arm_shoulder_joint" type="revolute">
+    <parent link="arm_turntable_link"/>
+    <child link="arm_upper_link"/>
+    <origin xyz="${-10*mm} 0 ${turntable_height + 31*mm}"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="${-pi/4}" upper="${pi/2.8}" effort="1.0" velocity="3.0"/>
+    <dynamics damping="0.1" friction="0.5"/>
+  </joint>
+
+  <!-- Compensacion pasiva del hombro lo cancela (mimic, multiplicador -1) para que el codo y
+       el antebrazo no se inclinen cuando se mueve el hombro. No se comanda. -->
+  <link name="arm_elbow_base_link">
+    <xacro:box_inertia mass="0.001" x="0.01" y="0.01" z="0.01" xyz="0 0 0" rpy="0 0 0"/>
+  </link>
+  <joint name="arm_elbow_compensation_joint" type="revolute">
+    <parent link="arm_upper_link"/>
+    <child link="arm_elbow_base_link"/>
+    <origin xyz="0 0 ${upper_arm_length}"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="${-pi/2}" upper="${pi/2}" effort="1.0" velocity="3.0"/>
+    <mimic joint="arm_shoulder_joint" multiplier="-1" offset="0"/>
+  </joint>
+
+  <!-- Codo (servo 3) mueve el antebrazo. Su angulo es respecto del piso, no del brazo principal
+       con el hombro quieto el antebrazo queda como esta. Positivo lo baja -->
+  <xacro:box_part name="arm_forearm_link" x="${127.6*mm}" y="${8*mm}" z="${15*mm}"
+                  mass="0.05" material="negro" xyz="${56.3*mm} 0 0"/>
+  <joint name="arm_elbow_joint" type="revolute">
+    <parent link="arm_elbow_base_link"/>
+    <child link="arm_forearm_link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="${-pi/2}" upper="${pi/2}" effort="1.0" velocity="3.0"/>
+    <dynamics damping="0.1" friction="0.5"/>
+  </joint>
+
+  <!-- Muneca pasiva mantiene la pinza siempre con la misma inclinacion respecto del piso.
+       Cancela el giro del codo (mimic, multiplicador -1). El hombro ya esta cancelado antes del
+       codo, asi la inclinacion de la pinza es siempre la del montaje fijo (rpy de arm_gripper_mount_joint).
+       No se comanda sigue al codo. -->
+  <link name="arm_wrist_elbow_link">
+    <xacro:box_inertia mass="0.001" x="0.01" y="0.01" z="0.01" xyz="0 0 0" rpy="0 0 0"/>
+  </link>
+  <joint name="arm_wrist_elbow_joint" type="revolute">
+    <parent link="arm_forearm_link"/>
+    <child link="arm_wrist_elbow_link"/>
+    <origin xyz="${forearm_length} 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="${-pi/2}" upper="${pi/2}" effort="1.0" velocity="3.0"/>
+    <mimic joint="arm_elbow_joint" multiplier="-1" offset="0"/>
+  </joint>
+
+  <!-- Varilla que une el final del antebrazo con la pinza. Cuelga gripper_drop hacia abajo. -->
+  <xacro:box_part name="gripper_neck_link" x="${6*mm}" y="${6*mm}" z="${gripper_drop}"
+      mass="0.02" material="negro" xyz="0 0 ${-gripper_drop/2}" />
+  <joint name="gripper_neck_joint" type="fixed">
+    <parent link="arm_wrist_elbow_link"/>
+    <child link="gripper_neck_link"/>
+  </joint>
+
+  <!-- Pinza va fija a la muneca. Va al final de la varilla. Su rpy decide hacia donde apunta. Los dedos giran sobre el eje z de la pinza. -->
+  <xacro:box_part name="gripper_link" x="${0*mm}" y="${0*mm}" z="${0*mm}"
+                  mass="0.08" material="gris" xyz="${27*mm} 0 0"/>
+  <joint name="arm_gripper_mount_joint" type="fixed">
+    <parent link="gripper_neck_link"/>
+    <child link="gripper_link"/>
+    <origin xyz="0 0 ${-gripper_drop}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Dedos una caja (el dedo) y un cilindro (el engranaje) cada uno. El izquierdo lleva el
+       engranaje conductor y lo mueve el servo (servo 4); el derecho copia su giro al reves. -->
+  <xacro:macro name="finger" params="name gear_radius">
+    <link name="${name}_link">
+      <xacro:box_visual x="${51*mm}" y="${14.5*mm}" z="${24*mm}" material="negro" xyz="${25.5*mm} 0 0"/>
+      <xacro:cylinder_visual radius="${gear_radius}" height="${5*mm}" material="plateado"
+                             xyz="0 0 ${7.5*mm}"/>
+      <xacro:box_collision x="${51*mm}" y="${14.5*mm}" z="${24*mm}" xyz="${25.5*mm} 0 0" rpy="0 0 0"/>
+      <xacro:box_inertia mass="0.01" x="${51*mm}" y="${14.5*mm}" z="${24*mm}"
+                         xyz="${25.5*mm} 0 0" rpy="0 0 0"/>
+    </link>
+  </xacro:macro>
+
+  <xacro:finger name="gripper_left_finger" gear_radius="${10*mm}"/>
+  <joint name="gripper_joint" type="revolute">
+    <parent link="gripper_link"/>
+    <child link="gripper_left_finger_link"/>
+    <origin xyz="${3*mm} ${12.5*mm} 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0" upper="0.6" effort="1.0" velocity="3.0"/>
+    <dynamics damping="0.1" friction="0.5"/>
+  </joint>
+
+  <xacro:finger name="gripper_right_finger" gear_radius="${10*mm}"/>
+  <joint name="gripper_right_joint" type="revolute">
+    <parent link="gripper_link"/>
+    <child link="gripper_right_finger_link"/>
+    <origin xyz="${3*mm} ${-12.5*mm} 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-0.6" upper="0" effort="1.0" velocity="3.0"/>
+    <mimic joint="gripper_joint" multiplier="-1" offset="0"/>
+    <dynamics damping="0.1" friction="0.5"/>
+  </joint>
+
+</robot>

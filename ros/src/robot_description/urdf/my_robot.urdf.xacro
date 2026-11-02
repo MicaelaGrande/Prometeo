@@ -6,6 +6,7 @@
     <xacro:include filename="gazebo.xacro" />
     <xacro:include filename="sensors.xacro" />
     <xacro:include filename="cam.xacro" />
+    <xacro:include filename="arm.xacro" />
     <xacro:include filename="mobile_base.xacro" />
 
 </robot>

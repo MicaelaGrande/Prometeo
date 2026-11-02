@@ -30,4 +30,47 @@
       </joint>
     </xacro:macro>
 
+    <xacro:property name="servo_x" value="0.075"/>   <!-- centro del servo, adelante del brazo -->
+    <xacro:property name="holder_height" value="0.017"/>
+    <xacro:property name="servo_size_x" value="0.0122"/>   <!-- MG90S 22.8 x 12.2 x 22.5 mm -->
+    <xacro:property name="servo_size_y" value="0.0228"/>
+    <xacro:property name="servo_size_z" value="0.0225"/>
+    <xacro:property name="bracket_height" value="0.012"/>
+
+    <link name="camera_servo_link">
+      <!-- soporte girado 90 grados sus 40 mm quedan a lo ancho del robot -->
+      <xacro:mesh_link mesh="camera/servo_holder.STL" scale="0.001 0.001 0.001" material="gris"
+                       xyz="0.0115 -0.020 0" rpy="0 0 ${pi/2}"/>
+      <visual>
+        <origin xyz="0 0 ${holder_height + servo_size_z/2}"/>
+        <geometry><box size="${servo_size_x} ${servo_size_y} ${servo_size_z}"/></geometry>
+        <material name="azul"/>
+      </visual>
+      <xacro:box_collision x="0.04" y="0.023" z="${holder_height + servo_size_z}"
+                           xyz="0 0 ${(holder_height + servo_size_z)/2}" rpy="0 0 0"/>
+      <xacro:box_inertia mass="0.03" x="0.04" y="0.023" z="${holder_height + servo_size_z}"
+                         xyz="0 0 ${(holder_height + servo_size_z)/2}" rpy="0 0 0"/>
+    </link>
+    <joint name="camera_servo_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="camera_servo_link"/>
+      <origin xyz="${servo_x} 0 ${robot_height + plate_thickness}"/>
+    </joint>
+
+    <!-- Parte que gira con el servo el soporte de la camara -->
+    <link name="camera_pan_link">
+      <xacro:mesh_link mesh="camera/bracket.STL" scale="0.001 0.001 0.001" material="gris"
+                       xyz="-0.0346 -0.0135 0" rpy="0 0 0"/>
+      <xacro:box_inertia mass="0.02" x="0.069" y="0.027" z="${bracket_height}"
+                         xyz="0 0 ${bracket_height/2}" rpy="0 0 0"/>
+    </link>
+    <joint name="camera_pan_joint" type="revolute">
+      <parent link="camera_servo_link"/>
+      <child link="camera_pan_link"/>
+      <origin xyz="0 0 ${holder_height + servo_size_z}"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${-pi/2}" upper="${pi/2}" effort="0.2" velocity="3.0"/>
+      <dynamics damping="0.05" friction="0.2"/>
+    </joint>
+
 </robot>
