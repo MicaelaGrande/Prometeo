@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-    <xacro:macro name="esp32_cam" params="name parent x y z">
+    <xacro:macro name="esp32_cam" params="name x y z">
       <link name="${name}_link">
         <visual>
           <geometry><box size="0.005 0.027 0.040"/></geometry>
@@ -17,7 +17,7 @@
       </link>
 
       <joint name="${name}_joint" type="fixed">
-        <parent link="${parent}"/>
+        <parent link="camera_servo_link"/>
         <child link="${name}_link"/>
         <origin xyz="${x} ${y} ${z}" rpy="0 0 0"/>
       </joint>
@@ -29,5 +29,30 @@
         <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
       </joint>
     </xacro:macro>
+
+    <xacro:property name="servo_x" value="0.095"/>   <!-- centro del servo y de la camara, adelante del brazo -->
+    <xacro:property name="holder_height" value="0.017"/>
+    <xacro:property name="servo_size_x" value="0.0122"/>   <!-- MG90S 22.8 x 12.2 x 22.5 mm -->
+    <xacro:property name="servo_size_y" value="0.0228"/>
+    <xacro:property name="servo_size_z" value="0.0225"/>
+    <xacro:property name="bracket_height" value="0.012"/>
+
+    <link name="camera_servo_link">
+      <!-- soporte girado 90 grados sus 40 mm quedan a lo ancho del robot -->
+      <visual>
+        <geometry><box size="${servo_size_x} ${servo_size_y} ${servo_size_z}"/></geometry>
+        <material name="azul"/>
+      </visual>
+    </link>
+
+    <!-- Parte que gira con el servo el soporte de la camara -->
+    <joint name="camera_servo_joint" type="revolute">
+      <parent link="base_link"/>
+      <child link="camera_servo_link"/>
+      <origin xyz="${servo_x} 0 ${robot_height}"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${-pi/2}" upper="${pi/2}" effort="0.2" velocity="3.0"/>
+      <dynamics damping="0.05" friction="0.2"/>
+    </joint>
 
 </robot>
