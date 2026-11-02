@@ -9,4 +9,9 @@ install(DIRECTORY launch config worlds
   DESTINATION share/${PROJECT_NAME}
 )
 
+# Los nodos de Python van a lib/, que es donde ros2 run y los launch buscan programas
+install(PROGRAMS scripts/hcsr04_sim.py scripts/modelo_hcsr04.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

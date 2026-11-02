@@ -65,6 +65,11 @@
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
     <!-- Le pasa a la ventana de Gazebo lo que tiene que dibujar -->
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <!-- Hace funcionar los sensores que miden mirando la escena, como los rayos de
+         los ultrasonidos. ogre2 es el motor que dibuja esa escena. -->
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
 
     <light type="directional" name="sol">
       <pose>0 0 5 0 0 0</pose>
