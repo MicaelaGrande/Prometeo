@@ -5,3 +5,5 @@ __pycache__/
 managed_components/
 sdkconfig.old
 .vscode
+log/
+install/
