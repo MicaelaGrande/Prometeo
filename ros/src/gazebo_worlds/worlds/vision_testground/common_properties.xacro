@@ -14,9 +14,9 @@
 -->
 <sdf version="1.9" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <!-- ===== Command-line arguments (defaults in meters) ===== -->
-  <xacro:arg name="body_w" default="0.030"/>
-  <xacro:arg name="head_w" default="0.070"/>
-  <xacro:arg name="head_h" default="0.050"/>
+  <xacro:arg name="body_w" default="0.015"/>
+  <xacro:arg name="head_w" default="0.035"/>
+  <xacro:arg name="head_h" default="0.030"/>
   <xacro:arg name="thick"  default="0.005"/>
 
   <!-- ===== Properties ===== -->
@@ -47,4 +47,9 @@
   <xacro:property name="cylinder_radius" value="${box_size}"/>
   <xacro:property name="arrow_base_z" value="0.5"/>
   <xacro:property name="spacing"      value="0.4"/>
+
+  <!-- Named colors ("r g b"; alpha is always 1). SDF has no named materials, so macros look them up here. -->
+  <xacro:property name="COLORS" value="${dict(rojo='0.9 0.05 0.05', verde='0.05 0.8 0.1', azul='0.1 0.2 0.9', negro='0.1 0.1 0.1', wall='0.92 0.92 0.92')}"/>
+  <!-- Vertical slot of each arrow color on a wall (0 = top), so up to three arrows fit one above the other -->
+  <xacro:property name="SLOT" value="${dict(rojo=0, verde=1, azul=2)}"/>
 </sdf>

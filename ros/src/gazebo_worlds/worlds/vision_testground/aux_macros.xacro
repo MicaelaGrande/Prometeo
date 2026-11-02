@@ -15,56 +15,83 @@
 <sdf version="1.9" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <!-- ===== Macros ===== -->
 
-  <!-- Flat block arrow pointing up on the wall. L = body length (m), r/g/b = color 0..1, y = position -->
-  <xacro:macro name="arrow" params="x y px pd L r g b">
-    <model name="arrow_${x}${y}_${r}${g}${b}">
+  <!-- Material from a named color (see COLORS in common_properties.xacro) -->
+  <xacro:macro name="paint" params="material">
+    <material>
+      <ambient>${COLORS[material]} 1</ambient>
+      <diffuse>${COLORS[material]} 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+    </material>
+  </xacro:macro>
+
+  <!-- Flat arrow glued to the face of the wall ahead of a corridor cell.
+       x, y = cell (grid units), px = heading of the robot (same units as NORTH/WEST/... yaw/(pi/2)),
+       dir = 1 points to the robot's right, -1 to its left, L = body length (m).
+       The slot (height on the wall) depends on the color so up to three arrows fit one above the other. -->
+  <xacro:macro name="arrow" params="name x y px dir L material">
+    <model name="arrow_${name}">
       <static>true</static>
-      <pose>${x*wall_width} ${y*wall_width} ${wall_height/2 - 0.01} ${pd*pi} 0 ${px * pi/2}</pose>
+      <!-- Model +x = wall normal pointing at the robot, model +y = robot's right -->
+      <pose>${x*wall_width + cos(px*pi/2)*(wall_width/2 - wall_thick/2)} ${y*wall_width + sin(px*pi/2)*(wall_width/2 - wall_thick/2)} ${0.11 - 0.04*SLOT[material]} 0 0 ${(px+2)*pi/2}</pose>
       <link name="link">
         <visual name="visual">
-          <pose>${wall_width/2 - wall_thick} ${-L} 0 0 ${pi/2} 0</pose>
+          <pose>0 0 0 0 ${pi/2} 0</pose>
           <geometry>
             <polyline>
-              <point>${-body_w / 2} 0</point>
-              <point>${body_w / 2} 0</point>
-              <point>${body_w / 2} ${L}</point>
-              <point>${head_w / 2} ${L}</point>
-              <point>0 ${L + head_h}</point>
-              <point>${-head_w / 2} ${L}</point>
-              <point>${-body_w / 2} ${L}</point>
+              <xacro:if value="${dir > 0}">
+                <point>${-body_w / 2} ${-(L + head_h) / 2}</point>
+                <point>${body_w / 2} ${-(L + head_h) / 2}</point>
+                <point>${body_w / 2} ${L - (L + head_h) / 2}</point>
+                <point>${head_w / 2} ${L - (L + head_h) / 2}</point>
+                <point>0 ${(L + head_h) / 2}</point>
+                <point>${-head_w / 2} ${L - (L + head_h) / 2}</point>
+                <point>${-body_w / 2} ${L - (L + head_h) / 2}</point>
+              </xacro:if>
+              <xacro:if value="${0 > dir}">
+                <point>${-body_w / 2} ${-(L - (L + head_h) / 2)}</point>
+                <point>${-head_w / 2} ${-(L - (L + head_h) / 2)}</point>
+                <point>0 ${-(L + head_h) / 2}</point>
+                <point>${head_w / 2} ${-(L - (L + head_h) / 2)}</point>
+                <point>${body_w / 2} ${-(L - (L + head_h) / 2)}</point>
+                <point>${body_w / 2} ${(L + head_h) / 2}</point>
+                <point>${-body_w / 2} ${(L + head_h) / 2}</point>
+              </xacro:if>
               <height>${thick}</height>
             </polyline>
           </geometry>
-          <material>
-            <ambient>${r} ${g} ${b} 1</ambient>
-            <diffuse>${r} ${g} ${b} 1</diffuse>
-            <specular>0.1 0.1 0.1 1</specular>
-          </material>
+          <xacro:paint material="${material}"/>
         </visual>
       </link>
     </model>
   </xacro:macro>
 
+  <!-- Arrow length encodes the segments to the next curve: 1 = close, 2 = middle, 3 or more = far -->
+  <xacro:macro name="close_arrow" params="name x y px dir material">
+      <xacro:arrow name="${name}" x="${x}" y="${y}" px="${px}" dir="${dir}" L="0.03" material="${material}"/>
+  </xacro:macro>
+  <xacro:macro name="middle_arrow" params="name x y px dir material">
+      <xacro:arrow name="${name}" x="${x}" y="${y}" px="${px}" dir="${dir}" L="0.06" material="${material}"/>
+  </xacro:macro>
+  <xacro:macro name="far_arrow" params="name x y px dir material">
+      <xacro:arrow name="${name}" x="${x}" y="${y}" px="${px}" dir="${dir}" L="0.1" material="${material}"/>
+  </xacro:macro>
+
   <!-- Area of colored ground -->
-  <xacro:macro name="zone" params="name x y px r g b">
+  <xacro:macro name="zone" params="name x y px material">
     <model name="${name}">
       <static>true</static>
       <pose>${x} ${y} -0.019 0 0 ${px}</pose>
       <link name="link">
         <visual name="visual">
           <geometry><box><size>${area_size} ${area_size} 0.04</size></box></geometry>
-          <material>
-            <ambient>${r} ${g} ${b} 1</ambient>
-            <diffuse>${r} ${g} ${b} 1</diffuse>
-            <specular>0.1 0.1 0.1 1</specular>
-          </material>
+          <xacro:paint material="${material}"/>
         </visual>
       </link>
     </model>
   </xacro:macro>
 
-  <!-- Small cube resting on the floor. Inertia is computed from the mass and size. -->
-  <xacro:macro name="box" params="name x y rgb">
+  <!-- Small cube on a black pedestal. Inertia is computed from the mass and size. -->
+  <xacro:macro name="box" params="name x y material">
     <model name="cylinder_${name}">
     <!-- Raised by half the height so the base rests on the ground plane -->
         <static>true</static>
@@ -85,11 +112,7 @@
                         <length>${cylinder_height}</length>
                     </cylinder>
                 </geometry>
-                <material>
-                    <ambient>0.1 0.1 0.1 1</ambient>
-                    <diffuse>0.1 0.1 0.1 1</diffuse>
-                    <specular>0.1 0.1 0.1 1</specular>
-                </material>
+                <xacro:paint material="negro"/>
             </visual>
         </link>
     </model>
@@ -110,18 +133,15 @@
         </collision>
         <visual name="visual">
           <geometry><box><size>${box_size} ${box_size} ${box_size}</size></box></geometry>
-          <material>
-            <ambient>${rgb} 1</ambient>
-            <diffuse>${rgb} 1</diffuse>
-            <specular>0.1 0.1 0.1 1</specular>
-          </material>
+          <xacro:paint material="${material}"/>
         </visual>
       </link>
     </model>
   </xacro:macro>
 
+  <!-- Wall between grid cells: x, y = cell, px = side (0: east of the cell, 1: north, 2: west, 3: south) -->
   <xacro:macro name="wall" params="x y px">
-      <model name="wall_${x}${y}${px}">
+      <model name="wall_${x}_${y}_${px}">
           <static>true</static>
           <pose>${x * wall_width} ${y * wall_width} ${wall_height / 2 - 0.01} 0 0 ${px * pi / 2}</pose>
           <link name="link">
@@ -136,14 +156,24 @@
                   <geometry>
                       <box><size>${wall_thick} ${wall_width} ${wall_height}</size></box>
                   </geometry>
-                  <material>
-                      <ambient>0.92 0.92 0.92 1</ambient>
-                      <diffuse>0.92 0.92 0.92 1</diffuse>
-                      <specular>0.05 0.05 0.05 1</specular>
-                  </material>
+                  <xacro:paint material="wall"/>
               </visual>
           </link>
       </model>
+  </xacro:macro>
+
+  <!-- Runs of n walls. wall_col: east of cells (x, y..y+n-1); wall_row: north of cells (x..x+n-1, y) -->
+  <xacro:macro name="wall_col" params="x y n">
+    <xacro:if value="${n > 0}">
+      <xacro:wall x="${x}" y="${y}" px="0" />
+      <xacro:wall_col x="${x}" y="${y+1}" n="${n-1}" />
+    </xacro:if>
+  </xacro:macro>
+  <xacro:macro name="wall_row" params="x y n">
+    <xacro:if value="${n > 0}">
+      <xacro:wall x="${x}" y="${y}" px="1" />
+      <xacro:wall_row x="${x+1}" y="${y}" n="${n-1}" />
+    </xacro:if>
   </xacro:macro>
 
   <xacro:macro name="entry_outer" params="x y px">
