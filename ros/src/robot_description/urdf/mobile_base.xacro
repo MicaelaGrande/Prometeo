@@ -31,6 +31,14 @@
         />
     </link>
 
+    <link name="top_plate_link">
+        <xacro:mesh_link
+                mesh="${base_mesh}" scale="${base_scale}"
+                material="acrylic"
+                xyz="0 0 0"    rpy="0 0 0"
+            />
+    </link>
+
     <link name="front_link">
         <xacro:mesh_link
                 mesh="${front_plate_mesh}" scale="${plate_scale}"
@@ -151,6 +159,14 @@
 
 <xacro:esp32_cam name="camera" parent="base_link" x="0.09" y="0" z="0.08"/>
 
+<!-- 3 HC-SR04 en el parachoques delantero: frente, izquierda y derecha -->
+<xacro:ultrasonic name="frente" x="${us_body_length/2}" y="0" z="${us_front_z}"
+                  roll="0" yaw="0" fan_roll="0"/>
+<xacro:ultrasonic name="izq" x="${us_side_x}" y="${us_body_width/2}" z="${us_side_z}"
+                  roll="${pi/2}" yaw="${pi/2}" fan_roll="${-pi/2}"/>
+<xacro:ultrasonic name="der" x="${us_side_x}" y="${-us_body_width/2}" z="${us_side_z}"
+                  roll="${pi/2}" yaw="${-pi/2}" fan_roll="${-pi/2}"/>
+
 <!-- ======================================================================== -->
 <!-- ================================ Joints ================================ -->
 <!-- ======================================================================== -->
@@ -159,6 +175,12 @@
   <parent link="base_footprint" />
   <child link="base_link" />
   <origin xyz="0 0 0.04675" rpy="0 0 0" />
+  </joint>
+
+  <joint name="top_plate_joint" type="fixed">
+      <parent link="base_link" />
+      <child link="top_plate_link" />
+      <origin xyz="0 0 ${top_plate_z}" rpy="0 0 0" />
   </joint>
 
   <joint name="front_plate_joint" type="fixed">
