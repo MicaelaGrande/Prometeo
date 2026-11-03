@@ -113,7 +113,7 @@ Cada ultrasonido publica una distancia parecida a la real
 Hay un laberinto con al menos una isla y pasillos de distintos anchos, desde 40 cm (hecho)
 vision_testground tiene cubos de 20 mm, flechas, islas, obstáculos y una zona roja, con las medidas reales (hecho)
 El robot tiene cámara simulada y huggin_vision funciona con ella (hecho)
-La simulación usa las medidas de las ruedas de los modelos 3D: separación 0,1305 m y radio 0,0345 m (hecho)
+La simulación usa las medidas del robot real: largo 0,27 m, ancho 0,16 m, separación entre ruedas 0,135 m, radio 0,0325 m y 0,125 m entre ejes (hecho)
 ```
 
 ---

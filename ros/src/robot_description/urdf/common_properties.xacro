@@ -40,8 +40,8 @@
 <!-- =========================================================== -->
 
     <!-- Cuerpo (mismas medidas que prometeo_description). length = x, width = y, height = z -->
-    <xacro:property name="robot_length" value="0.26" />
-    <xacro:property name="robot_width" value="0.163" />
+    <xacro:property name="robot_length" value="0.27" />   <!-- medido en el robot real -->
+    <xacro:property name="robot_width" value="0.16" />   <!-- con ruedas, medido en el robot real -->
     <xacro:property name="robot_height" value="0.056" />
     <xacro:property name="plate_thickness" value="0.004" />
 
@@ -84,14 +84,14 @@
 <!-- Wheels -->
 <!-- =========================================================== -->
 
-    <xacro:property name="wheel_radius" value="0.0345"/>
-    <xacro:property name="wheel_thickness" value="0.03"/>   <!-- ancho de la rueda, a lo largo del eje -->
+    <xacro:property name="wheel_radius" value="0.0325"/>   <!-- diametro real 6,5 cm -->
+    <xacro:property name="wheel_thickness" value="0.025"/>   <!-- ancho de la rueda, a lo largo del eje -->
     <xacro:property name="wheel_mass" value="0.08" />
 
     <!-- El eje esta eje_bajo_placa mas abajo que base_link, y las ruedas a +-separacion/2 -->
     <xacro:property name="axis_height" value="-0.01375" />
-    <xacro:property name="wheel_separation" value="0.13" />
-    <xacro:property name="wheel_base" value="0.111" />       <!-- entre ejes, adelante a atras -->
+    <xacro:property name="wheel_separation" value="0.135" />   <!-- centro a centro: 16 cm total - 2,5 cm de rueda -->
+    <xacro:property name="wheel_base" value="0.125" />       <!-- entre ejes, adelante a atras -->
     <xacro:property name="left_axis" value="${wheel_separation/2}" />
     <xacro:property name="right_axis" value="${-wheel_separation/2}" />
     <xacro:property name="front_axis" value="${wheel_base/2}" />

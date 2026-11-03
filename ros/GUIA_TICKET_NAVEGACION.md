@@ -81,10 +81,11 @@ Ningún criterio de aceptación está cumplido.
 
 ## Medidas
 
-Salen de los modelos 3D, en metros: largo 0.26, ancho 0.163, radio de rueda 0.0345,
-ancho de rueda 0.03, distancia entre ejes 0.111, separación entre centros de ruedas 0.13.
-Hay que medir la separación entre ruedas en el robot real: el 0.16 de la rama de
-simulación es de borde a borde. Cambiar una variable no cambia el tamaño de un STL.
+Medidas del robot real, en metros (3/11/2026): largo 0.27, ancho con ruedas 0.16,
+radio de rueda 0.0325, ancho de rueda 0.025, distancia entre ejes 0.125, separación entre
+centros de ruedas 0.135 (0.16 - 0.025). Ultrasonido de adelante a 0.08 del piso, laterales
+a 0.078 y lente de la cámara a 0.14. Falta medir el brazo. Cambiar una variable no cambia el
+tamaño de un STL.
 
 ## Qué sigue
 

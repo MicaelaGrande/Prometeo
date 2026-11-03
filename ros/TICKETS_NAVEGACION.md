@@ -115,7 +115,7 @@ Los nombres de topics y acciones son propuestas, a confirmar entre los equipos.
     - [x] Hay un laberinto con al menos una isla y pasillos de distintos anchos, desde 40 cm.
     - [x] `vision_testground` tiene cubos de 20 mm, flechas, islas, obstáculos y una zona roja, con las medidas reales.
     - [x] El robot tiene cámara simulada y `huggin_vision` funciona con ella.
-    - [x] La simulación usa las medidas de las ruedas de los modelos 3D: separación 0,1305 m y radio 0,0345 m.
+    - [x] La simulación usa las medidas del robot real: largo 0,27 m, ancho 0,16 m, separación entre ruedas 0,135 m, radio 0,0325 m y 0,125 m entre ejes.
 
 El laberinto con isla y los ultrasonidos simulados ya se probaron con el teclado en Gazebo. Falta
 calibrar los ultrasonidos con el robot real.
