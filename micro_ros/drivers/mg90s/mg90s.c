@@ -1,3 +1,4 @@
+#include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"   // solo para la sección crítica (portMUX); no se crean tareas
 #include "driver/ledc.h"
 #include "esp_timer.h"
@@ -32,16 +33,16 @@ typedef struct {
     float vel;
 } config_servo_t;
 
-// AJUSTAR: pines libres (los de motores y sensores HC-SR04 ya están usados).
+// Pines configurables: idf.py menuconfig -> Prometeo - Pines GPIO (no repetir los de motores/sensores).
 // 2, 5, 12 y 15 son pines de arranque: no conectar nada que los fuerce al encender.
 // AJUSTAR: us_min / us_max y límites según cada servo (sacar el rango real probando con servo_set_us).
 static const config_servo_t cfg[CANT_SERVOS] = {
     //  pin  us_min us_max lim_min lim_max home  invertido  vel(gps)
-    {   5,   500,   2400,  0,      180,    90,   false,     180     },  // SERVO_1 CAMARA
-    {  14,   500,   2400,  40,     140,    90,   false,     45      },  // SERVO_2 BASE   BLANCO
-    {  15,   500,   2400,  0,      150,    35,   false,     45      },  // SERVO_3 HOMBRO MORADO
-    {   2,   500,   2400,  0,      150,    45,   true,      45      },  // SERVO_4 CODO   AMARILLO
-    {  12,   500,   2400,  30,     100,    80,   false,     180     },  // SERVO_5 GARRA  VERDE
+    { CONFIG_PROMETEO_SERVO_1_PIN, 500,   2400,  0,      180,    90,   false,     180     },  // SERVO_1 CAMARA
+    { CONFIG_PROMETEO_SERVO_2_PIN, 500,   2400,  40,     140,    90,   false,     45      },  // SERVO_2 BASE   BLANCO
+    { CONFIG_PROMETEO_SERVO_3_PIN, 500,   2400,  0,      150,    35,   false,     45      },  // SERVO_3 HOMBRO MORADO
+    { CONFIG_PROMETEO_SERVO_4_PIN, 500,   2400,  0,      150,    45,   true,      45      },  // SERVO_4 CODO   AMARILLO
+    { CONFIG_PROMETEO_SERVO_5_PIN, 500,   2400,  30,     100,    80,   false,     180     },  // SERVO_5 GARRA  VERDE
     // (GPIO12 = MTDI, el más delicado)
 };
 
