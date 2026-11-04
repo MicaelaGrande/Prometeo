@@ -124,20 +124,21 @@ calibrar los ultrasonidos con el robot real.
 
 ### T2. Navegación alta
 
-- **Objetivo:** ofrecerles a los demás nodos órdenes simples para moverse sin chocar.
+- **Objetivo:** ofrecerles a los demás nodos órdenes simples para moverse por el laberinto: seguir el
+  pasillo, girar y avisar qué lugar encontró.
 - **Entradas:** una acción `/mover` (seguir el pasillo, girar o ir a un punto, con el largo de la flecha si hay una), `/odom` y ultrasonidos.
 - **Salidas:** `/cmd_vel`, el resultado de la orden (terminada, bloqueada o cancelada) y el tipo de
   lugar detectado: pasillo, curva, bifurcación o callejón.
 - **Terminado cuando:**
-    - [ ] Sigue un pasillo sin tocar las paredes, sin importar su ancho.
     - [ ] Gira 90 grados dentro del laberinto sin chocar.
-    - [ ] Frena si aparece un obstáculo adelante.
     - [ ] Detecta curvas, bifurcaciones y callejones en pasillos de distintos anchos.
     - [ ] Usa el largo de la flecha para anticipar la próxima curva y ajustar su velocidad.
     - [ ] No pisa las zonas rojas de 40 × 40 cm. De cerca salen de la imagen, así que hay que recordar dónde estaban.
 
-Para centrarse compara la distancia a cada pared, sin suponer un ancho fijo. Una salida se detecta
-cuando un sensor pasa a medir mucho más que antes, no con una distancia fija.
+Una salida se detecta cuando un sensor pasa a medir mucho más que antes, no con una distancia fija.
+
+Centrarse en el pasillo y frenar ante un obstáculo pasaron a Bajo nivel (T9), según lo acordado
+con el equipo.
 
 **Primera tarea:** probar Nav2 sin mapa en el laberinto simulado. Si marca los pasillos como
 bloqueados, usar control por ultrasonidos. Los demás nodos no cambian, porque solo conocen `/mover`.
@@ -161,8 +162,8 @@ bloqueados, usar control por ultrasonidos. Los demás nodos no cambian, porque s
   ultrasonidos se marca desactualizada al arrancar y el controlador no se mueve hasta borrar el
   costmap.
 
-**Sigue:** control por ultrasonidos, en pasos: 1) seguir el pasillo centrado comparando izquierda
-y derecha, 2) detectar curva, bifurcación o callejón, 3) girar 90° con la odometría, 4) juntarlo
+**Sigue:** control por ultrasonidos, en pasos: 1) avanzar por el pasillo (Bajo nivel lo mantiene
+centrado), 2) detectar curva, bifurcación o callejón, 3) girar 90° con la odometría, 4) juntarlo
 en la acción `/mover`. T2 no elige hacia dónde doblar: avisa qué lugar encontró y Decisión elige
 según las flechas de visión.
 
@@ -289,6 +290,11 @@ le quedan en teoría 4,6 cm por lado, sin contar el brazo.
     - [ ] `/odom` publica la distancia recorrida con poco error.
     - [x] `/distancias` se convierte en un `Range` por sensor. Hecho en `feature/ros/navigation`, falta probarlo con el robot real.
     - [ ] Están medidas la separación entre ruedas, el diámetro de rueda y la masa del robot.
+    - [ ] Sigue un pasillo sin tocar las paredes, sin importar su ancho.
+    - [ ] Frena si aparece un obstáculo adelante.
+
+Para centrarse compara la distancia a cada pared, sin suponer un ancho fijo. Estos dos criterios
+eran de T2 y los toma Bajo nivel.
 
 **Estado de los encoders:** `driver_encoders` tiene 2 sensores de un solo canal y publica
 `/velocidad_ruedas`, siempre positiva. Con eso no se distingue adelante de atrás, y todavía no hay
