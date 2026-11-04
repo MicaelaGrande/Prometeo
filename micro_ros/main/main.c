@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
+#include "esp_heap_caps.h"
 
 // Nuestras librerías de motores, sensores y freno de emergencia
 #include "motores.h"
@@ -30,7 +31,8 @@
 #define MICRO_ROS_TASK_STACK 16000
 #define MICRO_ROS_TASK_PRIO  5
 
-#define PING_PERIODO_MS 1000   // cada cuánto se chequea que el agente siga vivo
+#define ENTIDAD_TIMEOUT_MS 5000   // espera máxima del agente al crear cada entidad
+#define PING_PERIODO_MS 1000  // cada cuánto se chequea que el agente siga vivo
 
 // ===== SERVOS =====
 // Todos los servos se mueven a la misma velocidad. AJUSTAR probando.
@@ -43,11 +45,18 @@
 #define SERVO_CODO    SERVO_4
 #define SERVO_GARRA   SERVO_5
 
+#define SERVO_CAMARA_VEL  180
+#define SERVO_BASE_VEL    90
+#define SERVO_HOMBRO_VEL  90
+#define SERVO_CODO_VEL    90
+#define SERVO_GARRA_VEL   90
+
 // Orden de los valores en /brazo/cmd: [base, hombro, codo, garra]
 #define BRAZO_JUNTAS 4
-static const servo_id_t brazo[BRAZO_JUNTAS] = { SERVO_BASE, SERVO_HOMBRO, SERVO_CODO, SERVO_GARRA };
+static const servo_id_t brazo[BRAZO_JUNTAS]     = { SERVO_BASE, SERVO_HOMBRO, SERVO_CODO, SERVO_GARRA };
+static const servo_id_t brazo_vel_gps[BRAZO_JUNTAS] = { SERVO_BASE_VEL, SERVO_HOMBRO_VEL, SERVO_CODO_VEL, SERVO_GARRA_VEL };
 
-static const char *TAG = "microROS_motores";
+static const char *TAG = "prometeo_body";
 
 static const char *volatile estado_actual = "ESPERANDO ORDENES";
 
@@ -87,8 +96,17 @@ static rcl_timer_t timer_ruedas;
 static std_msgs__msg__Float32MultiArray msg_vel_ruedas;
 static float buf_vel_ruedas[VEL_RUEDAS_LEN];
 
-#define RCRET(fn) { if ((fn) != RCL_RET_OK) { \
-    ESP_LOGE(TAG, "Fallo en linea %d", __LINE__); return false; } }
+static void log_heap(const char *donde)
+{
+    ESP_LOGI(TAG, "HEAP %s: libre=%u min=%u mayor_bloque=%u",
+             donde,
+             (unsigned)esp_get_free_heap_size(),
+             (unsigned)esp_get_minimum_free_heap_size(),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
+
+#define RCRET(fn) { rcl_ret_t temp_rc = fn; if (temp_rc != RCL_RET_OK) { \
+    ESP_LOGE(TAG, "Fallo en linea %d: rc=%d", __LINE__, (int)temp_rc); log_heap("al fallar"); return false; } }
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if ((temp_rc != RCL_RET_OK)) { \
     ESP_LOGW(TAG, "Fallo en linea %d: %d. Continuando.", __LINE__, (int)temp_rc); } }
 
@@ -128,7 +146,7 @@ static void camara_callback(const void *msgin)
     const std_msgs__msg__Float32 *m = (const std_msgs__msg__Float32 *)msgin;
 
     if (!isnan(m->data)) {
-        servo_mover(SERVO_CAMARA, m->data, SERVO_VEL_GPS);   // la librería limita al rango
+        servo_mover(SERVO_CAMARA, m->data, SERVO_CAMARA_VEL);   // la librería limita al rango
     }
 }
 
@@ -147,7 +165,7 @@ static void brazo_callback(const void *msgin)
     }
     for (int i = 0; i < BRAZO_JUNTAS; i++) {
         if (!isnan(m->data.data[i])) {
-            servo_mover(brazo[i], m->data.data[i], SERVO_VEL_GPS);
+            servo_mover(brazo[i], m->data.data[i], brazo_vel_gps[i]);
         }
     }
 }
@@ -219,8 +237,13 @@ static void publicar_freno_si_cambio(void)
 // =========================================================
 static bool crear_entidades(void)
 {
+    log_heap("PRE");
     RCRET(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
-    RCRET(rclc_node_init_default(&node, "nodo_motores_esp32", "", &support));
+    // Por WiFi cada entidad espera la respuesta del agente: el default (1000 ms) no alcanza
+    rmw_context_t *rmw_context = rcl_context_get_rmw_context(&support.context);
+    (void) rmw_uros_set_context_entity_creation_session_timeout(rmw_context, ENTIDAD_TIMEOUT_MS);
+
+    RCRET(rclc_node_init_default(&node, "body", "prometeo", &support));
 
     RCRET(rclc_publisher_init_default(&publisher, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "estado_motores"));
@@ -266,6 +289,7 @@ static bool crear_entidades(void)
     RCRET(rclc_executor_add_subscription(&executor, &sub_brazo, &msg_brazo,
           &brazo_callback, ON_NEW_DATA));
 
+    log_heap("POST");
     freno_publicado = -1;   // al (re)conectar se publica el estado actual
     return true;
 }

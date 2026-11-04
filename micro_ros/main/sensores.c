@@ -1,3 +1,4 @@
+#include "sdkconfig.h"
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
@@ -89,7 +90,8 @@ static float historial_mediana(const historial_t *h)
     return v[h->cant / 2];
 }
 
-/* Arma el texto de un sensor: distancia final y cruda, o el motivo del error */
+/* Arma el texto de un sensor: distancia final y cruda, o el motivo del error
+ *
 static void formatear(char *buf, size_t len, bool hay_dato, esp_err_t err,
                       float crudo, float final)
 {
@@ -101,6 +103,7 @@ static void formatear(char *buf, size_t len, bool hay_dato, esp_err_t err,
         snprintf(buf, len, "%5.1f cm (crudo %5.1f)", final, crudo);
     }
 }
+ */
 
 // Mide sin parar. Casi todo el tiempo está bloqueada esperando el eco (RMT),
 // así que no consume CPU. No toca micro-ROS: solo deja los valores en distancias_cm.
@@ -117,7 +120,6 @@ static void sensores_task(void *arg)
         /* Turno 2: el frente solo, 60 ms despues para que se apaguen los rebotes */
         hcsr04_measure_group_cm(&sensors[SENSOR_FRENTE], 1, &cm[SENSOR_FRENTE], &errs[SENSOR_FRENTE]);
 
-        bool loguear = (++ciclo >= LOG_CADA_CICLOS);
         char txt[NUM_SENSORS][40];
         float nuevas[NUM_SENSORS];
         float crudas[NUM_SENSORS];
@@ -151,10 +153,6 @@ static void sensores_task(void *arg)
             } else {
                 nuevas[i] = final;
             }
-
-            if (loguear) {
-                formatear(txt[i], sizeof(txt[i]), hay_dato, errs[i], crudo, final);
-            }
         }
 
         taskENTER_CRITICAL(&dist_mux);
@@ -162,14 +160,6 @@ static void sensores_task(void *arg)
         memcpy(crudas_cm, crudas, sizeof(crudas_cm));
         num_medicion++;
         taskEXIT_CRITICAL(&dist_mux);
-
-        if (loguear) {
-            ciclo = 0;
-            ESP_LOGI(TAG_SENS, "%s: %s | %s: %s | %s: %s",
-                     NOMBRES[SENSOR_IZQ], txt[SENSOR_IZQ],
-                     NOMBRES[SENSOR_DER], txt[SENSOR_DER],
-                     NOMBRES[SENSOR_FRENTE], txt[SENSOR_FRENTE]);
-        }
     }
 }
 
@@ -177,9 +167,9 @@ esp_err_t sensores_init(void)
 {
     /* Un config por sensor: TRIG y ECHO propios */
     hcsr04_config_t cfg[NUM_SENSORS] = {
-        [SENSOR_IZQ]    = { .trig_gpio = GPIO_NUM_18, .echo_gpio = GPIO_NUM_19 },
-        [SENSOR_DER]    = { .trig_gpio = GPIO_NUM_21, .echo_gpio = GPIO_NUM_22 },
-        [SENSOR_FRENTE] = { .trig_gpio = GPIO_NUM_25, .echo_gpio = GPIO_NUM_26 },
+        [SENSOR_IZQ]    = { .trig_gpio = CONFIG_PROMETEO_SENSOR_TRIG_PIN, .echo_gpio = CONFIG_PROMETEO_SENSOR_IZQ_ECHO_PIN },
+        [SENSOR_DER]    = { .trig_gpio = CONFIG_PROMETEO_SENSOR_TRIG_PIN, .echo_gpio = CONFIG_PROMETEO_SENSOR_DER_ECHO_PIN },
+        [SENSOR_FRENTE] = { .trig_gpio = CONFIG_PROMETEO_SENSOR_TRIG_PIN, .echo_gpio = CONFIG_PROMETEO_SENSOR_FRENTE_ECHO_PIN },
     };
     for (int i = 0; i < NUM_SENSORS; i++) {
         esp_err_t err = hcsr04_new(&cfg[i], &sensors[i]);

@@ -1,0 +1,76 @@
+<?xml version="1.0" ?>
+<!--
+  xacro version of colored_objects.sdf
+
+  Generate the SDF, then run it in Gazebo:
+      xacro colored_objects.sdf.xacro -o colored_objects.sdf
+      gz sim -r colored_objects.sdf
+
+  Override any argument from the command line:
+      xacro colored_objects.sdf.xacro head_w:=0.08 thick:=0.01 -o colored_objects.sdf
+
+  Layout (seen from the robot at the origin; +X forward, +Y left):
+      wall at x = 2.0, three arrows on its face, three 3 cm boxes on the floor in front of it.
+-->
+<sdf version="1.9" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:include filename="common_properties.xacro" />
+    <xacro:include filename="aux_macros.xacro" />
+
+    <!-- ===== World ===== -->
+    <world name="colored_objects">
+
+        <physics name="1ms" type="ignored">
+            <max_step_size>0.001</max_step_size>
+            <real_time_factor>1.0</real_time_factor>
+        </physics>
+
+        <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+        <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+        <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+        <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+            <render_engine>ogre2</render_engine>
+        </plugin>
+
+        <light type="directional" name="sun">
+            <cast_shadows>true</cast_shadows>
+            <pose>0 0 10 0 0 0</pose>
+            <diffuse>0.9 0.9 0.9 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+            <direction>-0.5 0.1 -0.9</direction>
+        </light>
+
+        <model name="ground_plane">
+            <static>true</static>
+            <link name="link">
+            <collision name="collision">
+                <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+            </collision>
+            <visual name="visual">
+                <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+                <material>
+                <ambient>0.8 0.8 0.8 1</ambient>
+                <diffuse>0.8 0.8 0.8 1</diffuse>
+                <specular>0.1 0.1 0.1 1</specular>
+                </material>
+            </visual>
+            </link>
+        </model>
+
+        <!-- 3.2,0 START ZONE (GREEN) -->
+        <xacro:zone name="start_marker" x="${11*0.32}" y="${0*0.32}" px="${pi}" r="0" g="1" b="0" />
+        <!-- -3.2,0 END ZONE (BLUE) -->
+        <xacro:zone name="end_marker" x="${-11*0.32}" y="${0*0.32}" px="0" r="0" g="0" b="1" />
+        <!-- OUTER WALL START -->
+        <xacro:entry_outer x="9"  y="0" px="${NORTH}" />
+        <xacro:side_outer  y="9"  x="0" px="${WEST}" />
+        <xacro:side_outer  y="-9"  x="0" px="${EAST}" />
+        <xacro:entry_outer x="-9" y="0" px="${SOUTH}" />
+        <!-- OUTER WALL END -->
+        <xacro:box x="${7*0.32}" y="${1*0.32}"  name ="r1" rgb="1 0 0"/>
+        <xacro:box x="${7*0.32}" y="${0*0.32}"  name ="b1" rgb="0 0 1"/>
+        <xacro:box x="${7*0.32}" y="${-1*0.32}" name ="g1" rgb="0 1 0"/>
+        <!--xacro:arrow x="1" y="-1" px="0" pd="1" L="0.030" r="1" g="0" b="0" /-->
+        <!--xacro:arrow x="1" y="0"  px="0" pd="1" L="0.060" r="0" g="1" b="0" /-->
+        <!--xacro:arrow x="1" y="1"  px="0" pd="1" L="0.100" r="0" g="0" b="1" /-->
+    </world>
+</sdf>

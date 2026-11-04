@@ -1,17 +1,18 @@
 #pragma once
 #include <stdbool.h>
+#include "sdkconfig.h"
 
 // ===== PINES =====
-// Puente H 1
-#define MOTOR_A1 16
-#define MOTOR_A2 17
-#define MOTOR_B1 27
-#define MOTOR_B2 4
+// Puente H 1 (pines configurables: idf.py menuconfig -> Prometeo - Pines GPIO)
+#define MOTOR_A1 CONFIG_PROMETEO_MOTOR_A1_PIN
+#define MOTOR_A2 CONFIG_PROMETEO_MOTOR_A2_PIN
+#define MOTOR_B1 CONFIG_PROMETEO_MOTOR_B1_PIN
+#define MOTOR_B2 CONFIG_PROMETEO_MOTOR_B2_PIN
 // Puente H 2
-#define MOTOR_C1 32
-#define MOTOR_C2 33
-#define MOTOR_D1 13
-#define MOTOR_D2 23
+#define MOTOR_C1 CONFIG_PROMETEO_MOTOR_C1_PIN
+#define MOTOR_C2 CONFIG_PROMETEO_MOTOR_C2_PIN
+#define MOTOR_D1 CONFIG_PROMETEO_MOTOR_D1_PIN
+#define MOTOR_D2 CONFIG_PROMETEO_MOTOR_D2_PIN
 
 // ===== NOMBRES DE CADA MOTOR =====
 typedef enum {

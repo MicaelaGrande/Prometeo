@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include "esp_err.h"
 #include "driver/gpio.h"
+#include "sdkconfig.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,10 +24,10 @@ typedef struct {
     gpio_num_t echo_gpio;   /*!< GPIO conectado a ECHO (entrada del ESP32, con divisor resistivo) */
 } hcsr04_config_t;
 
-/** Configuracion por defecto: TRIG = GPIO18, ECHO = GPIO19. */
+/** Configuracion por defecto: pines del sensor izquierdo (menuconfig). */
 #define HCSR04_CONFIG_DEFAULT() { \
-    .trig_gpio = GPIO_NUM_18,     \
-    .echo_gpio = GPIO_NUM_19,     \
+    .trig_gpio = CONFIG_PROMETEO_SENSOR_TRIG_PIN, \
+    .echo_gpio = CONFIG_PROMETEO_SENSOR_IZQ_ECHO_PIN, \
 }
 
 typedef struct hcsr04_t *hcsr04_handle_t;
