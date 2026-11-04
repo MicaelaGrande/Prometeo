@@ -15,7 +15,7 @@ que miden los sensores y no por distancias fijas.
 | Orden | Ticket | Hito | Depende de | Estado |
 |---|---|---|---|---|
 | 1 | T1. Base de simulación | Llegar al cubo | Nada | Falta calibrar ultrasonidos |
-| 2 | T2. Navegación alta | Llegar al cubo | T1 | Sin empezar |
+| 2 | T2. Navegación alta | Llegar al cubo | T1 | Nav2 descartado, sigue control por ultrasonidos |
 | 3 | T3. Mapeo: libreta del recorrido | Llegar al cubo | T2 | Solo los datos |
 | 4 | T4. Exploración con memoria | Llegar al cubo | T3 | Sin empezar |
 | 3 y 4, en paralelo | T6. Flechas en visión | Llegar al cubo | Nada | Casi lista, sin mergear |
@@ -141,6 +141,35 @@ cuando un sensor pasa a medir mucho más que antes, no con una distancia fija.
 
 **Primera tarea:** probar Nav2 sin mapa en el laberinto simulado. Si marca los pasillos como
 bloqueados, usar control por ultrasonidos. Los demás nodos no cambian, porque solo conocen `/mover`.
+
+**Resultado de la primera tarea (4/11/2026): Nav2 descartado.** Probado en Gazebo con
+`nav2_sin_mapa.launch.py` en `vision_testground`:
+
+- Con 3 ultrasonidos el costmap queda casi vacío: las paredes inclinadas no devuelven eco y en
+  las esquinas no se ve casi nada. Con `allow_unknown: true` la ruta atraviesa las paredes que no
+  vio, y el robot choca en las esquinas de la isla. No es un parámetro: Nav2 necesita un mapa
+  detallado y saber dónde está en él (AMCL), y las dos cosas piden un LiDAR.
+- Tampoco sirve para volver con un mapa: para eso está la libreta de T3. Dijkstra corre sobre su
+  grafo de lugares y el control de T2 recorre el camino. Las paredes no se guardan, se miden al
+  avanzar.
+- Se encontró que la odometría exageraba los giros en un 50 % (decía 166° cuando el robot giró
+  108°), porque con 4 ruedas el robot patina al girar. En simulación se corrigió con
+  `wheel_separation_efectiva = 0.21` en `robot_description/urdf/common_properties.xacro`, y
+  quedó 165° contra 161°. El robot real necesita su propio valor: girarlo una vuelta según la
+  odometría y medir cuánto giró de verdad.
+- Falla en `nav2_sin_mapa.yaml`, que queda sin corregir porque ya no se usa: la capa de
+  ultrasonidos se marca desactualizada al arrancar y el controlador no se mueve hasta borrar el
+  costmap.
+
+**Sigue:** control por ultrasonidos, en pasos: 1) seguir el pasillo centrado comparando izquierda
+y derecha, 2) detectar curva, bifurcación o callejón, 3) girar 90° con la odometría, 4) juntarlo
+en la acción `/mover`. T2 no elige hacia dónde doblar: avisa qué lugar encontró y Decisión elige
+según las flechas de visión.
+
+**Mejora posible, para después:** usar la cámara para ver paredes buscando la línea donde la
+pared toca el piso, con la misma cuenta que `camera_model.py` usa para las zonas. No salva a Nav2
+(ve 60° hacia adelante y no resuelve la localización), pero puede ayudar al control a anticipar
+una pared o un callejón.
 
 | Cuerpo de la flecha | `length_class` | Tramos de pared | Pared recta hasta la curva | Entre centros de curvas (pasillo de 40 cm) |
 |---|---|---|---|---|

@@ -92,6 +92,13 @@
     <xacro:property name="axis_height" value="-0.01375" />
     <xacro:property name="wheel_separation" value="0.135" />   <!-- centro a centro: 16 cm total - 2,5 cm de rueda -->
     <xacro:property name="wheel_base" value="0.125" />       <!-- entre ejes, adelante a atras -->
+    <!-- Separacion "efectiva" para el control y la odometria (solo el plugin DiffDrive de Gazebo).
+         Con 4 ruedas el robot gira derrapando: al girar en el lugar las ruedas patinan
+         de costado y el robot gira menos de lo que dicen las ruedas. Con 0.135 la
+         odometria decia 166 grados cuando el robot habia girado 108 (medido en Gazebo
+         el 4/11/2026). Agrandar la separacion compensa eso. El robot real va a necesitar
+         su propio valor, medido igual: girarlo una vuelta y comparar. -->
+    <xacro:property name="wheel_separation_efectiva" value="0.21" />
     <xacro:property name="left_axis" value="${wheel_separation/2}" />
     <xacro:property name="right_axis" value="${-wheel_separation/2}" />
     <xacro:property name="front_axis" value="${wheel_base/2}" />

@@ -14,7 +14,7 @@
             <right_joint>right_front_wheel_joint</right_joint>
             <right_joint>right_back_wheel_joint</right_joint>
 
-            <wheel_separation>${wheel_separation}</wheel_separation>
+            <wheel_separation>${wheel_separation_efectiva}</wheel_separation>
             <wheel_radius>${wheel_radius}</wheel_radius>
 
             <topic>/cmd_vel</topic>
