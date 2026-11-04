@@ -1,8 +1,9 @@
 """Turn the color masks into cubes, arrows and zones.
 
 Every blob of a mask is exactly one of them, tried in this order: an arrow if
-it has the arrow's notches, then a zone if it is big, then a cube if it is a
-filled square.
+it has the arrow's notches, then a zone if it is big and measures like one on
+the floor, then a cube if it is a filled square (a nearby cube is as big as a
+zone).
 """
 from dataclasses import dataclass, field
 
@@ -10,7 +11,7 @@ import cv2
 import numpy as np
 
 from huggin_vision.arrow import (
-    angle_to_dir, distance_from_head, length_class, measure_arrow)
+    ArrowSpec, angle_to_dir, distance_from_head, length_class, measure_arrow)
 from huggin_vision.cube_fit import fit_cube_silhouette, is_cube_shaped, make_pose
 from huggin_vision.detections import ARROW, CUBE, Detection
 from huggin_vision.geometry import rotation_to_quaternion
@@ -29,6 +30,7 @@ class DetectorConfig:
     min_area_arrow: int = 100
     min_area_zone: int = 4000
     arrow_tolerance_deg: float = 15.0
+    arrow: ArrowSpec = field(default_factory=ArrowSpec)
     zone: ZoneConfig = field(default_factory=ZoneConfig)
 
 
@@ -51,12 +53,13 @@ def detect_arrow(color, contour, camera, config):
     measure = measure_arrow(contour, config.min_area_arrow)
     if measure is None:
         return None
-    name, confidence = length_class(measure)
+    name, confidence = length_class(measure, config.arrow)
     if confidence < MIN_ARROW_CONFIDENCE:
         return None
 
     # The arrow faces the camera, so its width gives its distance
-    depth = distance_from_head(measure, camera.matrix[0, 0])
+    depth = distance_from_head(
+        measure, camera.matrix[0, 0], config.arrow.head_width)
     end_points = [camera.to_floor(camera.pixel_ray(*p) * depth)
                   for p in (measure.tail, measure.tip)]
     angle_deg = measure.angle_deg
@@ -79,12 +82,14 @@ def detect_blobs(color, mask, camera, config):
     for contour in contours:
         # The shape goes first: a nearby arrow is as big as a zone
         detection = detect_arrow(color, contour, camera, config)
-        if detection is None:
-            if cv2.contourArea(contour) >= config.min_area_zone:
-                detection = detect_zone(
-                    color, contour, camera, mask.shape, config.zone)
-            elif is_cube_shaped(contour, config.min_area_cube):
-                detection = detect_cube(color, contour, camera, config)
+        if detection is None \
+                and cv2.contourArea(contour) >= config.min_area_zone:
+            detection = detect_zone(
+                color, contour, camera, mask.shape, config.zone)
+        # A big blob that is not a zone can still be a nearby cube
+        if detection is None and is_cube_shaped(
+                contour, config.min_area_cube):
+            detection = detect_cube(color, contour, camera, config)
         if detection is not None:
             found.append(detection)
     return found

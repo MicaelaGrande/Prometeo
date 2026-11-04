@@ -20,3 +20,13 @@ def test_pure_colors_land_in_their_own_mask():
     assert masks['red'][15, 15] and not masks['red'][15, 45]
     assert masks['blue'][15, 45] and not masks['blue'][15, 15]
     assert masks['green'][15, 75] and not masks['green'][15, 15]
+
+
+def test_hue_range_wraps_around_red():
+    # Red seen at both ends of the hue circle: H 5 and H 175
+    hsv = np.zeros((10, 30, 3), np.uint8)
+    hsv[:, :10] = (5, 200, 200)
+    hsv[:, 10:20] = (175, 200, 200)
+    hsv[:, 20:] = (90, 200, 200)  # cyan, not red
+    mask = color_masks(hsv, {'red': ((165, 70, 70), (10, 255, 255))})['red']
+    assert mask[5, 5] and mask[5, 15] and not mask[5, 25]

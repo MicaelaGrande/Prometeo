@@ -4,8 +4,11 @@ The arrow is a block arrow: a 30 mm wide body and a 70 mm wide, 50 mm long
 triangular head. Its body is 30 (close), 60 (normal) or 100 mm (far) long.
 Only the image outline is used, so the length class comes from the ratio of
 the length to the head width, which does not depend on the distance.
+
+The sizes of the arrows in use are an ArrowSpec, so they can be changed from
+the parameters; the constants below are the defaults.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
@@ -14,6 +17,8 @@ HEAD_WIDTH = 0.070  # m
 BODY_WIDTH = 0.030  # m
 TIP_LENGTH = 0.050  # m
 BODY_LENGTHS = {'close': 0.030, 'normal': 0.060, 'far': 0.100}  # m
+# Whole length, tail to tip, of each class
+TOTAL_LENGTHS = {name: body + TIP_LENGTH for name, body in BODY_LENGTHS.items()}
 
 # Notches where the body meets the head: depth relative to sqrt(area)
 MIN_NOTCH_DEPTH = 0.12
@@ -24,6 +29,16 @@ TAPER_RANGE = (0.75, 0.95)  # part of each half used to tell head from tail
 MAX_TIP_WIDTH = 0.6  # head width near the tip / head width
 
 DIRECTIONS = {'right': 0, 'up': 90, 'left': 180, 'down': 270}
+
+
+@dataclass
+class ArrowSpec:
+    """Real size of the arrows (meters)."""
+
+    # Width of the head at its base, where it meets the body
+    head_width: float = HEAD_WIDTH
+    # Whole length, tail to tip, per length class
+    lengths: dict = field(default_factory=lambda: dict(TOTAL_LENGTHS))
 
 
 @dataclass
@@ -122,15 +137,16 @@ def measure_arrow(contour, min_area=100):
         head_width=head_width)
 
 
-def length_class(measure):
-    """Return (name, confidence) of the body length class of an arrow.
+def length_class(measure, spec=None):
+    """Return (name, confidence) of the length class of an arrow.
 
-    Compares length / head width with the three real arrows. confidence is 1
+    Compares length / head width with the arrows of spec. confidence is 1
     at an exact match and 0 half way to the next class.
     """
+    spec = spec or ArrowSpec()
     ratio = measure.length / measure.head_width
-    nominal = {name: (body + TIP_LENGTH) / HEAD_WIDTH
-               for name, body in BODY_LENGTHS.items()}
+    nominal = {name: length / spec.head_width
+               for name, length in spec.lengths.items()}
     name = min(nominal, key=lambda n: abs(nominal[n] - ratio))
     spacing = min(abs(nominal[name] - other) for other in nominal.values()
                   if other != nominal[name])
@@ -146,6 +162,9 @@ def angle_to_dir(angle, tolerance=15):
     return 'UNK'
 
 
-def distance_from_head(measure, focal_px):
-    """Distance along the optical axis, assuming the arrow faces the camera."""
-    return focal_px * HEAD_WIDTH / measure.head_width
+def distance_from_head(measure, focal_px, head_width=HEAD_WIDTH):
+    """Distance along the optical axis, assuming the arrow faces the camera.
+
+    head_width is the real width of the head (meters).
+    """
+    return focal_px * head_width / measure.head_width

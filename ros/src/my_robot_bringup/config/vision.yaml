@@ -23,7 +23,7 @@ vision_node:
       # Mount of the camera relative to the output frame (meters / degrees)
       x: 0.09
       y: 0.0
-      height: 0.127  # above the floor
+      height: 0.14  # above the floor, measured on the robot (lens)
       pitch_deg: 0.0  # tilted down
       pan_center_deg: 90.0  # servo angle that looks straight ahead
       pan_sign: 1.0  # +1 if a higher servo angle turns the camera left
@@ -38,6 +38,16 @@ vision_node:
     # How far an arrow may be from right/up/left/down to be named so (degrees)
     arrow_tolerance_deg: 15.0
 
+    # Real size of the arrows (meters). The class comes from length / head_width.
+    # Valores del reglamento (los del PDF). Flechas de prueba de carton:
+    # head_width 0.029, length close 0.030, normal 0.060, far 0.100
+    arrow:
+      head_width: 0.070  # width of the head at its base, where it meets the body
+      length:  # whole length, tail to tip
+        close: 0.080
+        normal: 0.110
+        far: 0.150
+
     # Minimum blob area (pixels, at frame_width x frame_height). Blobs at
     # least as big as min_area.zone are zones.
     min_area:
@@ -46,16 +56,20 @@ vision_node:
       zone: 4000
 
     # HSV thresholds per color: [H (0-179), S (0-255), V (0-255)]
+    # Ajustados a la ESP32-CAM: imagen lavada (poca saturacion). El rojo esta
+    # en los dos extremos del circulo de tonos (objetos ~176-179, pantalla ~1-6):
+    # si el H de lower es mayor que el de upper, el rango da la vuelta
+    # (165-179 y 0-10)
     hsv:
       red:
-        lower: [0, 120, 80]
+        lower: [165, 70, 70]
         upper: [10, 255, 255]
       blue:
-        lower: [100, 120, 80]
+        lower: [100, 70, 60]
         upper: [130, 255, 255]
       green:
-        lower: [40, 80, 80]
-        upper: [80, 255, 255]
+        lower: [40, 70, 60]
+        upper: [85, 255, 255]
 
     # RGB (0-1) used for the RViz markers and the annotated image
     marker_color:

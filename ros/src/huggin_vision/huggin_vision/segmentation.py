@@ -30,7 +30,23 @@ def clean_mask(mask):
     return cv2.morphologyEx(mask, cv2.MORPH_OPEN, OPEN_KERNEL)
 
 
+def in_range(hsv, lower, upper):
+    """Binary mask of the pixels between lower and upper.
+
+    If the lower hue is above the upper one the range wraps around the end
+    of the hue circle, as red does: [165, ...] to [10, ...] takes 165-179 and
+    0-10.
+    """
+    if lower[0] <= upper[0]:
+        return cv2.inRange(hsv, tuple(lower), tuple(upper))
+    high = cv2.inRange(hsv, (lower[0], lower[1], lower[2]),
+                       (179, upper[1], upper[2]))
+    low = cv2.inRange(hsv, (0, lower[1], lower[2]),
+                      (upper[0], upper[1], upper[2]))
+    return cv2.bitwise_or(high, low)
+
+
 def color_masks(hsv, ranges):
     """Return {color: cleaned binary mask} for a {color: (lower, upper)}."""
-    return {color: clean_mask(cv2.inRange(hsv, tuple(lower), tuple(upper)))
+    return {color: clean_mask(in_range(hsv, lower, upper))
             for color, (lower, upper) in ranges.items()}

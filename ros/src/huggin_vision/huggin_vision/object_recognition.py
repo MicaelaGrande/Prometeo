@@ -20,6 +20,7 @@ from visualization_msgs.msg import MarkerArray
 from cv_bridge import CvBridge
 from huggin_vision_msgs.msg import Detection, DetectionArray
 
+from huggin_vision.arrow import TOTAL_LENGTHS, ArrowSpec
 from huggin_vision.blobs import DetectorConfig, detect_blobs
 from huggin_vision.camera_model import (
     CameraMount, CameraView, view_from_mount)
@@ -95,6 +96,9 @@ class VisionNode(Node):
         self.declare_parameter('zone_tolerance', config.zone.tolerance)
         self.declare_parameter('arrow_tolerance_deg',
                                config.arrow_tolerance_deg)
+        self.declare_parameter('arrow.head_width', config.arrow.head_width)
+        for name, length in config.arrow.lengths.items():
+            self.declare_parameter(f'arrow.length.{name}', length)
         self.declare_parameter('min_area.cube', config.min_area_cube)
         self.declare_parameter('min_area.arrow', config.min_area_arrow)
         self.declare_parameter('min_area.zone', config.min_area_zone)
@@ -128,6 +132,10 @@ class VisionNode(Node):
             min_area_arrow=self._param('min_area.arrow'),
             min_area_zone=self._param('min_area.zone'),
             arrow_tolerance_deg=self._param('arrow_tolerance_deg'),
+            arrow=ArrowSpec(
+                head_width=self._param('arrow.head_width'),
+                lengths={name: self._param(f'arrow.length.{name}')
+                         for name in TOTAL_LENGTHS}),
             zone=ZoneConfig(self._param('zone_size'),
                             self._param('zone_tolerance')))
 

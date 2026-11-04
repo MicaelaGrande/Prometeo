@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import pytest
 
 from huggin_vision.blobs import DetectorConfig, detect_blobs
 from huggin_vision.camera_model import view_from_mount
@@ -52,6 +53,17 @@ def test_nearby_arrow_is_not_a_zone():
     found = detect_blobs('green', mask, CAMERA, config)
     assert kinds(found) == ['arrow']
     assert found[0].length_class == 'normal'
+
+
+@pytest.mark.parametrize('distance', [0.10, 0.15])
+def test_nearby_cube_is_not_lost(distance):
+    # Seen from nearby the cube is bigger than min_area_zone, and still a cube
+    mask = fill(np.zeros(SHAPE, np.uint8), cube_contour([0.0, 0.01, distance]))
+    config = DetectorConfig()
+    assert cv2.countNonZero(mask) >= config.min_area_zone
+    found = detect_blobs('red', mask, CAMERA, config)
+    assert kinds(found) == ['cube']
+    assert abs(found[0].camera_pose.position.z - distance) < 0.02
 
 
 def test_empty_mask():
