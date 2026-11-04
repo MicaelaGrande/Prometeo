@@ -5,6 +5,7 @@
 #include "motores.h"
 #include "sensores.h"
 #include "seguridad.h"
+#include "sdkconfig.h"
 
 #define SEGURIDAD_TASK_STACK 3072
 #define SEGURIDAD_TASK_PRIO  6     // arriba de micro-ROS (5): el freno no espera al WiFi
@@ -20,7 +21,7 @@ static const char *TAG_SEG = "seguridad";
 
 /* Velocidad con avance = 1. ESTIMADO (motor TT a 6 V, rueda 65 mm):
  * medir cronometrando cuanto tarda en recorrer 1 m a fondo. */
-#define VEL_MAX_CM_S   70.0f
+#define VEL_MAX_CM_S   (CONFIG_PROMETEO_VEL_MAX_MM_S / 10.0f)   /* menuconfig: Prometeo - Cinematica */
 
 /* Lo que sigue rodando despues de cortar, en "segundos de marcha" (por eso
  * crece con la velocidad). ESTIMADO: medir lanzandolo contra una marca. */
