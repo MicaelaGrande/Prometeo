@@ -237,6 +237,15 @@ float servo_get_angulo(servo_id_t s)
     return v;
 }
 
+float servo_get_actual(servo_id_t s)
+{
+    if (!id_valido(s)) return 0;
+    portENTER_CRITICAL(&cerrojo);
+    float v = actual[s];
+    portEXIT_CRITICAL(&cerrojo);
+    return v;
+}
+
 bool servo_en_movimiento(servo_id_t s)
 {
     if (!id_valido(s)) return false;
