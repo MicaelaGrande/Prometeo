@@ -3,6 +3,8 @@
 #include "driver/ledc.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include <math.h>
+#include <stdint.h>
 #include "motores.h"
 
 static const char *TAG = "motores";
@@ -31,8 +33,9 @@ static const char *TAG = "motores";
 static const int invertido[CANT_MOTORES] = { 0, 0, 0, 0 };
 
 // Qué motores van de cada lado (AJUSTAR según el chasis)
-static const motor_id_t lado_izq[] = { MOTOR_A, MOTOR_C };
-static const motor_id_t lado_der[] = { MOTOR_B, MOTOR_D };
+// A = delantero izq, B = trasero izq, C = delantero der, D = trasero der (igual que en menuconfig)
+static const motor_id_t lado_izq[] = { MOTOR_A, MOTOR_B };
+static const motor_id_t lado_der[] = { MOTOR_C, MOTOR_D };
 
 // {pin IA, pin IB} de cada motor
 static const int pines[CANT_MOTORES][2] = {
@@ -45,7 +48,9 @@ static const int pines[CANT_MOTORES][2] = {
 static volatile float objetivo[CANT_MOTORES] = {0};
 static volatile float actual[CANT_MOTORES]   = {0};
 
-static volatile int64_t ultima_orden_us = 0;
+// 32 bits: en el ESP32 un int64 se lee en dos pasos y la tarea de rampa podía leer
+// un valor a medio escribir (falso failsafe). Se compara con resta sin signo (vale hasta 71 min).
+static volatile uint32_t ultima_orden_us = 0;
 static volatile bool en_falla = true;   // arranca frenado hasta la primera orden
 
 static void escribir(int canal, int valor)
@@ -86,8 +91,8 @@ static void rampa_task(void *arg)
     TickType_t t = xTaskGetTickCount();
     while (1) {
         // ---- FAILSAFE ----
-        int64_t ahora = esp_timer_get_time();
-        if (!en_falla && (ahora - ultima_orden_us) > (int64_t)TIMEOUT_MS * 1000) {
+        uint32_t ahora = (uint32_t)esp_timer_get_time();
+        if (!en_falla && (uint32_t)(ahora - ultima_orden_us) > (uint32_t)TIMEOUT_MS * 1000u) {
             ESP_LOGW(TAG, "Sin ordenes por %d ms -> FRENO DE EMERGENCIA", TIMEOUT_MS);
             motores_frenar();
             en_falla = true;
@@ -138,9 +143,16 @@ void motores_init(void)
 
 void motor_set(motor_id_t m, float v)
 {
+    if (isnan(v)) v = 0.0f;   // un NaN en la rampa no se recupera nunca
     if (v > 1.0f)  v = 1.0f;
     if (v < -1.0f) v = -1.0f;
     objetivo[m] = v;
+}
+
+void motores_alimentar(void)
+{
+    ultima_orden_us = (uint32_t)esp_timer_get_time();
+    en_falla = false;
 }
 
 void motores_set(float izq, float der)
@@ -149,8 +161,33 @@ void motores_set(float izq, float der)
         motor_set(lado_izq[i], izq);
         motor_set(lado_der[i], der);
     }
-    ultima_orden_us = esp_timer_get_time();   // "llegó una orden fresca"
+    ultima_orden_us = (uint32_t)esp_timer_get_time();   // "llegó una orden fresca"
     en_falla = false;                         // vuelve a arrancar desde 0 con rampa
+}
+
+// ===== CINEMÁTICA DIFERENCIAL (4 ruedas, skid-steer) =====
+// Las ruedas de cada lado giran juntas. Al girar patinan, por eso el ancho
+// efectivo es mayor que el real: se corrige con PROMETEO_TURN_FACTOR_PCT.
+#define VEL_MAX_MPS   (CONFIG_PROMETEO_VEL_MAX_MM_S / 1000.0f)
+#define ANCHO_EFECT_M (CONFIG_PROMETEO_WHEEL_SEPARATION_MM / 1000.0f * CONFIG_PROMETEO_TURN_FACTOR_PCT / 100.0f)
+
+void motores_set_twist(float v_mps, float w_rads)
+{
+    // Velocidad de cada lado en m/s
+    float v_izq = v_mps - w_rads * ANCHO_EFECT_M / 2.0f;
+    float v_der = v_mps + w_rads * ANCHO_EFECT_M / 2.0f;
+
+    // A duty -1..1
+    float izq = v_izq / VEL_MAX_MPS;
+    float der = v_der / VEL_MAX_MPS;
+
+    // Si un lado se pasa de 1, escalar los dos: se conserva el radio de giro
+    float mayor = fmaxf(fabsf(izq), fabsf(der));
+    if (mayor > 1.0f) {
+        izq /= mayor;
+        der /= mayor;
+    }
+    motores_set(izq, der);
 }
 
 void motores_frenar(void)
@@ -160,6 +197,33 @@ void motores_frenar(void)
         actual[m] = 0;
         aplicar((motor_id_t)m, 0);
     }
+}
+
+// Velocidad estimada a partir del duty que se está aplicando (no hay encoders):
+// replica la zona muerta de aplicar() y usa la misma cinemática que motores_set_twist().
+static float velocidad_motor_mps(motor_id_t m)
+{
+    float a = actual[m];
+    float mag = (a < 0) ? -a : a;
+    if (mag <= 0.001f) return 0.0f;
+    float v = (ZONA_MUERTA + mag * (1.0f - ZONA_MUERTA)) * VEL_MAX_MPS;
+    // 'invertido' ya está compensado en aplicar(): la rueda gira físicamente según el signo de 'actual'
+    if (a < 0) v = -v;
+    return v;
+}
+
+void motores_get_velocidad(float *v_mps, float *w_rads)
+{
+    float vi = 0, vd = 0;
+    int n = sizeof(lado_izq) / sizeof(lado_izq[0]);
+    for (int i = 0; i < n; i++) {
+        vi += velocidad_motor_mps(lado_izq[i]);
+        vd += velocidad_motor_mps(lado_der[i]);
+    }
+    vi /= n;
+    vd /= n;
+    *v_mps  = (vi + vd) / 2.0f;
+    *w_rads = (vd - vi) / ANCHO_EFECT_M;
 }
 
 bool motores_en_falla(void) { return en_falla; }
