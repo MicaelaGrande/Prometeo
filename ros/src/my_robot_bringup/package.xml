@@ -11,6 +11,8 @@
 
   <exec_depend>huggin_vision</exec_depend>
   <exec_depend>prometeo_sensores</exec_depend>
+  <!-- PROVISORIO: imitacion de la ESP32 en Gazebo -->
+  <exec_depend>provisorio_bajo_nivel_sim</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>

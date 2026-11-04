@@ -86,6 +86,20 @@ def generate_launch_description():
         output='screen',
     )
 
+    # PROVISORIO: imita el centrado y el freno de la ESP32 (ver provisorio_bajo_nivel_sim).
+    # Sin este nodo, Gazebo no recibe ordenes: bridge.yaml escucha /cmd_vel_corregido.
+    centrado_simulado = Node(
+        package='provisorio_bajo_nivel_sim',
+        executable='centrado_simulado',
+        parameters=[
+            PathJoinSubstitution([
+                get_package_share_directory('provisorio_bajo_nivel_sim'),
+                'config', 'centrado_simulado.yaml']),
+            {'use_sim_time': True},
+        ],
+        output='screen',
+    )
+
     return LaunchDescription(
         arguments
         + [
@@ -94,6 +108,7 @@ def generate_launch_description():
             gazebo_nodes,
             hcsr04_sim,
             distancias_a_range,
+            centrado_simulado,  # PROVISORIO
             ros_control,
         ]
     )

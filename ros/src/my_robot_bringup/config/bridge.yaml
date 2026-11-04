@@ -8,7 +8,9 @@
   direction: GZ_TO_ROS
 
 # ===== Control diferencial / odometría =====
-- ros_topic_name: "/cmd_vel"
+# PROVISORIO: Gazebo escucha la orden ya corregida por provisorio_bajo_nivel_sim
+# (centrado y freno). Al borrar ese paquete, volver a "/cmd_vel".
+- ros_topic_name: "/cmd_vel_corregido"
   gz_topic_name: "/cmd_vel"
   ros_type_name: "geometry_msgs/msg/Twist"
   gz_type_name: "gz.msgs.Twist"
