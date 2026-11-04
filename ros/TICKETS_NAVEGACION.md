@@ -167,6 +167,22 @@ centrado), 2) detectar curva, bifurcación o callejón, 3) girar 90° con la odo
 en la acción `/mover`. T2 no elige hacia dónde doblar: avisa qué lugar encontró y Decisión elige
 según las flechas de visión.
 
+**Aviso de lugar (acordado el 4/11/2026):** cada vez que T2 encuentra una curva, una
+bifurcación o un callejón, publica en el topic `/navegacion/lugar`. Lo escuchan Mapeo (T3) y
+Decisión (T7). Lleva:
+
+| Campo | Ejemplo | Qué es |
+|---|---|---|
+| `tipo` | `bifurcacion` | `curva`, `bifurcacion` o `callejon` |
+| `x`, `y` | `1.20`, `0.40` | Dónde estaba el robot, en metros, según `/odom` |
+| `orientacion` | `0.0` | Hacia dónde miraba, en radianes, según `/odom` |
+| `salidas` | `izquierda`, `adelante` | Por dónde se puede seguir, desde el robot. No incluye por dónde vino |
+
+T2 manda las salidas desde su punto de vista y T3 las pasa a norte, sur, este y oeste para la
+libreta. **Norte no es el norte real:** es hacia donde miraba el robot al arrancar (orientación 0
+en `/odom`). Oeste es 90°, sur 180° y este 270°. T3 redondea al múltiplo de 90° más cercano,
+porque la odometría se desvía al girar.
+
 **Mejora posible, para después:** usar la cámara para ver paredes buscando la línea donde la
 pared toca el piso, con la misma cuenta que `camera_model.py` usa para las zonas. No salva a Nav2
 (ve 60° hacia adelante y no resuelve la localización), pero puede ayudar al control a anticipar
@@ -188,7 +204,7 @@ emergencia propio: revisar que no frene de más en los pasillos angostos.
 ### T3. Mapeo: libreta del recorrido
 
 - **Objetivo:** guardar por dónde pasó el robot y qué caminos probó. No hay ningún mapa precargado: la libreta empieza vacía en cada ronda.
-- **Entradas:** `/odom`, ultrasonidos y los lugares que detecta Navegación alta.
+- **Entradas:** `/odom`, ultrasonidos y los lugares que detecta Navegación alta, por `/navegacion/lugar` (ver T2).
 - **Salidas:** un grafo de lugares, con su posición y el estado de cada salida.
 - **Terminado cuando:**
     - [ ] Registra cada curva, bifurcación y callejón.
