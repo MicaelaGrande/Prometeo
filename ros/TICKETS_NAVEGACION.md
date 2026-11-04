@@ -239,9 +239,15 @@ Con el reglamento actual no se puede sumar LiDAR, por eso conviene esto y no un 
     - [ ] Funciona con el cubo en al menos 3 posiciones distintas.
     - [ ] La distancia final le sirve al brazo.
 
-**Riesgo:** el cubo mide 2 cm y el ultrasonido frontal está a unos 8,5 cm del piso, según el
-modelo. Probablemente no lo vea, así que frenar a tiempo depende de la cámara. Tampoco debe
-pasarlo por encima ni empujarlo.
+**El cubo está sobre un cilindro negro a la altura del chasis (unos 10,5 cm), según el equipo.
+Falta saber el diámetro.** El ultrasonido de adelante (a unos 8 cm del piso) va a ver el cilindro:
+- Sirve para medir cuánto falta para llegar al cubo.
+- Navegación alta no debe tomarlo como un callejón: si Visión ve un cubo adelante, lo que mide el
+  frente es el cilindro, y Decisión toma el control para acercarse.
+- El freno de emergencia lo va a frenar: hay que usar el modo recoger (`/seguridad_habilitada` en
+  false) para acercarse.
+
+Tampoco debe empujar el cilindro.
 
 **Riesgo de visión:** con la cámara simulada mirando derecho, el cubo se ve desde unos 0,5 m y sale
 de la imagen a unos 0,27 m de la cámara. Los últimos 14 cm hasta el cubo el robot no lo ve. Hay
@@ -385,3 +391,4 @@ Suposiciones que hay que confirmar:
 | ¿Desde dónde se cuentan los segmentos que indica la flecha? | Sin eso, Navegación alta no sabe cuánto falta para la curva. | Organización |
 | ¿Cómo se traduce cada dirección de flecha en una salida? | T7 no puede elegir un camino sin esto. | Equipo |
 | ¿Son 2 o 4 encoders? | El código tiene 2. Afecta la calidad de `/odom`. | Bajo nivel |
+| ¿Cuánto mide de diámetro el cilindro que sostiene el cubo? | Define a qué distancia lo ve el ultrasonido y hace falta para ponerlo en la simulación. | Organización |
