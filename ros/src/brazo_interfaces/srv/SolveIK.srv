@@ -1,0 +1,8 @@
+# Pide la cinemática inversa para un punto (base frame, metros). No mueve el brazo.
+geometry_msgs/Point target
+---
+bool ok
+string message
+# [base, hombro, codo] en grados de servo (misma convención que /brazo/cmd)
+float32[] servo_deg
+float32 elbow_interior_deg

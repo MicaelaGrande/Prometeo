@@ -1,0 +1,20 @@
+# TODO: todos estos valores son PLACEHOLDERS tipo MeArm. Medir el brazo real y calibrar.
+/**:
+  ros__parameters:
+    frame_id: base_link
+    # Geometría [m]
+    L1: 0.080            # TODO medir: brazo superior
+    L2: 0.080            # TODO medir: antebrazo
+    h: 0.070             # TODO medir: altura del pivote del hombro
+    d: 0.0               # TODO medir: offset horizontal del pivote
+    e: 0.055             # TODO medir: muñeca -> punta, horizontal
+    c: 0.060             # TODO medir: muñeca -> punta, vertical (+ = punta abajo)
+    # Ángulo interior del codo permitido por el paralelogramo [grados]
+    gamma_min_deg: 25.0  # TODO
+    gamma_max_deg: 150.0 # TODO
+    # servo = sign * ángulo_deg + offset ; orden [base, hombro, codo]
+    sign: [1.0, 1.0, 1.0]            # TODO calibrar
+    offset_deg: [90.0, 0.0, 0.0]     # TODO calibrar
+    # Deben coincidir (o ser más estrictos) que lim_min/lim_max en micro_ros/drivers/mg90s/mg90s.c
+    servo_min_deg: [0.0, 0.0, 0.0]
+    servo_max_deg: [180.0, 180.0, 180.0]

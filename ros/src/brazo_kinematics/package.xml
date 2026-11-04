@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>brazo_kinematics</name>
+  <version>0.0.0</version>
+  <description>Cinemática inversa del brazo de paralelogramo (3 DOF + garra)</description>
+  <maintainer email="ignacio.facello@mi.unc.edu.ar">ifacello</maintainer>
+  <license>Apache-2.0</license>
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>brazo_interfaces</depend>
+  <test_depend>python3-pytest</test_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>
