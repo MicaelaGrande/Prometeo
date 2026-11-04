@@ -296,6 +296,10 @@ le quedan en teoría 4,6 cm por lado, sin contar el brazo.
 Para centrarse compara la distancia a cada pared, sin suponer un ancho fijo. Estos dos criterios
 eran de T2 y los toma Bajo nivel.
 
+**En simulación:** mientras la ESP32 no se centre sola, `ros/src/provisorio_bajo_nivel_sim/`
+imita el centrado y el freno en Gazebo, para poder probar T2. El freno es una copia de
+`micro_ros/main/seguridad.c`. Es provisorio: cómo borrarlo está en su `LEEME_BORRAR.md`.
+
 **Estado de los encoders:** `driver_encoders` tiene 2 sensores de un solo canal y publica
 `/velocidad_ruedas`, siempre positiva. Con eso no se distingue adelante de atrás, y todavía no hay
 `/odom`. Una opción es tomar el sentido de la orden de `/cmd_vel`. El código usa una rueda de 65 mm
