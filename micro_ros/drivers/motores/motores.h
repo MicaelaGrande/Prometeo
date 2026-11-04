@@ -26,6 +26,9 @@ typedef enum {
 // ===== FUNCIONES =====
 void motores_init(void);                       // configura PWM y arranca frenado
 void motor_set(motor_id_t m, float velocidad); // -1.0 atrás ... 0 ... +1.0 adelante
+void motores_alimentar(void);                  // alimenta el failsafe sin cambiar objetivos (para usar motor_set suelto)
 void motores_set(float izq, float der);        // lado izq y der (alimenta el failsafe)
+void motores_set_twist(float v_mps, float w_rads); // cinemática diferencial de 4 ruedas: m/s y rad/s (+ adelante, + izquierda)
 void motores_frenar(void);                     // freno de emergencia inmediato
+void motores_get_velocidad(float *v_mps, float *w_rads); // velocidad ESTIMADA a lazo abierto (sin encoders): m/s y rad/s
 bool motores_en_falla(void);                   // true si frenó por falta de órdenes
