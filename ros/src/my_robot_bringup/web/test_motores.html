@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prometeo - Test de motores</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1d2330; --muted: #6a7385; --line: #dde1e8;
+    --ok: #1a8f4c; --warn: #b7791f; --bad: #c0392b; --idle: #6a7385; --accent: #2f62c8; --accent-text: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171d; --card: #1d222b; --text: #e7eaf0; --muted: #9aa3b5; --line: #2d3442;
+            --ok: #3ccf7a; --warn: #e3a93b; --bad: #ff6b5b; --idle: #9aa3b5; --accent: #6b9cff; --accent-text: #0f1420; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+           padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+  h1 { margin: 0; font-size: 1.15rem; }
+  h2 { margin: 0 0 12px; font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px;
+          border: 1px solid var(--line); font-size: .9rem; color: var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--idle); }
+  .ok .dot { background: var(--ok); } .warn .dot { background: var(--warn); } .bad .dot { background: var(--bad); }
+  main { display: grid; gap: 16px; padding: 16px; max-width: 1100px; margin: 0 auto; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .modo { font-size: 1.6rem; font-weight: 700; text-transform: uppercase; }
+  .modo.auto { color: var(--ok); } .modo.manual { color: var(--warn); } .modo.pausa { color: var(--idle); }
+  .info { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .motors { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .motor { border: 2px solid var(--line); border-radius: 10px; padding: 12px; }
+  .motor.activo { border-color: var(--accent); }
+  .motor h3 { margin: 0; font-size: 1.1rem; display: flex; justify-content: space-between; align-items: baseline; }
+  .motor small { color: var(--muted); display: block; margin-bottom: 8px; }
+  .res { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .85rem; border: 1px solid var(--line); }
+  .res.probado, .res.ok { color: var(--ok); border-color: var(--ok); }
+  .res.probando { color: var(--warn); border-color: var(--warn); }
+  .res.fallo { color: var(--bad); border-color: var(--bad); }
+  .bar { height: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; position: relative; margin: 10px 0; }
+  .bar::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); }
+  .bar .fill { position: absolute; top: 0; bottom: 0; background: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  button { font: inherit; cursor: pointer; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--card); color: var(--text); }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.ok { color: var(--ok); } button.fail { color: var(--bad); }
+  button.stop { background: var(--bad); color: #fff; border-color: var(--bad); font-weight: 700; padding: 12px 28px; font-size: 1.05rem; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .ctl { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  label { display: flex; justify-content: space-between; color: var(--muted); font-size: .9rem; }
+  input[type=range] { width: 100%; }
+  select, input[type=number] { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+                               background: var(--card); color: var(--text); }
+  #log { font: .82rem/1.5 ui-monospace, Menlo, Consolas, monospace; max-height: 180px; overflow: auto; color: var(--muted); }
+  #log b { color: var(--text); }
+  .aviso { color: var(--warn); font-size: .9rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Prometeo · Test de motores</h1>
+  <div class="pills">
+    <span class="pill" id="p-ws"><span class="dot"></span><span>rosbridge</span></span>
+    <span class="pill" id="p-esp"><span class="dot"></span><span>ESP32</span></span>
+    <span class="pill" id="p-fs"><span class="dot"></span><span>failsafe</span></span>
+  </div>
+</header>
+
+<main>
+  <section>
+    <div class="top">
+      <div>
+        <h2>Estado</h2>
+        <div class="modo pausa" id="modo">—</div>
+        <div class="info" id="detalle">esperando datos…</div>
+      </div>
+      <div class="row" style="margin:0">
+        <button class="stop" id="b-stop" title="Barra espaciadora">PARAR</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Motores</h2>
+    <div class="motors" id="motores"></div>
+    <p class="aviso">“probado” = el motor fue accionado, no hay realimentación: mirá si la rueda giró y marcá ok / fallo.</p>
+  </section>
+
+  <section>
+    <h2>Controles</h2>
+    <div class="ctl">
+      <div>
+        <label>Ciclo automático</label>
+        <div class="row">
+          <button class="primary" data-cmd="auto">▶ Auto</button>
+          <button data-cmd="siguiente">⏭ Siguiente motor</button>
+          <button data-cmd="reset">⟲ Reiniciar</button>
+        </div>
+        <div style="margin-top:14px">
+          <label><span>Máx. del ciclo, los 4 motores</span><b id="vmax-v">0.60</b></label>
+          <input type="range" id="vmax" min="0.1" max="1" step="0.05" value="0.6">
+          <div class="row"><button id="b-vmax">Aplicar a todos</button></div>
+          <small style="color:var(--muted)">Cada motor tiene su propio máximo en su tarjeta.</small>
+        </div>
+      </div>
+      <div>
+        <label>Manual: los 4 motores, cada uno a su potencia</label>
+        <div class="row" style="align-items:center">
+          <label style="gap:6px;align-items:center">duración (de todos los manuales)
+            <input type="number" id="m-ms" value="1500" min="100" max="10000" step="100" style="width:90px"> ms</label>
+        </div>
+        <div style="margin-top:10px">
+          <label><span>Potencia de todos (fija los 4 sliders)</span><b id="m-duty-v">0.50</b></label>
+          <input type="range" id="m-duty" min="0" max="1" step="0.05" value="0.5">
+        </div>
+        <div class="row">
+          <button class="primary" id="b-fwd">▲ Adelante todos</button>
+          <button class="primary" id="b-back">▼ Atrás todos</button>
+        </div>
+      </div>
+      <div>
+        <label>Comando de texto</label>
+        <div class="row">
+          <input type="text" id="txt" placeholder="set B 0.5 1500" style="flex:1;min-width:0;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text)">
+          <button id="b-txt">Enviar</button>
+        </div>
+        <small style="color:var(--muted)">auto · reset · pausa · siguiente · set X duty [ms] · setall a b c d [ms] · vmax [X] v · ok X · fallo X</small>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Registro</h2>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+// Parámetros en la URL: ?ns=prometeo&ws=9091&host=<ip>
+const q = new URLSearchParams(location.search);
+const NS = "/" + (q.get("ns") || "prometeo");
+const HOST = q.get("host") || location.hostname || "localhost";
+const WS_URL = `ws://${HOST}:${q.get("ws") || 9091}`;
+const T_ESTADO = NS + "/motores_test/estado";
+const T_CMD = NS + "/motores_test/cmd";
+const VIEJO_MS = 1500;
+
+const MOTORES = [["A", "delantero izquierdo"], ["B", "trasero izquierdo"],
+                 ["C", "delantero derecho"], ["D", "trasero derecho"]];
+const $ = id => document.getElementById(id);
+let ultimo = 0, ws, reintento = 1000, estadoActual = null;
+
+// ---- UI de motores ----
+$("motores").innerHTML = MOTORES.map(([l, d]) => `
+  <div class="motor" id="mot-${l}">
+    <h3><span>Motor ${l}</span><span class="res" id="res-${l}">—</span></h3>
+    <small>${d}</small>
+    <div class="bar"><div class="fill" id="bar-${l}"></div></div>
+    <div class="info" id="acc-${l}">detenido</div>
+    <label style="margin-top:10px"><span>Manual</span><b id="md-v-${l}">0.50</b></label>
+    <input type="range" id="md-${l}" min="0" max="1" step="0.05" value="0.5">
+    <div class="row">
+      <button class="primary" data-fwd="${l}">▲</button>
+      <button class="primary" data-back="${l}">▼</button>
+    </div>
+    <label style="margin-top:10px"><span>Máx. del ciclo auto</span><b id="vm-v-${l}">0.60</b></label>
+    <input type="range" id="vm-${l}" min="0.1" max="1" step="0.05" value="0.6">
+    <div class="row">
+      <button class="ok" data-ok="${l}">✔ ok</button>
+      <button class="fail" data-fallo="${l}">✘ fallo</button>
+    </div>
+  </div>`).join("");
+
+function pill(id, clase, texto) {
+  const el = $(id); el.className = "pill " + clase;
+  if (texto) el.lastElementChild.textContent = texto;
+}
+function log(msg, tipo) {
+  msg = String(msg).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const l = $("log"), t = new Date().toLocaleTimeString();
+  l.insertAdjacentHTML("afterbegin", `<div>${t} ${tipo === "tx" ? "<b>→</b>" : "←"} ${msg}</div>`);
+  while (l.children.length > 60) l.lastChild.remove();
+}
+
+// ---- estado recibido ----
+function mostrar(e) {
+  estadoActual = e;
+  const modo = $("modo"); modo.textContent = e.modo; modo.className = "modo " + e.modo;
+  $("detalle").textContent = `ciclo ${e.ciclo}` +
+    (e.motor ? ` · motor ${e.motor} ${e.accion} (${Number(e.duty).toFixed(2)})` : "");
+  pill("p-fs", e.failsafe ? "warn" : "ok", e.failsafe ? "motores frenados" : "motores activos");
+  for (const [l] of MOTORES) {
+    const idx = MOTORES.findIndex(m => m[0] === l);
+    const r = e.resultados[l] || "pendiente", d = Number(e.duties[idx]) || 0, activo = Math.abs(d) > 0.001;
+    $("res-" + l).textContent = r; $("res-" + l).className = "res " + r;
+    $("mot-" + l).classList.toggle("activo", activo);
+    const w = Math.abs(d) * 50;
+    const bar = $("bar-" + l);
+    bar.style.left = d >= 0 ? "50%" : (50 - w) + "%"; bar.style.width = w + "%";
+    $("acc-" + l).textContent = activo ? `${d > 0 ? "adelante" : "atrás"} · ${d.toFixed(2)}` : "detenido";
+  }
+  for (const [l] of MOTORES) {   // máximo del ciclo de cada motor, tal como lo tiene el ESP32
+    const s = $("vm-" + l);
+    if (document.activeElement !== s) { s.value = e.vmax[l]; $("vm-v-" + l).textContent = e.vmax[l].toFixed(2); }
+  }
+  ultimo = Date.now();
+}
+
+// ---- rosbridge ----
+function enviarCmd(texto) {
+  if (!ws || ws.readyState !== 1) { log("sin conexión: no se envió “" + texto + "”"); return false; }
+  ws.send(JSON.stringify({ op: "publish", topic: T_CMD, msg: { data: texto } }));
+  log(texto, "tx");
+  return true;
+}
+function conectar() {
+  pill("p-ws", "warn", "rosbridge: conectando…");
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    reintento = 1000; pill("p-ws", "ok", "rosbridge");
+    ws.send(JSON.stringify({ op: "subscribe", topic: T_ESTADO, type: "std_msgs/msg/String" }));
+    ws.send(JSON.stringify({ op: "advertise", topic: T_CMD, type: "std_msgs/msg/String" }));
+  };
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.op === "publish" && m.topic === T_ESTADO) {
+      try { mostrar(JSON.parse(m.msg.data)); } catch (err) { log("estado ilegible: " + m.msg.data); }
+    } else if (m.op === "status" && m.level === "error") log("rosbridge: " + m.msg);
+  };
+  ws.onclose = () => { pill("p-ws", "bad", "rosbridge: sin conexión"); setTimeout(conectar, reintento); reintento = Math.min(reintento * 1.5, 8000); };
+  ws.onerror = () => ws.close();
+}
+setInterval(() => {
+  if (ultimo && Date.now() - ultimo < VIEJO_MS) pill("p-esp", "ok", "ESP32 conectado");
+  else pill("p-esp", ultimo ? "bad" : "warn", ultimo ? "ESP32 sin datos" : "ESP32 esperando…");
+}, 500);
+
+// ---- controles ----
+document.querySelectorAll("[data-cmd]").forEach(b => b.onclick = () => enviarCmd(b.dataset.cmd));
+document.querySelectorAll("[data-ok]").forEach(b => b.onclick = () => enviarCmd("ok " + b.dataset.ok));
+document.querySelectorAll("[data-fallo]").forEach(b => b.onclick = () => enviarCmd("fallo " + b.dataset.fallo));
+// Por motor: ▲/▼ usan su slider "Manual"; el slider "Máx. del ciclo" se manda al soltarlo
+function manualMotor(l, signo) {
+  enviarCmd(`set ${l} ${(signo * Number($("md-" + l).value)).toFixed(2)} ${$("m-ms").value}`);
+}
+for (const [l] of MOTORES) {
+  document.querySelector(`[data-fwd="${l}"]`).onclick = () => manualMotor(l, +1);
+  document.querySelector(`[data-back="${l}"]`).onclick = () => manualMotor(l, -1);
+  $("md-" + l).oninput = () => $("md-v-" + l).textContent = Number($("md-" + l).value).toFixed(2);
+  $("vm-" + l).oninput = () => $("vm-v-" + l).textContent = Number($("vm-" + l).value).toFixed(2);
+  $("vm-" + l).onchange = () => { enviarCmd(`vmax ${l} ${Number($("vm-" + l).value).toFixed(2)}`); $("vm-" + l).blur(); };
+}
+const parar = () => enviarCmd("pausa");
+$("b-stop").onclick = parar;
+document.addEventListener("keydown", ev => {
+  if (ev.code === "Space" && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) { ev.preventDefault(); parar(); }
+});
+$("vmax").oninput = () => $("vmax-v").textContent = Number($("vmax").value).toFixed(2);
+// El slider global fija de una vez el slider "Manual" de los 4 motores (después se puede ajustar cada uno)
+$("m-duty").oninput = () => {
+  const v = Number($("m-duty").value);
+  $("m-duty-v").textContent = v.toFixed(2);
+  for (const [l] of MOTORES) {
+    $("md-" + l).value = v;
+    $("md-v-" + l).textContent = v.toFixed(2);
+  }
+};
+$("b-vmax").onclick = () => enviarCmd("vmax " + Number($("vmax").value).toFixed(2));
+// Los 4 a la vez, cada uno con el valor de SU slider "Manual" (0 = ese motor queda quieto)
+function manual(signo) {
+  const d = MOTORES.map(([l]) => (signo * Number($("md-" + l).value)).toFixed(2));
+  enviarCmd(`setall ${d.join(" ")} ${$("m-ms").value}`);
+}
+$("b-fwd").onclick = () => manual(+1);
+$("b-back").onclick = () => manual(-1);
+$("b-txt").onclick = () => { const t = $("txt").value.trim(); if (t && enviarCmd(t)) $("txt").value = ""; };
+$("txt").onkeydown = ev => { if (ev.key === "Enter") $("b-txt").click(); };
+
+conectar();
+</script>
+</body>
+</html>
