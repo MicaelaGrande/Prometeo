@@ -91,48 +91,48 @@ menu "Prometeo - Pines GPIO"
 
     config PROMETEO_MOTOR_A1_PIN
         int "Motor A (delantero izquierdo) - pin IA"
-        range 0 39
+        range 0 33
         default 21
 
     config PROMETEO_MOTOR_A2_PIN
         int "Motor A (delantero izquierdo) - pin IB"
-        range 0 39
+        range 0 33
         default 22
 
     comment "== Trasero Izquierdo (motor B) =="
 
     config PROMETEO_MOTOR_B1_PIN
         int "Motor B (trasero izquierdo) - pin IA"
-        range 0 39
+        range 0 33
         default 16
 
     config PROMETEO_MOTOR_B2_PIN
         int "Motor B (trasero izquierdo) - pin IB"
-        range 0 39
+        range 0 33
         default 23
 
     comment "== Delantero Derecho (motor C) =="
 
     config PROMETEO_MOTOR_C1_PIN
         int "Motor C (delantero derecho) - pin IA"
-        range 0 39
+        range 0 33
         default 18
 
     config PROMETEO_MOTOR_C2_PIN
         int "Motor C (delantero derecho) - pin IB"
-        range 0 39
+        range 0 33
         default 19
 
     comment "== Trasero Derecho (motor D) =="
 
     config PROMETEO_MOTOR_D1_PIN
         int "Motor D (trasero derecho) - pin IA"
-        range 0 39
+        range 0 33
         default 17
 
     config PROMETEO_MOTOR_D2_PIN
         int "Motor D (trasero derecho) - pin IB"
-        range 0 39
+        range 0 33
         default 25
 
 endmenu
@@ -214,5 +214,31 @@ menu "Prometeo - Test de motores"
         depends on PROMETEO_BUILD_MOTOR_TEST
         range 100 10000
         default 700
+
+endmenu
+
+menu "Prometeo - Test del driver L9110S"
+
+    config PROMETEO_BUILD_L9110S_TEST
+        bool "Compilar el firmware de TEST DEL DRIVER L9110S (en vez del normal)"
+        depends on !PROMETEO_BUILD_MOTOR_TEST
+        default n
+        help
+            Compila main/main_test_l9110s.c: corre una bateria de tests sobre
+            drivers/l9110s y reporta resultados por micro-ROS
+            (/prometeo/l9110s_test/estado, /log y /cmd). Levantar las ruedas del piso.
+            Excluyente con el test de motores.c (usan los mismos canales LEDC).
+
+    config PROMETEO_L9110S_TEST_DUTY_PCT
+        int "Potencia de los tests (%)"
+        depends on PROMETEO_BUILD_L9110S_TEST
+        range 40 100
+        default 60
+
+    config PROMETEO_L9110S_TEST_AUTOSTART_DELAY_S
+        int "Correr 'run all' solo, N segundos despues de conectar con el agente (0 = esperar el comando)"
+        depends on PROMETEO_BUILD_L9110S_TEST
+        range 0 60
+        default 0
 
 endmenu
