@@ -18,10 +18,13 @@ cd ros && colcon build && cd ..
 
 ## 1. Conectar el robot real
 
-**Agente de micro-ROS** (deja que la ESP32 hable con ROS). Dejar esta terminal abierta:
+**Agente de micro-ROS** (deja que la ESP32 hable con ROS). Está instalado en
+`~/Documentos/Robotica/micro_ws`. Dejar esta terminal abierta:
 
 ```bash
-docker run -it --rm --net=host microros/micro-ros-agent:jazzy udp4 --port 8888
+source /opt/ros/jazzy/setup.bash
+source ~/Documentos/Robotica/micro_ws/install/local_setup.bash
+ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888
 ```
 
 **Ver qué firmware tiene cargado la ESP32:**
