@@ -3,6 +3,107 @@
 Todo funciona **sin internet**. Los comandos se corren desde la carpeta del repo
 (`~/Documentos/Robotica/Prometeo`).
 
+## Paso a paso: hacer andar el panel con el robot real
+
+Hacen falta **2 terminales** y el navegador. Seguir los pasos en orden y revisar cada
+"✔ Anduvo si…" antes de pasar al siguiente.
+
+### Paso 1. La compu en la red correcta
+
+La ESP32 se conecta a una red WiFi y busca al agente en **una IP fija**, que se elige al
+cargarle el firmware. La compu tiene que estar en esa red y **tener esa IP**.
+
+Según la última configuración guardada en git (`micro_ros/sdkconfig`, que ya no está en el repo):
+
+| Dato | Valor | Dónde se cambia |
+|---|---|---|
+| Red WiFi | `Ingenieria` | `CONFIG_ESP_WIFI_SSID` |
+| IP del agente (la compu) | `172.16.0.208` | `CONFIG_MICRO_ROS_AGENT_IP` |
+| Puerto | `8888` | `CONFIG_MICRO_ROS_AGENT_PORT` |
+
+Ver la IP de la compu:
+
+```bash
+hostname -I
+```
+
+✔ Anduvo si la primera IP que aparece es la del firmware. **Si no coincide, la ESP32 no se va a
+conectar nunca.** Hay dos salidas: fijarle esa IP a la compu en la configuración del WiFi, o
+volver a cargar el firmware con la IP de la compu. Preguntarle a quien cargó el firmware
+(Natasha) qué red e IP usó, porque puede no ser la de esta tabla.
+
+**En la competencia la red va a ser otra**, así que esto hay que resolverlo allá, antes de la
+ronda.
+
+### Paso 2. Terminal 1: el agente de micro-ROS
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/Documentos/Robotica/micro_ws/install/local_setup.bash
+ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888
+```
+
+Dejar esta terminal abierta. Prender el robot.
+
+✔ Anduvo si al rato aparecen líneas con `session established` y `create_publisher` /
+`create_subscriber`. Si no aparece nada, volver al paso 1.
+
+### Paso 3. Terminal 2: ver que la ESP32 está en ROS
+
+```bash
+cd ~/Documentos/Robotica/Prometeo
+source /opt/ros/jazzy/setup.bash
+source ros/install/setup.bash
+ros2 node list
+```
+
+✔ Anduvo si aparece `/prometeo/body`. Si aparece `/nodo_motores_esp32`, es el firmware viejo:
+en el paso 4 agregar `ns:=''` al final del comando.
+
+### Paso 4. Terminal 2: arrancar el panel
+
+En la misma terminal 2:
+
+```bash
+ros2 launch my_robot_bringup panel.launch.py
+```
+
+✔ Anduvo si aparece `Rosbridge WebSocket server started on port 9092` y
+`Selector listo en modo manual`.
+
+### Paso 5. Abrir el panel
+
+En el navegador de la misma compu: **http://localhost:8082**
+
+✔ Anduvo si arriba los tres indicadores están en verde: **rosbridge**, **selector** y
+**sensores**, y el modo dice **Manual**.
+
+| Indicador en rojo | Qué pasa | Qué hacer |
+|---|---|---|
+| rosbridge | la página no habla con ROS | revisar que el paso 4 siga corriendo |
+| selector | el selector no arrancó | mirar los errores en la terminal 2 |
+| sensores | no llegan los ultrasonidos | revisar el agente (paso 2) y `ros2 node list` (paso 3) |
+
+### Paso 6. Probar con las ruedas en el aire
+
+1. Levantar el robot para que las ruedas no toquen nada.
+2. Hacer clic en la página (para que lea las teclas) y apretar la flecha **↑**.
+3. ✔ Anduvo si las ruedas giran hacia adelante y en "Orden que recibe la ESP32" dice
+   `avance 0.15 m/s`.
+4. Probar **ESPACIO**: las ruedas tienen que frenar.
+5. Recién ahí, apoyarlo en el piso.
+
+**Ojo:** con este firmware no hay freno de emergencia. Manejar despacio.
+
+### Ver el panel desde otra compu o el celular (opcional)
+
+Tiene que estar en la misma red WiFi que la compu. En el navegador: `http://<ip-de-la-compu>:8082`
+(la IP del paso 1). Desde el celular **no se puede manejar** (no tiene teclado), pero funcionan
+los botones Manual, Automático y PARAR. En la competencia, preguntar a los jueces antes de
+conectar un celular a la red del robot.
+
+---
+
 ## 0. En cada terminal nueva
 
 ```bash
@@ -97,7 +198,9 @@ ros2 topic echo /prometeo/orden_enviada           # lo que se le manda a la ESP3
 ros2 topic echo /prometeo/distancias --qos-reliability best_effort   # [izq, der, frente] en cm
 ```
 
-## 5. Simulación (Gazebo)
+## 5. Simulación (Gazebo), solo para practicar sin el robot
+
+**En la competencia no hace falta.** Sirve para probar el panel hoy, sin el robot.
 
 ```bash
 ros2 launch my_robot_bringup gazebo.launch.py world_name:=laberinto
