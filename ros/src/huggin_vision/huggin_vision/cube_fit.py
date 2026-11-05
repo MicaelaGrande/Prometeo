@@ -17,14 +17,18 @@ MIN_FILL_RATIO = 0.7  # blob area / min-area rectangle area
 # Fit settings
 MIN_DEPTH = 0.05  # m, closer candidates are rejected
 FACE_ON_WEIGHT = 0.03  # prior favoring face-on, a square blob is ambiguous
-DEPTH_SCAN = (0.6, 1.5, 25)  # (low, high, samples) around the initial depth
+DEPTH_SCAN = (0.6, 1.5, 12)  # (low, high, samples) around the initial depth
 DEPTH_GUESS_SCALE = 1.2  # initial depth from blob area is a bit short
-REFINE_ITERS = 80
+REFINE_ITERS = 60
+# The fit shrinks the blob to at most this many pixels: the overlap (IoU)
+# does not change with the scale, and each render is much cheaper
+FIT_SIZE = 48
 DEPTH_STEP = 0.03  # relative to depth
 ROTATION_STEP = 0.2  # rad
 # Initial rotation vectors (Rodrigues) tried; the cost has local minima
 ROTATION_STARTS = [(0, 0, 0), (0.6, 0, 0), (0, 0.6, 0), (0.5, 0.5, 0.4),
                    (-0.5, 0.4, 0.2), (0, 0, 0.78)]
+REFINED_STARTS = 3  # only the starts whose depth scan fits best are refined
 
 
 def nelder_mead(f, x0, step, iters=60):
@@ -68,7 +72,7 @@ def blob_roi_mask(contour):
     render in the fit is cheap.
     """
     x, y, w, h = cv2.boundingRect(contour)
-    pad = max(w, h)
+    pad = max(w, h) // 2 + 2
     origin = (x - pad, y - pad)
     target = np.zeros((h + 2 * pad, w + 2 * pad), np.uint8)
     cv2.drawContours(target, [contour - origin], -1, 255, cv2.FILLED)
@@ -103,25 +107,35 @@ def fit_cube_silhouette(contour, camera_matrix, cube_size):
     fx, fy = camera_matrix[0, 0], camera_matrix[1, 1]
     cx, cy = camera_matrix[0, 2], camera_matrix[1, 2]
     vertices = cube_vertices(cube_size)
-    target, origin = blob_roi_mask(contour)
 
     m = cv2.moments(contour)
     u, v = m['m10'] / m['m00'], m['m01'] / m['m00']
     ray = np.array([(u - cx) / fx, (v - cy) / fy, 1.0])
 
+    # Fit on a shrunk copy: the blob and the camera scaled alike
+    scale = min(1.0, FIT_SIZE / max(cv2.boundingRect(contour)[2:]))
+    small = np.round(contour * scale).astype(np.int32)
+    small_matrix = camera_matrix.copy()
+    small_matrix[:2] *= scale
+    target, origin = blob_roi_mask(small)
+
     def cost(params):
-        return silhouette_iou_cost(params, vertices, ray, camera_matrix,
+        return silhouette_iou_cost(params, vertices, ray, small_matrix,
                                    target, origin)
 
     depth_guess = (DEPTH_GUESS_SCALE * fx * cube_size
                    / np.sqrt(cv2.contourArea(contour)))
     low, high, samples = DEPTH_SCAN
-    best, best_cost = None, np.inf
+    # The cost is sharp in depth, so scan it from every start (cheap) and
+    # refine only the starts that fit best (expensive)
+    scanned = []
     for rvec in ROTATION_STARTS:
-        # The cost is sharp in depth, so scan it before refining
-        depth = min(np.linspace(low * depth_guess, high * depth_guess,
-                                samples),
-                    key=lambda d: cost(np.array([d, *rvec])))
+        depths = np.linspace(low * depth_guess, high * depth_guess, samples)
+        costs = [cost(np.array([d, *rvec])) for d in depths]
+        scanned.append((min(costs), depths[int(np.argmin(costs))], rvec))
+    scanned.sort(key=lambda s: s[0])
+    best, best_cost = None, np.inf
+    for _, depth, rvec in scanned[:REFINED_STARTS]:
         step = [DEPTH_STEP * depth] + [ROTATION_STEP] * 3
         x, c = nelder_mead(cost, [depth, *rvec], step, REFINE_ITERS)
         if c < best_cost:

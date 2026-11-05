@@ -35,18 +35,23 @@ vision_node:
     zone_size: 0.40
     zone_tolerance: 0.25
 
-    # How far an arrow may be from right/up/left/down to be named so (degrees)
-    arrow_tolerance_deg: 15.0
+    # How far an arrow may be from right/up/left/down to be named so (degrees).
+    # Las flechas pueden estar giradas hasta 30 grados; maximo 45
+    arrow_tolerance_deg: 40.0
 
-    # Real size of the arrows (meters). The class comes from length / head_width.
-    # Valores del reglamento (los del PDF). Flechas de prueba de carton:
-    # head_width 0.029, length close 0.030, normal 0.060, far 0.100
+    # Real size of the arrows (meters): medidas de la competencia (4/11/2026).
+    # The blob is compared with these three shapes to get the class.
     arrow:
-      head_width: 0.070  # width of the head at its base, where it meets the body
-      length:  # whole length, tail to tip
-        close: 0.080
-        normal: 0.110
-        far: 0.150
+      body_width: 0.010
+      head_width: 0.028  # width of the head at its base, where it meets the body
+      body_length:  # tail to the base of the head
+        close: 0.018
+        normal: 0.045
+        far: 0.075
+      head_length:  # base of the head to the tip
+        close: 0.011
+        normal: 0.012
+        far: 0.020
 
     # Minimum blob area (pixels, at frame_width x frame_height). Blobs at
     # least as big as min_area.zone are zones.
@@ -55,20 +60,35 @@ vision_node:
       arrow: 100
       zone: 4000
 
+    # Distancia a la pared desde el ultrasonido de adelante, para medir el
+    # largo real de las flechas (la forma engaña: la camara destiñe las
+    # puntas de la cabeza). Sin lectura reciente se clasifica por forma
+    wall_range:
+      topic: /ultrasonido/frente
+      to_camera: 0.045   # cuanto mas atras del ultrasonido esta la camara (m), medido
+      max_age: 0.5       # lectura mas vieja que esto no se usa (s)
+      max_pan_deg: 20.0  # camara girada mas que esto: el ultrasonido mide otra pared
+
+    # Umbral de saturacion automatico: en cada imagen se mide la saturacion
+    # del fondo (mediana) y la de cada color, y el umbral queda a mitad de
+    # camino. Un color tiene que estar al menos esto por encima del fondo.
+    # Asi no depende de la luz. 0 = usar la S fija de hsv.*.lower
+    saturation_margin: 15.0
+
     # HSV thresholds per color: [H (0-179), S (0-255), V (0-255)]
-    # Ajustados a la ESP32-CAM: imagen lavada (poca saturacion). El rojo esta
-    # en los dos extremos del circulo de tonos (objetos ~176-179, pantalla ~1-6):
-    # si el H de lower es mayor que el de upper, el rango da la vuelta
-    # (165-179 y 0-10)
+    # Con saturation_margin > 0, la S de lower es solo un piso de seguridad.
+    # El rojo esta en los dos extremos del circulo de tonos (objetos ~176-179,
+    # pantalla ~1-6): si el H de lower es mayor que el de upper, el rango da
+    # la vuelta (165-179 y 0-10)
     hsv:
       red:
-        lower: [165, 70, 70]
+        lower: [165, 30, 60]
         upper: [10, 255, 255]
       blue:
-        lower: [100, 70, 60]
+        lower: [100, 30, 60]
         upper: [130, 255, 255]
       green:
-        lower: [40, 70, 60]
+        lower: [40, 30, 60]
         upper: [85, 255, 255]
 
     # RGB (0-1) used for the RViz markers and the annotated image

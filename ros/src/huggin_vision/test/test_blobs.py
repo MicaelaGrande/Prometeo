@@ -30,7 +30,7 @@ def kinds(detections):
 def test_one_detection_per_object():
     mask = np.zeros(SHAPE, np.uint8)
     fill(mask, zone_contour(CAMERA, (0.8, 0.0)))
-    arrow = render_arrow(0.06, 600, 90, size=240)  # 240x240 at the corner
+    arrow = render_arrow('normal', 1500, 90, size=240)  # 240x240 at the corner
     fill(mask, arrow + [10, 10])
     ray = CAMERA.rotation.T @ np.array([0.45, -0.1, 0.01]) \
         - CAMERA.rotation.T @ CAMERA.translation
@@ -47,12 +47,36 @@ def test_one_detection_per_object():
 
 def test_nearby_arrow_is_not_a_zone():
     # Seen from nearby the arrow is bigger than min_area_zone, and still an arrow
-    mask = fill(np.zeros(SHAPE, np.uint8), render_arrow(0.06, 1200, 90) + [10, 10])
+    mask = fill(np.zeros(SHAPE, np.uint8),
+                render_arrow('normal', 3500, 90) + [10, 10])
     config = DetectorConfig()
     assert cv2.countNonZero(mask) >= config.min_area_zone
     found = detect_blobs('green', mask, CAMERA, config)
     assert kinds(found) == ['arrow']
     assert found[0].length_class == 'normal'
+
+
+def test_arrow_cut_by_the_edge_is_not_reported():
+    mask = fill(np.zeros(SHAPE, np.uint8),
+                render_arrow('far', 2000, 0) - [150, 0])  # tail out of view
+    found = detect_blobs('red', mask, CAMERA, DetectorConfig())
+    assert 'arrow' not in kinds(found)
+
+
+@pytest.mark.parametrize('name', ['close', 'normal', 'far'])
+def test_wall_distance_gives_class_and_position(name):
+    # The camera (focal 500 px) sees the arrow on a wall 0.4 m away
+    depth = 0.4
+    mask = fill(np.zeros(SHAPE, np.uint8),
+                render_arrow(name, K[0, 0] / depth, 0) + [120, 40])
+    found = detect_blobs('blue', mask, CAMERA,
+                         DetectorConfig(wall_depth=depth))
+    assert kinds(found) == ['arrow']
+    assert found[0].length_class == name
+    # In the camera frame the arrow is at the wall distance
+    in_camera = CAMERA.rotation.T @ (np.array(found[0].position)
+                                     - CAMERA.translation)
+    assert in_camera[2] == pytest.approx(depth, rel=0.01)
 
 
 @pytest.mark.parametrize('distance', [0.10, 0.15])

@@ -26,7 +26,10 @@ def label_lines(detection):
     name = f'{detection.color} {detection.kind}'
     x, y, z = detection.position
     if detection.kind == CUBE:
-        return [f'{name} {np.linalg.norm(detection.position):.2f}m',
+        # Straight distance from the lens to the cube center, along the
+        # floor (camera frame: x right, z forward; the height is left out)
+        lens = detection.camera_pose.position
+        return [f'{name} {np.hypot(lens.x, lens.z):.2f}m',
                 f'x={x:+.2f} y={y:+.2f}']
     if detection.kind == ARROW:
         return [f'{name} {detection.direction} {detection.length_class}',
