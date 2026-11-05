@@ -41,6 +41,18 @@ def lectura_vigente(medida_cm, hora_s, ahora_s, edad_maxima_s):
     return medida_cm
 
 
+
+def frente_muy_cerca(frente_cm, distancia_cm):
+    """True si el frente esta mas cerca que distancia_cm. None si no hay dato.
+
+    Sirve para confirmar un costado abierto sin esperar las N lecturas: si el
+    robot esperara, podria llegar a la pared antes de terminar de contar.
+    Un "no se sabe" (None) no saltea la espera.
+    """
+    if frente_cm is None:
+        return None
+    return frente_cm <= distancia_cm
+
 class Confirmador:
     """Confirma que un costado esta abierto cuando lo ve N veces seguidas.
 
@@ -60,3 +72,28 @@ class Confirmador:
             self.cuenta = 0
         # None (no se sabe): la cuenta queda igual
         return self.cuenta >= self.lecturas_necesarias
+
+
+# ===================== Maquina de estados =====================
+# Se acuerda de en que etapa esta el robot, para avisar una sola vez por lugar
+# (como tocar el timbre una vez y esperar, en vez de tocarlo sin parar).
+
+# Las etapas del detector. Constantes, igual que PENDIENTE y PROBADA en libreta.py.
+ENTRANDO = 'entrando'              # todavia no esta entre dos paredes
+EN_PASILLO = 'en_pasillo'          # entre dos paredes, mirando los costados
+MIDIENDO_LUGAR = 'midiendo_lugar'  # vio un costado abierto, decide que lugar es
+AVISADO = 'avisado'                # ya aviso, espera a Decision (el timbre ya se toco)
+
+
+class DetectorDeLugares:
+    """Se acuerda de en que etapa esta el robot, para avisar una sola vez por lugar."""
+
+    def __init__(self, margen_pasillo_cm):
+        self.margen_pasillo_cm = margen_pasillo_cm
+        self.etapa = ENTRANDO
+
+    def actualizar(self, izquierda_cm, derecha_cm):
+        """Recibe las lecturas de los costados y cambia de etapa si corresponde."""
+        if self.etapa == ENTRANDO:
+            if entro_al_pasillo(izquierda_cm, derecha_cm, self.margen_pasillo_cm):
+                self.etapa = EN_PASILLO

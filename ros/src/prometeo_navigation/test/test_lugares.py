@@ -7,7 +7,8 @@
 import math
 
 from prometeo_navigation.lugares import (
-    Confirmador, costado_abierto, entro_al_pasillo, lectura_vigente)
+    ENTRANDO, EN_PASILLO, Confirmador, DetectorDeLugares, costado_abierto,
+    entro_al_pasillo, frente_muy_cerca, lectura_vigente)
 
 
 def test_entro_si_las_dos_paredes_estan_parecidas():
@@ -90,3 +91,43 @@ def test_no_se_sabe_deja_la_cuenta_igual():
     assert confirmador.agregar(None) is False
     assert confirmador.cuenta == 2
     assert confirmador.agregar(True) is True
+
+
+def test_frente_lejos_no_esta_muy_cerca():
+    assert frente_muy_cerca(80, distancia_cm=15) is False
+
+
+def test_frente_cerca_esta_muy_cerca():
+    assert frente_muy_cerca(10, distancia_cm=15) is True
+
+
+def test_frente_justo_en_la_distancia_cuenta_como_cerca():
+    assert frente_muy_cerca(15, distancia_cm=15) is True
+
+
+def test_frente_sin_eco_no_esta_cerca():
+    assert frente_muy_cerca(math.inf, distancia_cm=15) is False
+
+
+def test_frente_sin_dato_no_se_sabe():
+    assert frente_muy_cerca(None, distancia_cm=15) is None
+
+
+def test_el_detector_arranca_entrando():
+    detector = DetectorDeLugares(margen_pasillo_cm=5)
+
+    assert detector.etapa == ENTRANDO
+
+
+def test_con_paredes_parecidas_pasa_a_en_pasillo():
+    detector = DetectorDeLugares(margen_pasillo_cm=5)
+    detector.actualizar(18, 22)
+
+    assert detector.etapa == EN_PASILLO
+
+
+def test_con_una_pared_lejos_sigue_entrando():
+    detector = DetectorDeLugares(margen_pasillo_cm=5)
+    detector.actualizar(10, 30)
+
+    assert detector.etapa == ENTRANDO
