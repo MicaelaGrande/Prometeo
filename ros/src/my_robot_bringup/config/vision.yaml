@@ -85,7 +85,7 @@ vision_node:
         lower: [165, 30, 60]
         upper: [10, 255, 255]
       blue:
-        lower: [100, 30, 60]
+        lower: [100, 70, 60]
         upper: [130, 255, 255]
       green:
         lower: [40, 30, 60]
