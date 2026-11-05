@@ -26,6 +26,15 @@ El freno de `provisorio_bajo_nivel_sim/calculos.py` copia `micro_ros/main/seguri
 ese archivo está en C para la ESP32 y no compila en la PC. Si Bajo nivel cambia los números de
 `seguridad.c`, hay que actualizarlos acá. El centrado no es copia: todavía no existe en la ESP32.
 
+## Ahora también se usa con el robot real (5/11/2026)
+
+Desde el 5/11 este mismo nodo es la **asistencia de la Categoría B** en el robot real (freno por
+obstáculo y centrado, en la compu): `panel.launch.py asistencia:=true` lo arranca con el nombre
+`asistencia` y la configuración `my_robot_bringup/config/asistencia_robot_real.yaml`.
+
+**No borrarlo** sin antes reemplazar eso (por ejemplo, con el freno y el centrado en la ESP32),
+o sacar la opción `asistencia` de `panel.launch.py`.
+
 ## Cuándo borrarlo
 
 Cuando la ESP32 del robot real se centre sola y T9 esté terminado.

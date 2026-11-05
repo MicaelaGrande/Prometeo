@@ -19,6 +19,10 @@ def generate_launch_description():
     Puertos: 8082 pagina, 9092 rosbridge, 8083 camara. No choca con test_motores
     (8081/9091) ni con el dashboard (8080/9090).
 
+    Asistencia de la Cat. B (asistencia:=true, solo robot real): freno por obstaculo y
+    centrado entre el selector y la ESP32, con config/asistencia_robot_real.yaml. En Gazebo
+    no hace falta: gazebo.launch.py ya la corre (nodo provisorio).
+
     Arranca tambien el joystick Xbox (joystick:=false para no) y la camara (camara:=false
     para no). La camara se busca sola en la red (buscar_camara.py: prueba camara_ip si se
     pasa, y si no recorre la red buscando la que tiene la MAC camara_mac) y arranca
@@ -39,6 +43,8 @@ def generate_launch_description():
         DeclareLaunchArgument('ws_port', default_value='9092', description='puerto de rosbridge'),
         DeclareLaunchArgument('con_selector', default_value='true',
                               description='arrancar tambien el selector de modo'),
+        DeclareLaunchArgument('asistencia', default_value='false',
+                              description='freno por obstaculo y centrado en la compu (robot real)'),
         DeclareLaunchArgument('joystick', default_value='true',
                               description='arrancar el joystick Xbox'),
         DeclareLaunchArgument('camara', default_value='true',
@@ -63,7 +69,7 @@ def generate_launch_description():
         " '/orden_enviada', '/estado_selector', '/pedido_operador', '/seguridad_habilitada',"
         " '/distancias', '/odom', '/navegacion/aviso', '/mapeo/libreta',"
         " '/estado_motores', '/velocidad', '/velocidad_ruedas', '/freno_emergencia',"
-        " '/servos/estado', '/joy']] + ['/vision/detections']) + ']'",
+        " '/servos/estado', '/joy', '/freno_asistencia']] + ['/vision/detections']) + ']'",
     ])
 
     rosbridge = Node(
@@ -79,13 +85,43 @@ def generate_launch_description():
         output='screen',
     )
 
-    selector = Node(
-        package='prometeo_navigation',
-        executable='selector_modo',
-        namespace=ns,
-        output='screen',
-        condition=IfCondition(LaunchConfiguration('con_selector')),
-    )
+    # Sin asistencia, el selector le manda directo a la ESP32 (cmd_vel). Con asistencia, la
+    # manda a cmd_vel_seleccionado y la asistencia es la que publica cmd_vel.
+    con_selector = LaunchConfiguration('con_selector')
+    asistencia_si = LaunchConfiguration('asistencia')
+    selector = [
+        Node(package='prometeo_navigation', executable='selector_modo', namespace=ns,
+             output='screen',
+             condition=IfCondition(PythonExpression(
+                 ["'", con_selector, "' == 'true' and '", asistencia_si, "' != 'true'"]))),
+        Node(package='prometeo_navigation', executable='selector_modo', namespace=ns,
+             output='screen', remappings=[('cmd_vel', 'cmd_vel_seleccionado')],
+             condition=IfCondition(PythonExpression(
+                 ["'", con_selector, "' == 'true' and '", asistencia_si, "' == 'true'"]))),
+    ]
+
+    # Asistencia (Cat. B): el mismo programa y la misma cuenta que en Gazebo, conectado al
+    # robot real con remapeos (no se toca su codigo).
+    con_asistencia = IfCondition(asistencia_si)
+    asistencia = [
+        # /prometeo/distancias -> /ultrasonido/izq, /der, /frente (Range, en metros)
+        Node(package='prometeo_sensores', executable='distancias_a_range',
+             remappings=[('/distancias', [prefijo, '/distancias'])],
+             condition=con_asistencia),
+        Node(package='provisorio_bajo_nivel_sim', executable='centrado_simulado',
+             name='asistencia',
+             parameters=[PathJoinSubstitution([FindPackageShare('my_robot_bringup'), 'config',
+                                               'asistencia_robot_real.yaml'])],
+             remappings=[
+                 ('/cmd_vel', [prefijo, '/cmd_vel_seleccionado']),
+                 ('/cmd_vel_corregido', [prefijo, '/cmd_vel']),
+                 # su propio aviso, para no pisar el freno_emergencia de la ESP32
+                 ('/freno_emergencia', [prefijo, '/freno_asistencia']),
+                 # el mismo boton del panel prende y apaga los dos frenos
+                 ('/seguridad_habilitada', [prefijo, '/seguridad_habilitada']),
+             ],
+             output='screen', condition=con_asistencia),
+    ]
 
     # Joystick: game_controller_node lee el control (numeracion estandar), teleop_twist_joy
     # lo convierte en movimiento por cmd_vel_joy (pasa por el selector) y joystick_modo
@@ -154,4 +190,5 @@ def generate_launch_description():
     aviso = LogInfo(msg=['Panel: http://localhost:', LaunchConfiguration('web_port'),
                          '/  (namespace "', ns, '")'])
 
-    return LaunchDescription(arguments + [rosbridge, selector, web, aviso] + camara + joystick)
+    return LaunchDescription(arguments + [rosbridge, web, aviso] + selector + asistencia
+                             + camara + joystick)

@@ -228,8 +228,9 @@
           <button id="b-seg-off">Apagar</button>
           <span class="info" id="seg-info">Sin cambios desde el panel.</span>
         </div>
-        <div class="nota roja">Con el firmware de <code>navegacion_bajo</code> este freno está desconectado y estos botones no hacen nada todavía
-          (pendiente, ver T11). Apagarlo sirve para acercarse a un objeto, por ejemplo para agarrar el cubo.</div>
+        <div class="nota">Prende y apaga los dos frenos por obstáculo: el de la <b>compu</b> (asistencia, si el panel se arrancó con
+          <code>asistencia:=true</code>) y el de la ESP32 (en <code>navegacion_bajo</code> está desconectado, pendiente en T11).
+          Apagarlo sirve para acercarse a un objeto, por ejemplo para agarrar el cubo. El centrado sigue funcionando.</div>
       </div>
 
       <!-- AUTOMATICO -->
@@ -324,7 +325,7 @@ const T = {
   distancias: P + "/distancias", odom: P + "/odom", aviso: P + "/navegacion/aviso", libreta: P + "/mapeo/libreta",
   estadoMot: P + "/estado_motores", velocidad: P + "/velocidad", ruedas: P + "/velocidad_ruedas",
   frenoObst: P + "/freno_emergencia", servos: P + "/servos/estado", deteccion: "/vision/detections",
-  joy: P + "/joy",
+  joy: P + "/joy", frenoAsist: P + "/freno_asistencia",
 };
 const TIPOS = {
   [T.estadoSel]: "std_msgs/msg/String", [T.orden]: "geometry_msgs/msg/Twist",
@@ -333,7 +334,7 @@ const TIPOS = {
   [T.estadoMot]: "std_msgs/msg/String", [T.velocidad]: "geometry_msgs/msg/Twist",
   [T.ruedas]: "std_msgs/msg/Float32MultiArray", [T.frenoObst]: "std_msgs/msg/Bool",
   [T.servos]: "std_msgs/msg/Float32MultiArray", [T.deteccion]: "huggin_vision_msgs/msg/DetectionArray",
-  [T.joy]: "sensor_msgs/msg/Joy",
+  [T.joy]: "sensor_msgs/msg/Joy", [T.frenoAsist]: "std_msgs/msg/Bool",
 };
 // Para la tabla "Que esta llegando": nombre visible y cada cuanto deberia llegar (ms)
 const SALUD = [
@@ -342,6 +343,7 @@ const SALUD = [
   ["Ruedas (encoders)", T.ruedas, 3000], ["Freno por obstáculo", T.frenoObst, 0],
   ["Servos", T.servos, 3000], ["Visión", T.deteccion, 3000], ["Posición (odom)", T.odom, 3000],
   ["Libreta (Mapeo)", T.libreta, 0], ["Avisos", T.aviso, 0], ["Joystick", T.joy, 0],
+  ["Asistencia (freno de la compu)", T.frenoAsist, 0],
 ];
 const DIST_LEJOS_CM = 400;   // igual que micro_ros/main/sensores.h
 const CERCA_CM = 15;
@@ -411,7 +413,8 @@ function conectar() {
 // ---------- Lo que llega ----------
 let estado = { modo: null, freno: null, fuente: null };
 let ultimaLibreta = null, pose = null, rastro = [];
-let frenoObst = null, estadoMot = null, resumenVision = "";
+let estadoMot = null, resumenVision = "";
+const frenos = { ESP32: null, compu: null };   // freno por obstaculo: el del firmware y el de la asistencia
 const historial = { izq: [], der: [], frente: [] };   // [hora, cm] de los ultimos 10 s
 
 function recibir(topic, msg) {
@@ -452,12 +455,15 @@ function recibir(topic, msg) {
       $("r-vi").textContent = (d[0] ?? 0).toFixed(2) + " m/s"; $("r-vd").textContent = (d[1] ?? 0).toFixed(2) + " m/s";
       $("r-ri").textContent = (d[2] ?? 0).toFixed(0); $("r-rd").textContent = (d[3] ?? 0).toFixed(0); break;
     }
-    case T.frenoObst: {
-      if (msg.data !== frenoObst) anotar(msg.data ? "FRENO POR OBSTÁCULO activado (ESP32)" : "Freno por obstáculo liberado", msg.data ? "freno" : "local");
-      frenoObst = msg.data;
-      $("obst").innerHTML = msg.data ? '<b style="color:var(--bad)">ACTIVO</b>' : "libre";
-      $("m-freno").textContent = msg.data ? "ACTIVO: no deja avanzar" : "libre";
-      $("b-obstaculo").style.display = msg.data ? "block" : "none"; break;
+    case T.frenoObst: case T.frenoAsist: {
+      const quien = topic === T.frenoObst ? "ESP32" : "compu";
+      if (msg.data !== frenos[quien]) anotar(msg.data ? `FRENO POR OBSTÁCULO activado (${quien})` : `Freno por obstáculo liberado (${quien})`, msg.data ? "freno" : "local");
+      frenos[quien] = msg.data;
+      const activo = frenos.ESP32 || frenos.compu;
+      const fuentes = Object.keys(frenos).filter(k => frenos[k]).join(" y ");
+      $("obst").innerHTML = activo ? `<b style="color:var(--bad)">ACTIVO (${fuentes})</b>` : "libre";
+      $("m-freno").textContent = activo ? `ACTIVO (${fuentes}): no deja avanzar` : "libre";
+      $("b-obstaculo").style.display = activo ? "block" : "none"; break;
     }
     case T.servos: {
       $("servos").innerHTML = "";
@@ -558,7 +564,7 @@ setInterval(() => {
       if (!mal && avisadoCaido[topic]) { anotar(`Volvió: ${nombre}`, "local"); avisadoCaido[topic] = false; }
     }
   }
-  for (const t of [T.distancias, T.frenoObst, T.ruedas, T.velocidad]) {
+  for (const t of [T.distancias, T.ruedas, T.velocidad]) {
     if (!vivo(t, 2500) && ws && ws.readyState === 1) { enviar({ op: "unsubscribe", topic: t }); suscribir(t); }
   }
 }, 1000);

@@ -99,6 +99,7 @@ Opciones del comando, si hacen falta:
 
 | Agregar | Para qué |
 |---|---|
+| `asistencia:=true` | **ayudas de la Cat. B**: freno por obstáculo y centrado en el pasillo, en la compu (ver abajo) |
 | `camara_ip:=172.16.0.117` | probar primero esa IP (más rápido) |
 | `camara:=false` | no usar la cámara (ni visión) |
 | `vision:=false` | cámara sin visión: imagen cruda, sin recuadros |
@@ -106,6 +107,36 @@ Opciones del comando, si hacen falta:
 | `ns:=''` | firmware viejo o Gazebo (topics sin `/prometeo`) |
 
 Para ver la IP de la cámara sin arrancar nada: `ros2 run my_robot_bringup buscar_camara.py --solo-buscar`
+
+### Ayudas de la Categoría B (`asistencia:=true`)
+
+Mientras ustedes manejan, el robot ayuda solo:
+
+- **Freno por obstáculo:** si mandan "adelante" y el ultrasonido de adelante ve una pared
+  cerca, **no avanza**. Retroceder y girar siempre pasan. La distancia depende de la velocidad:
+  a 0,15 m/s frena a unos 9 cm.
+- **Corrección de trayectoria:** si van derecho y se tuercen hacia una pared, **corrige solo**
+  hacia el medio del pasillo. Si un costado mide más de 50 cm (una salida), no corrige, para no
+  tirarse al hueco. Si ustedes están girando, no se mete.
+
+Es la misma cuenta que se usa en Gazebo (`provisorio_bajo_nivel_sim`), probada, con la
+configuración del robot real en `config/asistencia_robot_real.yaml`. No toca el firmware.
+
+**Está apagada por defecto hasta probarla en el robot.** Para usarla:
+
+```bash
+ros2 launch my_robot_bringup panel.launch.py asistencia:=true
+```
+
+Probarla con las ruedas en el aire: avanzar despacio y poner la mano a unos 10 cm del sensor
+de adelante. ✔ Anduvo si las ruedas frenan, en el panel aparece **"Freno por obstáculo: ACTIVO
+(compu)"**, y retroceder sigue andando.
+
+- **Apagar el freno** (por ejemplo, para acercarse al cubo): pestaña **Manual**, "Freno por
+  obstáculo: Apagar". Después, "Prender".
+- **Ojo:** si el ultrasonido de adelante deja de medir (sin dato), el freno no deja avanzar. Si
+  pasa seguido, apagar el freno o arrancar el panel sin `asistencia:=true`.
+- Si la ayuda trae problemas, arrancar el panel sin `asistencia:=true` y queda todo como antes.
 
 ### Paso 5. Abrir el panel
 

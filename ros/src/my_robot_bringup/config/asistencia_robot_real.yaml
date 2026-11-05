@@ -1,0 +1,40 @@
+# Asistencia de la Categoria B en el ROBOT REAL (T11): freno por obstaculo y centrado.
+# La usa panel.launch.py con asistencia:=true.
+#
+# Corre el mismo programa que en Gazebo (provisorio_bajo_nivel_sim/centrado_simulado),
+# con la misma cuenta y las mismas pruebas. Solo cambia esta configuracion:
+#   - use_sim_time: false   (en Gazebo es true; con el robot real el reloj es el de la compu)
+#   - t_reaccion_s mas grande: las lecturas viajan por WiFi
+#
+#   selector ──► cmd_vel_seleccionado ──► asistencia ──► /prometeo/cmd_vel ──► ESP32
+#
+# El freno solo bloquea AVANZAR: retroceder y girar siempre pasan. El centrado solo
+# corrige cuando el robot va derecho y nadie esta girando.
+# Se apaga desde el panel (pestaña Manual, "Freno por obstaculo: Apagar"), por ejemplo
+# para acercarse al cubo.
+
+/**/asistencia:
+  ros__parameters:
+    use_sim_time: false
+
+    # ===== Freno por obstaculo (la cuenta de micro_ros/main/seguridad.c) =====
+    # 0,14 s de la ESP32 + unos 0,15 s de ida y vuelta por WiFi. Ajustar probando.
+    t_reaccion_s: 0.30
+    t_frenado_s: 0.08        # lo que sigue rodando despues de cortar
+    margen_cm: 3.0           # mas que en Gazebo: el sensor real tiene mas ruido
+    umbral_min_cm: 5.0       # nunca frena mas cerca que esto
+    histeresis_cm: 2.0       # suelta recien a umbral + esto
+    lecturas_para_liberar: 3 # lecturas libres seguidas para soltar el freno
+
+    # ===== Centrado (correccion de trayectoria) =====
+    ganancia: 2.0            # rad/s por metro de diferencia entre las paredes
+    giro_max_rad_s: 0.4      # el centrado nunca gira mas que esto
+    giro_minimo_rad_s: 0.05  # si quien maneja gira menos que esto, se centra
+    distancia_salida_cm: 50.0  # un costado mas lejos que esto es una salida: no centrar
+
+    # ===== Seguridad del propio nodo =====
+    tiempo_sin_orden_s: 0.5    # sin ordenes del selector, para
+    # Lectura mas vieja que esto = sin dato (y sin dato adelante no deja avanzar).
+    # La ESP32 mide cada ~120 ms: con WiFi conviene dejar margen.
+    tiempo_sensor_viejo_s: 0.6
+    frecuencia_hz: 20.0

@@ -513,6 +513,16 @@ botones Capturar (pasa a manual: la garra la mueven ellos) y Abandonar (en auto,
 un lugar conocido y toma otra flecha) publican en `pedido_operador`. Topics y código para los
 demás nodos en `ros/COMANDOS_COMPETENCIA.md`.
 
+**Asistencia de la Cat. B (5/11/2026):** `panel.launch.py asistencia:=true` corre en la compu el
+freno por obstáculo y el centrado del nodo provisorio (`centrado_simulado`, con el nombre
+`asistencia`) entre el selector y la ESP32, con `config/asistencia_robot_real.yaml`
+(`use_sim_time: false`, reacción 0,30 s por el WiFi). Se conecta con remapeos, sin tocar su
+código: `selector → cmd_vel_seleccionado → asistencia → /prometeo/cmd_vel`, y avisa en
+`/prometeo/freno_asistencia`. Probado con sensores simulados: frena con la pared a 4 cm, deja
+retroceder y girar, corrige hacia el medio y no corrige ante una salida. Apagada por defecto hasta
+probarla en el robot. Resuelve "evitar choques" y "corrección de trayectoria" sin el freno del
+firmware.
+
 Navegación alta deja de publicar en `/cmd_vel` y pasa a `/cmd_vel_auto`. Para la vuelta con la
 libreta partida, ver T8.
 
