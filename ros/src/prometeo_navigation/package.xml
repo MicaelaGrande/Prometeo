@@ -7,8 +7,12 @@
   <maintainer email="micaela.grande@mi.unc.edu.ar">micaela</maintainer>
   <license>TODO: License declaration</license>
 
-  <!-- Otros paquetes que este necesita. Por ahora solo pytest, para las pruebas:
-       la libreta es Python comun y todavia no habla con ROS. -->
+  <!-- Otros paquetes que este necesita. La libreta y lugares.py son Python comun;
+       el selector de modo (T11) si habla con ROS. -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>teleop_twist_keyboard</exec_depend>
   <test_depend>python3-pytest</test_depend>
 
   <!-- Le indica a colcon que este paquete es de Python, no de C++ -->

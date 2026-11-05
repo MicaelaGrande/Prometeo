@@ -27,9 +27,10 @@ setup(
     description='Navegacion autonoma del robot Prometeo: libreta del recorrido y exploracion',
     license='TODO: License declaration',
 
-    # Los programas que se pueden correr con "ros2 run". Todavia no hay ninguno:
-    # la libreta es codigo que usan otros, no un programa que arranca solo.
+    # Los programas que se pueden correr con "ros2 run": nombre = archivo:funcion.
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'selector_modo = prometeo_navigation.selector_modo:main',
+        ],
     },
 )
