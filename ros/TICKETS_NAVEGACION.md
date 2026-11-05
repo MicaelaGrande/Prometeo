@@ -528,7 +528,7 @@ libreta partida, ver T8.
 
 ## Lógica de decisión
 
-En cada bifurcación del camino hay al menos una flecha. Las islas no tienen flechas: en su entrada decide Exploración. Junto con los ultrasonidos, es lo que permite decidir por dónde seguir, así que T6 es necesario para llegar al cubo. Puede haber una sola, y puede no ser de `color_actual`: en ese caso decide Exploración, que sigue siendo parte del mínimo.
+Siempre que el robot tiene que doblar hay una flecha, tanto en las curvas como en las bifurcaciones (confirmado el 5/11/2026). Las islas no tienen flechas: en su entrada decide Exploración. Junto con los ultrasonidos, es lo que permite decidir por dónde seguir, así que T6 es necesario para llegar al cubo. Puede haber una sola, y puede no ser de `color_actual`: en ese caso decide Exploración, que sigue siendo parte del mínimo.
 
 El robot toma una flecha y sigue ese color. El largo no sirve para elegir: indica la distancia a la
 próxima curva, no al cubo, así que tomar la flecha más corta no acerca al cubo. Decisión se lo pasa
