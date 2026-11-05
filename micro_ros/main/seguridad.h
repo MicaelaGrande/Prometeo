@@ -28,6 +28,14 @@ float seguridad_filtrar(float avance);
 bool seguridad_freno_activo(void);
 
 /**
+ * @brief Suelta el freno de emergencia a pedido (/motores/liberar), pero solo si el
+ *        frente esta libre (mas lejos que el umbral + histeresis). Si sigue la pared
+ *        cerca, el freno queda y solo se puede retroceder o girar.
+ * @return true si el freno quedo suelto (o ya lo estaba).
+ */
+bool seguridad_liberar(void);
+
+/**
  * @brief Activa o desactiva el freno (false = modo recoger: deja acercarse
  *        a objetos). Arranca activado.
  */

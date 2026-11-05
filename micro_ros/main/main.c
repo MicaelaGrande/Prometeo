@@ -23,6 +23,7 @@
 #include <rmw_microros/rmw_microros.h>
 #include <std_msgs/msg/string.h>
 #include <std_msgs/msg/bool.h>
+#include <std_msgs/msg/empty.h>
 #include <std_msgs/msg/float32.h>
 #include <std_msgs/msg/float32_multi_array.h>
 #include <geometry_msgs/msg/twist.h>
@@ -71,10 +72,9 @@ static rcl_node_t node;
 static rcl_publisher_t publisher;
 static rcl_publisher_t pub_dist;
 static rcl_publisher_t pub_freno;
-static rcl_publisher_t pub_vel;
-static rcl_publisher_t pub_servos;
 static rcl_subscription_t sub_cmd_vel;
 static rcl_subscription_t sub_seguridad;
+static rcl_subscription_t sub_liberar;
 static rcl_subscription_t sub_camara;
 static rcl_subscription_t sub_brazo;
 static rcl_timer_t timer;
@@ -84,11 +84,9 @@ static std_msgs__msg__Float32MultiArray msg_dist;
 static float buf_dist[NUM_SENSORS];
 static uint32_t ultima_medicion = 0;   // última medición publicada en /distancias
 static std_msgs__msg__Bool msg_freno;
-static geometry_msgs__msg__Twist msg_vel;                 // velocidad estimada (lazo abierto)
-static std_msgs__msg__Float32MultiArray msg_servos;      // ángulos actuales, en orden SERVO_1..SERVO_5
-static float buf_servos[CANT_SERVOS];
 static int freno_publicado = -1;       // último valor publicado en /freno_emergencia (-1 = ninguno)
 static std_msgs__msg__Bool msg_seguridad;
+static std_msgs__msg__Empty msg_liberar;
 static geometry_msgs__msg__Twist msg_cmd_vel;
 static std_msgs__msg__Float32 msg_camara;
 static std_msgs__msg__Float32MultiArray msg_brazo;
@@ -129,10 +127,15 @@ static void cmd_vel_callback(const void *msgin)
     }
 
     // linear.x en m/s (+ adelante), angular.z en rad/s (+ izquierda): igual que Gazebo.
-    // El freno de emergencia usa el avance normalizado (-1..1):
-    // float avance_norm = seguridad_filtrar(m->linear.x / (CONFIG_PROMETEO_VEL_MAX_MM_S / 1000.0f));   // desactivado por ahora
+    // El freno de emergencia usa el avance normalizado (-1..1) y devuelve 0 si avanzar es peligroso.
+    // Solo bloquea el avance: girar y retroceder pasan siempre.
+    float lineal = (float)m->linear.x;
+    float avance_norm = seguridad_filtrar(lineal / (CONFIG_PROMETEO_VEL_MAX_MM_S / 1000.0f));
+    if (lineal > 0.0f && avance_norm <= 0.0f) {
+        lineal = 0.0f;
+    }
     // La cinemática de 4 ruedas, el escalado y el failsafe están en motores_set_twist()
-    motores_set_twist((float)m->linear.x, (float)m->angular.z);
+    motores_set_twist(lineal, (float)m->angular.z);
     estado_actual = "MOVIENDO";
 }
 
@@ -143,6 +146,22 @@ static void seguridad_callback(const void *msgin)
 {
     const std_msgs__msg__Bool *m = (const std_msgs__msg__Bool *)msgin;
     seguridad_habilitar(m->data);
+}
+
+// =========================================================
+// LLEGA /motores/liberar: suelta lo que dejó frenados a los motores
+//  - fallas latcheadas (atasco / sobreesfuerzo del puente), con motores_liberar_fallas()
+//  - freno de emergencia por pared, con seguridad_liberar(): NO lo suelta mientras el
+//    frente siga demasiado cerca; retroceder y girar siempre se pueden
+// =========================================================
+static void liberar_callback(const void *msgin)
+{
+    (void) msgin;
+    bool fallas_ok = motores_liberar_fallas();
+    bool freno_ok  = seguridad_liberar();
+    ESP_LOGW(TAG, "Liberar: fallas %s, freno de pared %s",
+             fallas_ok ? "liberadas" : "puente todavia caliente",
+             freno_ok  ? "libre"     : "SIGUE (frente muy cerca)");
 }
 
 // =========================================================
@@ -261,34 +280,6 @@ static void publicar_freno_si_cambio(void)
 }
 
 // =========================================================
-// PUBLICAR /velocidad y /servos/estado cada TELEMETRIA_PERIODO_MS
-// velocidad: ESTIMADA a lazo abierto desde el duty de los motores (no hay encoders)
-// servos/estado: ángulos actuales [camara, base, hombro, codo, garra] (SERVO_1..SERVO_5)
-// =========================================================
-#define TELEMETRIA_PERIODO_MS 200
-
-static void publicar_telemetria_si_toca(void)
-{
-    static TickType_t ultima = 0;
-    TickType_t ahora = xTaskGetTickCount();
-    if ((ahora - ultima) < pdMS_TO_TICKS(TELEMETRIA_PERIODO_MS)) {
-        return;
-    }
-    ultima = ahora;
-
-    float v, w;
-    motores_get_velocidad(&v, &w);
-    msg_vel.linear.x  = v;
-    msg_vel.angular.z = w;
-    RCSOFTCHECK(rcl_publish(&pub_vel, &msg_vel, NULL));
-
-    for (int s = 0; s < CANT_SERVOS; s++) {
-        buf_servos[s] = servo_get_actual((servo_id_t)s);
-    }
-    RCSOFTCHECK(rcl_publish(&pub_servos, &msg_servos, NULL));
-}
-
-// =========================================================
 // CREAR / DESTRUIR micro-ROS
 // =========================================================
 static bool crear_entidades(void)
@@ -321,14 +312,10 @@ static bool crear_entidades(void)
     RCRET(rclc_publisher_init_default(&pub_freno, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "freno_emergencia"));
 
-    // Telemetría periódica: best effort, la siguiente reemplaza a la que se pierda
-    RCRET(rclc_publisher_init_best_effort(&pub_vel, &node,
-          ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "velocidad"));
-    RCRET(rclc_publisher_init_best_effort(&pub_servos, &node,
-          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "servos/estado"));
-
     RCRET(rclc_subscription_init_default(&sub_seguridad, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "seguridad_habilitada"));
+    RCRET(rclc_subscription_init_default(&sub_liberar, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Empty), "motores/liberar"));
     RCRET(rclc_subscription_init_default(&sub_camara, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "camara/cmd"));
 
@@ -339,13 +326,15 @@ static bool crear_entidades(void)
     RCRET(rclc_timer_init_default(&timer_ruedas, &support, RCL_MS_TO_NS(PERIOD_MS), timer_ruedas_callback));
 
     executor = rclc_executor_get_zero_initialized_executor();
-    RCRET(rclc_executor_init(&executor, &support.context, 6, &allocator));  // 2 timers + 4 suscripciones
+    RCRET(rclc_executor_init(&executor, &support.context, 7, &allocator));  // 2 timers + 5 suscripciones
     RCRET(rclc_executor_add_timer(&executor, &timer));
     RCRET(rclc_executor_add_timer(&executor, &timer_ruedas));
     RCRET(rclc_executor_add_subscription(&executor, &sub_cmd_vel, &msg_cmd_vel,
           &cmd_vel_callback, ON_NEW_DATA));
     RCRET(rclc_executor_add_subscription(&executor, &sub_seguridad, &msg_seguridad,
           &seguridad_callback, ON_NEW_DATA));
+    RCRET(rclc_executor_add_subscription(&executor, &sub_liberar, &msg_liberar,
+          &liberar_callback, ON_NEW_DATA));
     RCRET(rclc_executor_add_subscription(&executor, &sub_camara, &msg_camara,
           &camara_callback, ON_NEW_DATA));
     RCRET(rclc_executor_add_subscription(&executor, &sub_brazo, &msg_brazo,
@@ -363,14 +352,13 @@ static void destruir_entidades(void)
 
     (void) rcl_subscription_fini(&sub_cmd_vel, &node);
     (void) rcl_subscription_fini(&sub_seguridad, &node);
+    (void) rcl_subscription_fini(&sub_liberar, &node);
     (void) rcl_subscription_fini(&sub_camara, &node);
     (void) rcl_subscription_fini(&sub_brazo, &node);
     (void) rcl_publisher_fini(&publisher, &node);
     (void) rcl_publisher_fini(&pub_dist, &node);
     (void) rcl_publisher_fini(&pub_freno, &node);
     (void) rcl_publisher_fini(&pub_vel_ruedas, &node);
-    (void) rcl_publisher_fini(&pub_vel, &node);
-    (void) rcl_publisher_fini(&pub_servos, &node);
     (void) rcl_timer_fini(&timer);
     (void) rcl_timer_fini(&timer_ruedas);
     (void) rclc_executor_fini(&executor);
@@ -404,9 +392,6 @@ static void micro_ros_task(void * arg)
     msg_vel_ruedas.data.data = buf_vel_ruedas;
     msg_vel_ruedas.data.size = VEL_RUEDAS_LEN;
     msg_vel_ruedas.data.capacity = VEL_RUEDAS_LEN;
-    msg_servos.data.data = buf_servos;
-    msg_servos.data.size = CANT_SERVOS;
-    msg_servos.data.capacity = CANT_SERVOS;
 
     // El mensaje de /brazo/cmd también usa un buffer fijo (layout.dim queda vacío:
     // quien publique no debe llenar el layout)
@@ -453,7 +438,6 @@ static void micro_ros_task(void * arg)
             rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
             publicar_distancias_si_hay_nuevas();
             publicar_freno_si_cambio();
-            publicar_telemetria_si_toca();
             vTaskDelay(pdMS_TO_TICKS(10));
             ms_desde_ping += 20;
             break;

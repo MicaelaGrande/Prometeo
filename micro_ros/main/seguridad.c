@@ -150,6 +150,22 @@ float seguridad_filtrar(float avance)
 
 bool seguridad_freno_activo(void) { return freno_activo; }
 
+bool seguridad_liberar(void)
+{
+    if (!freno_activo) {
+        return true;
+    }
+    float frente = frente_cm(NULL);
+    if (frente >= 0.0f && frente > umbral_cm(avance_pedido) + HISTERESIS_CM) {
+        freno_activo = false;
+        ciclos_libre = 0;
+        ESP_LOGI(TAG_SEG, "Freno liberado a pedido: frente %.1f cm", frente);
+        return true;
+    }
+    ESP_LOGW(TAG_SEG, "Liberar rechazado: frente %.1f cm (muy cerca o sin dato)", frente);
+    return false;
+}
+
 void seguridad_habilitar(bool on)
 {
     if (on == habilitada) {
