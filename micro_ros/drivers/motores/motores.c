@@ -6,6 +6,8 @@
 #include <math.h>
 #include <stdint.h>
 #include "motores.h"
+#include "encoder.h"
+#include "sdkconfig.h"
 
 static const char *TAG = "motores";
 
@@ -27,6 +29,25 @@ static const char *TAG = "motores";
 
 // ===== FAILSAFE =====
 #define TIMEOUT_MS        300    // sin órdenes por más de esto -> freno
+
+// ===== SEGURIDAD =====
+#define TICK_MS            RAMPA_PERIODO_MS
+#define STALL_GRACIA_MS    300                       // tras arrancar no se vigila el atasco
+#define STALL_DUTY_MIN     (CONFIG_PROMETEO_MOTORES_STALL_DUTY_MIN_PCT / 100.0f)
+#define STALL_VENTANA_MS   CONFIG_PROMETEO_MOTORES_STALL_WINDOW_MS
+#define STALL_MIN_PPS      ((float)CONFIG_PROMETEO_MOTORES_STALL_MIN_PPS)
+#ifdef CONFIG_PROMETEO_MOTORES_EFFORT_LIMIT_PCT
+#define EFFORT_LIMITE      (CONFIG_PROMETEO_MOTORES_EFFORT_LIMIT_PCT / 100.0f)
+#else
+#define EFFORT_LIMITE      2.0f                      // vigilancia desactivada
+#endif
+#define EFFORT_TAU_MS      (CONFIG_PROMETEO_MOTORES_EFFORT_TAU_S * 1000.0f)
+#define EFFORT_ENFRIADO    0.5f                      // motores_liberar_fallas exige esfuerzo <= 50 % del limite
+
+// Encoder de cada motor (mismo orden que en menuconfig: A = delantero izq, B = trasero izq, ...)
+static const encoder_id_t ENC_DE[CANT_MOTORES] = {
+    ENC_DEL_IZQ, ENC_TRAS_IZQ, ENC_DEL_DER, ENC_TRAS_DER,
+};
 
 // ===== MOTORES INVERTIDOS =====
 //                                           A  B  C  D
@@ -64,7 +85,8 @@ static void escribir(int canal, int valor)
     ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)canal);
 }
 
-static void aplicar(motor_id_t m, float v)
+// Devuelve el duty que quedo aplicado (0..1, sin signo)
+static float aplicar(motor_id_t m, float v)
 {
     // Sentido para el signo de los encoders (antes de 'invertido': es para dónde va el robot)
     if (v >  0.001f) sentido[m] =  1;
@@ -92,6 +114,118 @@ static void aplicar(motor_id_t m, float v)
     } else {                        // freno: IA = 0, IB = 0
         escribir(2 * m, 0);
         escribir(2 * m + 1, 0);
+        duty = 0;
+    }
+    return (float)duty / PWM_MAX;
+}
+
+// ===== SEGURIDAD: estado =====
+// fallas_seg y esfuerzo los escribe la tarea de rampa y los leen/limpian otras tareas: van con candado
+static portMUX_TYPE mux_seg = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t fallas_seg;                     // bits MOTORES_FALLA_* (latcheados)
+static float    esfuerzo[2];                    // promedio de duty^2 por puente (0 = izq, 1 = der)
+// solo la tarea de rampa:
+static uint32_t pulsos_prev[CANT_MOTORES];
+static uint32_t stall_acum_ms[CANT_MOTORES];    // tiempo de la ventana de medicion
+static uint32_t stall_pulsos[CANT_MOTORES];     // pulsos contados en la ventana
+static uint32_t gracia_ms[CANT_MOTORES];
+
+// Motores que hay que mantener frenados por una falla latcheada (bit m)
+static uint32_t motores_bloqueados(void)
+{
+    taskENTER_CRITICAL(&mux_seg);
+    uint32_t f = fallas_seg;
+    taskEXIT_CRITICAL(&mux_seg);
+    if (!f) return 0;
+#ifdef CONFIG_PROMETEO_MOTORES_STOP_ALL
+    return (1u << CANT_MOTORES) - 1;
+#else
+    uint32_t b = 0;
+    for (int m = 0; m < CANT_MOTORES; m++)
+        if ((f & MOTORES_FALLA_STALL(m)) || (f & MOTORES_FALLA_SOBRE(m / 2))) b |= 1u << m;
+    return b;
+#endif
+}
+
+static void frenar_motor(int m)
+{
+    objetivo[m] = 0;
+    actual[m] = 0;
+    aplicar((motor_id_t)m, 0);
+}
+
+// Mira encoders y esfuerzo con el duty que se acaba de aplicar. Latchea fallas y frena.
+static void vigilar_seguridad(const float duty[CANT_MOTORES])
+{
+    uint32_t nuevas = 0;
+    float P[2] = { 0.0f, 0.0f };
+
+    for (int m = 0; m < CANT_MOTORES; m++) {
+        uint32_t pul = encoder_get_pulsos(ENC_DE[m]);
+        uint32_t dp = pul - pulsos_prev[m];
+        pulsos_prev[m] = pul;
+
+        P[m / 2] += duty[m] * duty[m];
+
+#ifdef CONFIG_PROMETEO_MOTORES_STALL_ENABLE
+        if (duty[m] < STALL_DUTY_MIN) {
+            stall_acum_ms[m] = 0;
+            stall_pulsos[m] = 0;
+            gracia_ms[m] = STALL_GRACIA_MS;
+        } else if (gracia_ms[m] > 0) {
+            gracia_ms[m] = (gracia_ms[m] > TICK_MS) ? gracia_ms[m] - TICK_MS : 0;
+            stall_acum_ms[m] = 0;
+            stall_pulsos[m] = 0;
+        } else {
+            stall_acum_ms[m] += TICK_MS;
+            stall_pulsos[m] += dp;
+            if (stall_acum_ms[m] >= STALL_VENTANA_MS) {
+                float pps = (float)stall_pulsos[m] * 1000.0f / (float)stall_acum_ms[m];
+                if (stall_pulsos[m] == 0 || pps < STALL_MIN_PPS) {
+                    nuevas |= MOTORES_FALLA_STALL(m);
+                    ESP_LOGE(TAG, "motor %c sin velocidad (%.1f pulsos/s < %.1f): FALLA", 'A' + m,
+                             (double)pps, (double)STALL_MIN_PPS);
+                } else {
+                    stall_acum_ms[m] = 0;
+                    stall_pulsos[m] = 0;
+                }
+            }
+        }
+#else
+        (void)dp;
+#endif
+    }
+
+#ifdef CONFIG_PROMETEO_MOTORES_EFFORT_ENABLE
+    const float a = (float)TICK_MS / EFFORT_TAU_MS;
+    taskENTER_CRITICAL(&mux_seg);
+    for (int b = 0; b < 2; b++) {
+        esfuerzo[b] += (P[b] - esfuerzo[b]) * a;
+        if (esfuerzo[b] > EFFORT_LIMITE && !(fallas_seg & MOTORES_FALLA_SOBRE(b))) nuevas |= MOTORES_FALLA_SOBRE(b);
+    }
+    taskEXIT_CRITICAL(&mux_seg);
+    for (int b = 0; b < 2; b++)
+        if (nuevas & MOTORES_FALLA_SOBRE(b))
+            ESP_LOGE(TAG, "sobreesfuerzo en el puente %s (%.2f > %.2f): FALLA",
+                     b ? "derecho" : "izquierdo", (double)esfuerzo[b], (double)EFFORT_LIMITE);
+#else
+    taskENTER_CRITICAL(&mux_seg);
+    for (int b = 0; b < 2; b++) esfuerzo[b] += (P[b] - esfuerzo[b]) * ((float)TICK_MS / EFFORT_TAU_MS);
+    taskEXIT_CRITICAL(&mux_seg);
+#endif
+
+    if (nuevas) {
+        taskENTER_CRITICAL(&mux_seg);
+        fallas_seg |= nuevas;
+        taskEXIT_CRITICAL(&mux_seg);
+        uint32_t b = motores_bloqueados();
+        for (int m = 0; m < CANT_MOTORES; m++)
+            if (b & (1u << m)) frenar_motor(m);
+#ifdef CONFIG_PROMETEO_MOTORES_STOP_ALL
+        ESP_LOGE(TAG, "TODOS los motores frenados. motores_liberar_fallas() para soltar");
+#else
+        ESP_LOGE(TAG, "motores afectados frenados (mascara 0x%x). motores_liberar_fallas() para soltar", (unsigned)b);
+#endif
     }
 }
 
@@ -108,16 +242,23 @@ static void rampa_task(void *arg)
         }
 
         // ---- RAMPA ----
+        float duty_ef[CANT_MOTORES] = { 0 };           // duty realmente aplicado (para la seguridad)
         if (!en_falla) {
+            uint32_t bloq = motores_bloqueados();
             for (int m = 0; m < CANT_MOTORES; m++) {
+                if (bloq & (1u << m)) {                // falla latcheada: sigue frenado aunque haya ordenes
+                    frenar_motor(m);
+                    continue;
+                }
                 float d = objetivo[m] - actual[m];
                 if (d >  RAMPA_PASO) d =  RAMPA_PASO;
                 if (d < -RAMPA_PASO) d = -RAMPA_PASO;
                 actual[m] += d;
                 if (actual[m] > -0.001f && actual[m] < 0.001f) actual[m] = 0;
-                aplicar((motor_id_t)m, actual[m]);
+                duty_ef[m] = aplicar((motor_id_t)m, actual[m]);
             }
         }
+        vigilar_seguridad(duty_ef);                    // tambien parado: el esfuerzo se enfria
         vTaskDelayUntil(&t, pdMS_TO_TICKS(RAMPA_PERIODO_MS));
     }
 }
@@ -236,5 +377,37 @@ void motores_get_velocidad(float *v_mps, float *w_rads)
 }
 
 bool motores_en_falla(void) { return en_falla; }
+
+uint32_t motores_get_fallas(void)
+{
+    taskENTER_CRITICAL(&mux_seg);
+    uint32_t f = fallas_seg;
+    taskEXIT_CRITICAL(&mux_seg);
+    return f;
+}
+
+bool motores_liberar_fallas(void)
+{
+    bool todo = true;
+    taskENTER_CRITICAL(&mux_seg);
+    uint32_t f = fallas_seg & ~MOTORES_FALLA_STALL_TODOS;       // los atascos se sueltan siempre
+    for (int b = 0; b < 2; b++) {
+        if (!(f & MOTORES_FALLA_SOBRE(b))) continue;
+        if (esfuerzo[b] <= EFFORT_LIMITE * EFFORT_ENFRIADO) f &= ~MOTORES_FALLA_SOBRE(b);
+        else todo = false;                                      // todavia caliente
+    }
+    fallas_seg = f;
+    taskEXIT_CRITICAL(&mux_seg);
+    return todo;
+}
+
+float motores_get_esfuerzo(int lado)
+{
+    if (lado < 0 || lado > 1) return 0.0f;
+    taskENTER_CRITICAL(&mux_seg);
+    float e = esfuerzo[lado];
+    taskEXIT_CRITICAL(&mux_seg);
+    return e;
+}
 
 int motor_get_sentido(motor_id_t m) { return (m < CANT_MOTORES) ? sentido[m] : 1; }

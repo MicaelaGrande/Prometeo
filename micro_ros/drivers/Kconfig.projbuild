@@ -217,6 +217,65 @@ menu "Prometeo - Test de motores"
 
 endmenu
 
+menu "Prometeo - Seguridad motores"
+
+    config PROMETEO_MOTORES_STOP_ALL
+        bool "Un atasco o sobreesfuerzo frena los 4 motores"
+        default y
+        help
+            Aplica a motores.c. Si esta desactivado, solo se frena el motor atascado
+            o el puente sobrecargado. La falla queda latcheada hasta motores_liberar_fallas().
+
+    config PROMETEO_MOTORES_STALL_ENABLE
+        bool "Detectar rueda que no gira (velocidad minima del encoder)"
+        default y
+        help
+            Requiere encoders_init() antes de motores_init(). Desactivar si el firmware
+            no usa encoders.
+
+    config PROMETEO_MOTORES_STALL_DUTY_MIN_PCT
+        int "Duty desde el cual se vigila el atasco (%)"
+        depends on PROMETEO_MOTORES_STALL_ENABLE
+        range 0 100
+        default 40
+
+    config PROMETEO_MOTORES_STALL_WINDOW_MS
+        int "Ventana de medicion de velocidad (ms)"
+        depends on PROMETEO_MOTORES_STALL_ENABLE
+        range 100 10000
+        default 1500
+
+    config PROMETEO_MOTORES_STALL_MIN_PPS
+        int "Velocidad minima del encoder con el motor andando (pulsos/s)"
+        depends on PROMETEO_MOTORES_STALL_ENABLE
+        range 0 1000
+        default 2
+        help
+            20 pulsos = 1 vuelta, asi que 2 pulsos/s = 6 rpm. 0 = solo se falla si no hay
+            ningun pulso en la ventana. La resolucion es 1 pulso por ventana (0,67 pulsos/s
+            con 1,5 s). Medir la velocidad real con carga y dejar margen.
+
+    config PROMETEO_MOTORES_EFFORT_ENABLE
+        bool "Vigilar el esfuerzo de cada puente H (proteccion termica)"
+        default y
+
+    config PROMETEO_MOTORES_EFFORT_LIMIT_PCT
+        int "Limite de esfuerzo medio por puente (%)"
+        depends on PROMETEO_MOTORES_EFFORT_ENABLE
+        range 5 200
+        default 150
+        help
+            Sin sensor de corriente: se estima como duty^2 de los dos motores del puente,
+            promediado con la constante de tiempo. 100 = un motor a duty 1 sostenido
+            (o los dos a 0,71); el maximo es 200. Ajustar mirando la temperatura del driver.
+
+    config PROMETEO_MOTORES_EFFORT_TAU_S
+        int "Constante de tiempo del esfuerzo (s)"
+        range 1 600
+        default 10
+
+endmenu
+
 menu "Prometeo - Seguridad L9110S"
 
     config PROMETEO_L9110S_STOP_ALL
