@@ -78,3 +78,22 @@ def test_pedir_el_mismo_modo_no_cambia_nada():
 
     assert selector.cambiar_modo('manual') is False
     assert selector.orden_a_publicar(ahora_s=10.1) == ADELANTE  # no se borro
+
+
+def test_parar_desde_auto_pasa_a_manual_quieto():
+    selector = Selector(edad_maxima_s=0.6)
+    selector.cambiar_modo('auto')
+    selector.guardar_orden(AUTO, GIRAR, ahora_s=10.0)
+
+    assert selector.cambiar_modo('parar') is True
+    assert selector.modo == MANUAL
+    assert selector.orden_a_publicar(ahora_s=10.1) is None
+
+
+def test_parar_en_manual_frena_la_orden_que_venia():
+    # ya estaba en manual y alguien apretaba adelante: el panico igual frena
+    selector = Selector(edad_maxima_s=0.6)
+    selector.guardar_orden(MANUAL, ADELANTE, ahora_s=10.0)
+
+    assert selector.cambiar_modo('parar') is True
+    assert selector.orden_a_publicar(ahora_s=10.1) is None

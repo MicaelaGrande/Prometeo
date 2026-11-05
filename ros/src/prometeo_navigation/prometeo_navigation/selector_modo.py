@@ -31,7 +31,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from std_msgs.msg import String
 
-from prometeo_navigation.modos import AUTO, MANUAL, Selector
+from prometeo_navigation.modos import AUTO, MANUAL, PARAR, Selector
 
 
 class SelectorModo(Node):
@@ -51,10 +51,15 @@ class SelectorModo(Node):
         self.create_subscription(String, 'modo', self.pedido_de_modo, 10)
 
         self.pub_cmd_vel = self.create_publisher(Twist, 'cmd_vel', 10)
+        # Copia de lo que sale por cmd_vel, para el panel. El panel no puede tener
+        # permiso sobre cmd_vel: en rosbridge leer y escribir van juntos, y podria
+        # mandarle ordenes a la ESP32 sin pasar por el selector.
+        self.pub_copia = self.create_publisher(Twist, 'orden_enviada', 10)
         guardado = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.pub_modo = self.create_publisher(String, 'modo_actual', guardado)
 
         self.create_timer(1.0 / frecuencia_hz, self.publicar)
+        self.create_timer(1.0, self.avisar_modo)  # una vez por segundo, para el panel
         self.avisar_modo()
         self.get_logger().info(
             f'Selector listo en modo {self.selector.modo}. '
@@ -71,18 +76,22 @@ class SelectorModo(Node):
 
     def pedido_de_modo(self, mensaje):
         if self.selector.cambiar_modo(mensaje.data):
-            self.get_logger().warn(f'MODO {self.selector.modo.upper()}')
+            pedido = mensaje.data.strip().upper()
+            self.get_logger().warn(f'{pedido}: modo {self.selector.modo.upper()}')
             self.pub_cmd_vel.publish(Twist())  # parar en el momento del cambio
             self.avisar_modo()
-        elif mensaje.data.strip().lower() not in (AUTO, MANUAL):
-            self.get_logger().error(f'Modo desconocido: "{mensaje.data}". Usar auto o manual.')
+        elif mensaje.data.strip().lower() not in (AUTO, MANUAL, PARAR):
+            self.get_logger().error(
+                f'Modo desconocido: "{mensaje.data}". Usar auto, manual o parar.')
 
     def avisar_modo(self):
         self.pub_modo.publish(String(data=self.selector.modo))
 
     def publicar(self):
         orden = self.selector.orden_a_publicar(self.ahora_s())
-        self.pub_cmd_vel.publish(orden if orden is not None else Twist())  # Twist() = parar
+        orden = orden if orden is not None else Twist()  # Twist() = parar
+        self.pub_cmd_vel.publish(orden)
+        self.pub_copia.publish(orden)
 
 
 def main():

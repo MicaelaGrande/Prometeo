@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prometeo - Panel de navegación</title>
+<!--
+  Panel de navegacion (T11). Funciona SIN INTERNET: no usa librerias ni fuentes de afuera.
+  Lo sirve la propia compu con panel.launch.py y habla con ROS por rosbridge.
+
+  Parametros en la URL: ?ns=prometeo&ws=9092&host=<ip>
+    ns=prometeo  -> robot real (firmware de navegacion_bajo, topics en /prometeo)
+    ns=          -> Gazebo (topics sin namespace)
+
+  Teclas: M manual, A automatico, ESPACIO parar (panico).
+          Flechas o W A S D para manejar en manual (A se usa para automatico solo
+          si no se esta manejando: para girar a la izquierda usar la flecha o Q).
+-->
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1d2330; --muted: #6a7385; --line: #dde1e8;
+    --ok: #1a8f4c; --warn: #b7791f; --bad: #c0392b; --idle: #6a7385; --accent: #2f62c8; --accent-text: #fff;
+    --probada: #6a7385; --pendiente: #2f62c8; --trabada: #c0392b; --camino: #1a8f4c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171d; --card: #1d222b; --text: #e7eaf0; --muted: #9aa3b5; --line: #2d3442;
+            --ok: #3ccf7a; --warn: #e3a93b; --bad: #ff6b5b; --idle: #9aa3b5; --accent: #6b9cff; --accent-text: #0f1420;
+            --probada: #9aa3b5; --pendiente: #6b9cff; --trabada: #ff6b5b; --camino: #3ccf7a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+           padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+  h1 { margin: 0; font-size: 1.15rem; }
+  h2 { margin: 0 0 12px; font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px;
+          border: 1px solid var(--line); font-size: .9rem; color: var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--idle); }
+  .ok .dot { background: var(--ok); } .warn .dot { background: var(--warn); } .bad .dot { background: var(--bad); }
+  main { display: grid; gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto;
+         grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+  .ancho { grid-column: 1 / -1; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .modo { font-size: 2rem; font-weight: 800; text-transform: uppercase; }
+  .modo.auto { color: var(--ok); } .modo.manual { color: var(--warn); } .modo.nada { color: var(--idle); }
+  .botones { display: flex; gap: 10px; flex-wrap: wrap; }
+  button { font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 10px; cursor: pointer;
+           border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  button kbd { font: .75rem ui-monospace, monospace; opacity: .7; margin-left: 6px; }
+  button.activo { outline: 3px solid var(--accent); }
+  button.panico { background: var(--bad); color: #fff; border-color: var(--bad); font-size: 1.1rem; padding: 12px 22px; }
+  .info { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .9rem; }
+  .fila { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  label { display: flex; gap: 8px; align-items: center; font-size: .9rem; color: var(--muted); }
+  input[type=range] { width: 140px; }
+  .teclas { display: grid; grid-template-columns: repeat(3, 44px); gap: 6px; justify-content: start; }
+  .tecla { height: 44px; border: 1px solid var(--line); border-radius: 8px; display: grid; place-items: center;
+           font-weight: 700; color: var(--muted); user-select: none; }
+  .tecla.on { background: var(--warn); color: #111; border-color: var(--warn); }
+  .sensores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .sensor { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .sensor .valor { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sensor .barra { height: 6px; border-radius: 3px; background: var(--line); margin-top: 6px; overflow: hidden; }
+  .sensor .barra div { height: 100%; background: var(--accent); width: 0; }
+  .sensor.cerca .valor { color: var(--bad); } .sensor.cerca .barra div { background: var(--bad); }
+  .sensor.viejo { opacity: .45; }
+  #mapa { width: 100%; height: 440px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); display: block; }
+  .leyenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: .85rem; color: var(--muted); margin-top: 8px; }
+  .leyenda span::before { content: ""; display: inline-block; width: 18px; height: 4px; border-radius: 2px;
+                          margin-right: 6px; vertical-align: middle; background: var(--c); }
+  #avisos { max-height: 260px; overflow-y: auto; font: .9rem/1.5 ui-monospace, monospace; }
+  #avisos div { padding: 2px 0; border-bottom: 1px solid var(--line); }
+  #avisos .ayuda { color: var(--bad); font-weight: 700; }
+  #avisos .local { color: var(--muted); }
+  #banner { display: none; background: var(--bad); color: #fff; font-weight: 700; padding: 12px 16px; font-size: 1.1rem; }
+</style>
+</head>
+<body>
+<div id="banner"></div>
+<header>
+  <h1>Prometeo · Panel de navegación</h1>
+  <div class="pills">
+    <span class="pill" id="p-ws"><span class="dot"></span><span>rosbridge</span></span>
+    <span class="pill" id="p-selector"><span class="dot"></span><span>selector</span></span>
+    <span class="pill" id="p-sensores"><span class="dot"></span><span>sensores</span></span>
+  </div>
+</header>
+<main>
+  <section class="ancho">
+    <div class="top">
+      <div>
+        <div class="info">Modo actual</div>
+        <div class="modo nada" id="modo">sin datos</div>
+      </div>
+      <div class="botones">
+        <button id="b-manual">Manual<kbd>M</kbd></button>
+        <button id="b-auto">Automático<kbd>A</kbd></button>
+        <button id="b-parar" class="panico">PARAR<kbd>ESPACIO</kbd></button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Manejo manual</h2>
+    <div class="fila">
+      <div class="teclas">
+        <span></span><div class="tecla" id="t-up">↑</div><span></span>
+        <div class="tecla" id="t-left">←</div><div class="tecla" id="t-down">↓</div><div class="tecla" id="t-right">→</div>
+      </div>
+      <div>
+        <label>Avance <input type="range" id="vel" min="0.05" max="0.4" step="0.01" value="0.15"> <span id="vel-v"></span></label>
+        <label>Giro <input type="range" id="giro" min="0.2" max="1.5" step="0.05" value="0.6"> <span id="giro-v"></span></label>
+      </div>
+    </div>
+    <p class="info">Flechas o W, S, Q, D. Solo mueve el robot en modo manual.
+      Orden que recibe la ESP32: <span id="cmd">—</span></p>
+
+    <h2 style="margin-top:16px">Ultrasonidos</h2>
+    <div class="sensores">
+      <div class="sensor" id="s-izq"><div class="info">Izquierda</div><div class="valor">—</div><div class="barra"><div></div></div></div>
+      <div class="sensor" id="s-frente"><div class="info">Frente</div><div class="valor">—</div><div class="barra"><div></div></div></div>
+      <div class="sensor" id="s-der"><div class="info">Derecha</div><div class="valor">—</div><div class="barra"><div></div></div></div>
+    </div>
+    <p class="info" id="pose">Posición: sin odometría</p>
+  </section>
+
+  <section>
+    <h2>Mapa de la libreta</h2>
+    <svg id="mapa" viewBox="0 0 600 440" role="img" aria-label="Mapa de lugares de la libreta"></svg>
+    <div class="leyenda">
+      <span style="--c: var(--probada)">probada</span>
+      <span style="--c: var(--pendiente)">pendiente</span>
+      <span style="--c: var(--trabada)">trabada</span>
+      <span style="--c: var(--camino)">camino elegido</span>
+      <span style="--c: var(--warn)">rastro del robot</span>
+    </div>
+    <p class="info" id="mapa-info">Todavía no llega la libreta (falta el nodo de Mapeo). Se dibuja el rastro del robot según la odometría.</p>
+  </section>
+
+  <section class="ancho">
+    <h2>Avisos</h2>
+    <div id="avisos"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+// ---------- Configuracion ----------
+const q = new URLSearchParams(location.search);
+const NS = q.has("ns") ? q.get("ns") : "prometeo";
+const P = NS ? "/" + NS : "";
+const HOST = q.get("host") || location.hostname || "localhost";
+const WS_URL = `ws://${HOST}:${q.get("ws") || 9092}`;
+const T = {
+  modo: P + "/modo", modoActual: P + "/modo_actual",
+  manual: P + "/cmd_vel_manual", cmdVel: P + "/orden_enviada",
+  distancias: P + "/distancias", odom: P + "/odom",
+  aviso: P + "/navegacion/aviso", libreta: P + "/mapeo/libreta",
+};
+const DIST_LEJOS_CM = 400;   // igual que micro_ros/main/sensores.h
+const CERCA_CM = 15;
+const $ = id => document.getElementById(id);
+
+// ---------- Avisos ----------
+function aviso(texto, clase) {
+  const d = document.createElement("div");
+  const hora = new Date().toLocaleTimeString();
+  d.textContent = `${hora}  ${texto}`;
+  if (clase) d.className = clase;
+  else if (/^\s*AYUDA/i.test(texto)) d.className = "ayuda";
+  const caja = $("avisos");
+  caja.prepend(d);
+  while (caja.children.length > 200) caja.lastChild.remove();
+  if (d.className === "ayuda") { $("banner").textContent = texto; $("banner").style.display = "block"; }
+}
+function pill(id, estado, texto) {
+  const p = $(id); p.className = "pill " + estado; p.lastElementChild.textContent = texto;
+}
+
+// ---------- rosbridge ----------
+let ws = null, reintento = 1000;
+const suscripciones = [
+  [T.modoActual, "std_msgs/msg/String"], [T.cmdVel, "geometry_msgs/msg/Twist"],
+  [T.distancias, "std_msgs/msg/Float32MultiArray"], [T.odom, "nav_msgs/msg/Odometry"],
+  [T.aviso, "std_msgs/msg/String"], [T.libreta, "std_msgs/msg/String"],
+];
+function enviar(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+function suscribir(topic, type) { enviar({ op: "subscribe", topic, type, throttle_rate: 0 }); }
+function publicar(topic, msg) { enviar({ op: "publish", topic, msg }); }
+
+function conectar() {
+  pill("p-ws", "warn", "rosbridge: conectando…");
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    reintento = 1000; pill("p-ws", "ok", "rosbridge");
+    aviso(`Conectado a ${WS_URL} (namespace "${NS || "ninguno"}")`, "local");
+    enviar({ op: "advertise", topic: T.modo, type: "std_msgs/msg/String" });
+    enviar({ op: "advertise", topic: T.manual, type: "geometry_msgs/msg/Twist" });
+    for (const [t, ty] of suscripciones) suscribir(t, ty);
+  };
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.op === "publish") recibir(m.topic, m.msg);
+    else if (m.op === "status" && m.level === "error") aviso("rosbridge: " + m.msg, "local");
+  };
+  ws.onclose = () => {
+    pill("p-ws", "bad", "rosbridge: sin conexión");
+    setTimeout(conectar, reintento); reintento = Math.min(reintento * 1.5, 8000);
+  };
+}
+
+// ---------- Lo que llega ----------
+let modo = null, ultModo = 0, ultDist = 0, ultimaLibreta = null;
+let pose = null, rastro = [];
+
+function recibir(topic, msg) {
+  if (topic === T.modoActual) { ultModo = Date.now(); mostrarModo(msg.data); }
+  else if (topic === T.cmdVel) {
+    $("cmd").textContent = `avance ${msg.linear.x.toFixed(2)} m/s · giro ${msg.angular.z.toFixed(2)} rad/s`;
+  }
+  else if (topic === T.distancias) { ultDist = Date.now(); mostrarDistancias(msg.data); }
+  else if (topic === T.odom) {
+    const p = msg.pose.pose.position, o = msg.pose.pose.orientation;
+    const yaw = Math.atan2(2 * (o.w * o.z + o.x * o.y), 1 - 2 * (o.y * o.y + o.z * o.z));
+    pose = { x: p.x, y: p.y, yaw };
+    const u = rastro[rastro.length - 1];
+    if (!u || Math.hypot(u.x - p.x, u.y - p.y) > 0.02) { rastro.push({ x: p.x, y: p.y }); if (rastro.length > 3000) rastro.shift(); }
+    $("pose").textContent = `Posición (odometría): x ${p.x.toFixed(2)} m · y ${p.y.toFixed(2)} m · ${(yaw * 180 / Math.PI).toFixed(0)}°`;
+    pedirDibujo();
+  }
+  else if (topic === T.aviso) aviso(msg.data);
+  else if (topic === T.libreta) {
+    try { ultimaLibreta = JSON.parse(msg.data); pedirDibujo(); }
+    catch (e) { aviso("La libreta llegó con un formato que no entiendo: " + e.message, "local"); }
+  }
+}
+
+function mostrarModo(m) {
+  if (m !== modo) {
+    aviso(`Modo: ${m.toUpperCase()}`, "local");
+    if (m === "auto") $("banner").style.display = "none";
+  }
+  modo = m;
+  $("modo").textContent = m === "auto" ? "Automático" : m === "manual" ? "Manual" : m;
+  $("modo").className = "modo " + (m === "auto" || m === "manual" ? m : "nada");
+  $("b-manual").classList.toggle("activo", m === "manual");
+  $("b-auto").classList.toggle("activo", m === "auto");
+}
+
+function mostrarDistancias(d) {
+  [["s-izq", d[0]], ["s-der", d[1]], ["s-frente", d[2]]].forEach(([id, cm]) => {
+    const s = $(id);
+    let texto, pct;
+    if (cm === undefined || cm < 0) { texto = "sin dato"; pct = 0; }
+    else if (cm >= DIST_LEJOS_CM) { texto = "lejos"; pct = 100; }
+    else { texto = cm.toFixed(0) + " cm"; pct = Math.min(100, cm / 100 * 100); }
+    s.querySelector(".valor").textContent = texto;
+    s.querySelector(".barra div").style.width = pct + "%";
+    s.classList.toggle("cerca", cm >= 0 && cm < CERCA_CM);
+  });
+}
+
+// Chequeo de lo que deja de llegar. Si no llegan distancias, se vuelve a suscribir:
+// rosbridge elige "best effort" solo si la ESP32 ya estaba publicando al suscribirse.
+setInterval(() => {
+  const ahora = Date.now();
+  if (!ultModo) pill("p-selector", "bad", "selector: no responde");
+  else if (ahora - ultModo > 3000) { pill("p-selector", "bad", "selector: no responde"); $("modo").className = "modo nada"; }
+  else pill("p-selector", "ok", "selector");
+  const viejo = !ultDist || ahora - ultDist > 2000;
+  pill("p-sensores", viejo ? "bad" : "ok", viejo ? "sensores: sin datos" : "sensores");
+  document.querySelectorAll(".sensor").forEach(s => s.classList.toggle("viejo", viejo));
+  if (viejo && ws && ws.readyState === 1) {
+    enviar({ op: "unsubscribe", topic: T.distancias });
+    suscribir(T.distancias, "std_msgs/msg/Float32MultiArray");
+  }
+}, 2500);
+
+// ---------- Botones y teclado ----------
+function pedirModo(texto) { publicar(T.modo, { data: texto }); aviso(`Pedido: ${texto.toUpperCase()}`, "local"); }
+$("b-manual").onclick = () => pedirModo("manual");
+$("b-auto").onclick = () => pedirModo("auto");
+$("b-parar").onclick = () => { teclas.clear(); pedirModo("parar"); };
+
+const teclas = new Set();
+const MAPA_TECLAS = {
+  ArrowUp: "up", w: "up", W: "up", ArrowDown: "down", s: "down", S: "down",
+  ArrowLeft: "left", q: "left", Q: "left", ArrowRight: "right", d: "right", D: "right",
+};
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.code === "Space") { e.preventDefault(); $("b-parar").click(); return; }
+  if (e.key === "m" || e.key === "M") { pedirModo("manual"); return; }
+  if ((e.key === "a" || e.key === "A") && !teclas.size) { pedirModo("auto"); return; }
+  const t = MAPA_TECLAS[e.key];
+  if (t) { e.preventDefault(); teclas.add(t); }
+});
+document.addEventListener("keyup", e => { const t = MAPA_TECLAS[e.key]; if (t) teclas.delete(t); });
+window.addEventListener("blur", () => teclas.clear());   // si se cambia de ventana, soltar todo
+
+let estabaManejando = false;
+setInterval(() => {
+  for (const t of ["up", "down", "left", "right"]) $("t-" + t).classList.toggle("on", teclas.has(t));
+  const v = parseFloat($("vel").value), g = parseFloat($("giro").value);
+  const avance = (teclas.has("up") ? v : 0) - (teclas.has("down") ? v : 0);
+  const giro = (teclas.has("left") ? g : 0) - (teclas.has("right") ? g : 0);
+  if (avance || giro) {
+    publicar(T.manual, { linear: { x: avance, y: 0, z: 0 }, angular: { x: 0, y: 0, z: giro } });
+    estabaManejando = true;
+  } else if (estabaManejando) {
+    publicar(T.manual, { linear: { x: 0, y: 0, z: 0 }, angular: { x: 0, y: 0, z: 0 } });
+    estabaManejando = false;
+  }
+}, 100);
+for (const id of ["vel", "giro"]) {
+  const mostrar = () => $(id + "-v").textContent = parseFloat($(id).value).toFixed(2) + (id === "vel" ? " m/s" : " rad/s");
+  $(id).oninput = mostrar; mostrar();
+}
+
+// ---------- Mapa ----------
+// Formato esperado en /mapeo/libreta (std_msgs/String con JSON), acordado en T3/T11:
+// {"lugares": [{"numero": 1, "x": 1.2, "y": 0.4, "tipo": "bifurcacion",
+//               "salidas": [{"direccion": "norte", "estado": "pendiente", "lleva_a": null}]}],
+//  "actual": 1, "camino": [1, 0]}
+// Norte es hacia donde miraba el robot al arrancar (+x en /odom) y se dibuja hacia arriba.
+const DIR = { norte: [1, 0], oeste: [0, 1], sur: [-1, 0], este: [0, -1] };
+const SVG = "http://www.w3.org/2000/svg";
+let dibujoPendiente = false;
+function pedirDibujo() { if (!dibujoPendiente) { dibujoPendiente = true; requestAnimationFrame(dibujar); } }
+
+function el(tag, attrs, padre) {
+  const e = document.createElementNS(SVG, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  padre.appendChild(e); return e;
+}
+
+function dibujar() {
+  dibujoPendiente = false;
+  const svg = $("mapa"); svg.innerHTML = "";
+  const lugares = (ultimaLibreta && ultimaLibreta.lugares) || [];
+  const porNumero = new Map(lugares.map(l => [l.numero, l]));
+
+  // Escala: que entren todos los lugares, el rastro y el robot, con margen
+  const pts = lugares.map(l => [l.x, l.y]).concat(rastro.map(r => [r.x, r.y]));
+  if (pose) pts.push([pose.x, pose.y]);
+  if (!pts.length) pts.push([0, 0]);
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const minX = Math.min(...xs) - 0.4, maxX = Math.max(...xs) + 0.4;
+  const minY = Math.min(...ys) - 0.4, maxY = Math.max(...ys) + 0.4;
+  const W = 600, H = 440;
+  const esc = Math.min(W / (maxY - minY), H / (maxX - minX), 300);
+  const mx = (minX + maxX) / 2, my = (minY + maxY) / 2;   // centro del dibujo, en metros
+  // pantalla: x de pantalla = -y del robot, y de pantalla = -x del robot (norte arriba)
+  const S = (x, y) => [W / 2 - (y - my) * esc, H / 2 - (x - mx) * esc];
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  // Grilla cada 0,5 m
+  const g = el("g", { stroke: css("--line"), "stroke-width": 1 }, svg);
+  for (let x = Math.floor(minX * 2) / 2; x <= maxX; x += 0.5) { const [a, b] = S(x, minY), [c, d] = S(x, maxY); el("line", { x1: a, y1: b, x2: c, y2: d }, g); }
+  for (let y = Math.floor(minY * 2) / 2; y <= maxY; y += 0.5) { const [a, b] = S(minX, y), [c, d] = S(maxX, y); el("line", { x1: a, y1: b, x2: c, y2: d }, g); }
+
+  // Rastro del robot
+  if (rastro.length > 1) {
+    el("polyline", { points: rastro.map(r => S(r.x, r.y).join(",")).join(" "), fill: "none",
+      stroke: css("--warn"), "stroke-width": 2, "stroke-opacity": .6 }, svg);
+  }
+
+  // Salidas: con destino, una linea entre lugares; sin destino, un tramo corto
+  const color = e => css("--" + (e === "probada" || e === "trabada" ? e : "pendiente"));
+  for (const l of lugares) {
+    for (const s of l.salidas || []) {
+      const [a, b] = S(l.x, l.y);
+      let c, d;
+      const destino = s.lleva_a != null ? porNumero.get(s.lleva_a) : null;
+      if (destino) [c, d] = S(destino.x, destino.y);
+      else { const v = DIR[s.direccion] || [0, 0]; [c, d] = S(l.x + v[0] * 0.25, l.y + v[1] * 0.25); }
+      el("line", { x1: a, y1: b, x2: c, y2: d, stroke: color(s.estado), "stroke-width": 4,
+        "stroke-linecap": "round", "stroke-dasharray": s.estado === "pendiente" ? "8 6" : "none" }, svg);
+    }
+  }
+
+  // Camino elegido por Dijkstra
+  const camino = ((ultimaLibreta && ultimaLibreta.camino) || []).map(n => porNumero.get(n)).filter(Boolean);
+  if (camino.length > 1) {
+    el("polyline", { points: camino.map(l => S(l.x, l.y).join(",")).join(" "), fill: "none",
+      stroke: css("--camino"), "stroke-width": 9, "stroke-opacity": .55, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+  }
+
+  // Lugares
+  for (const l of lugares) {
+    const [a, b] = S(l.x, l.y);
+    const actual = ultimaLibreta.actual === l.numero;
+    el("circle", { cx: a, cy: b, r: actual ? 13 : 10, fill: css("--card"),
+      stroke: actual ? css("--accent") : css("--text"), "stroke-width": actual ? 4 : 2 }, svg);
+    const t = el("text", { x: a, y: b + 4, "text-anchor": "middle", "font-size": 12, "font-weight": 700, fill: css("--text") }, svg);
+    t.textContent = l.numero;
+    const t2 = el("text", { x: a + 15, y: b - 10, "font-size": 11, fill: css("--muted") }, svg);
+    t2.textContent = l.tipo || "";
+  }
+
+  // Robot: triangulo que apunta hacia donde mira
+  if (pose) {
+    const [a, b] = S(pose.x, pose.y);
+    const ang = -pose.yaw * 180 / Math.PI;   // 0 = norte = arriba
+    el("polygon", { points: "0,-14 9,10 -9,10", fill: css("--warn"), stroke: css("--text"), "stroke-width": 1.5,
+      transform: `translate(${a},${b}) rotate(${ang})` }, svg);
+  }
+
+  const n = lugares.length;
+  $("mapa-info").textContent = ultimaLibreta
+    ? `${n} lugar${n === 1 ? "" : "es"} en la libreta` + (camino.length > 1 ? ` · camino: ${camino.map(l => l.numero).join(" → ")}` : "")
+    : "Todavía no llega la libreta (falta el nodo de Mapeo). Se dibuja el rastro del robot según la odometría.";
+}
+
+pedirDibujo();
+conectar();
+</script>
+</body>
+</html>

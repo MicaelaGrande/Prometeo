@@ -7,6 +7,9 @@
 AUTO = 'auto'
 MANUAL = 'manual'
 MODOS = (AUTO, MANUAL)
+# Boton de panico: no es un modo, es un pedido. Pasa a MANUAL y frena aunque ya
+# estuviera en manual (descarta la orden manual que venia llegando).
+PARAR = 'parar'
 
 
 class Selector:
@@ -24,12 +27,16 @@ class Selector:
     def cambiar_modo(self, texto):
         """Cambia al modo pedido. Devuelve True si cambio.
 
-        Acepta "auto" o "manual" sin importar mayusculas ni espacios. Cualquier otro
-        texto se ignora, para que un error de tipeo no deje al robot en un modo raro.
+        Acepta "auto", "manual" o "parar" (boton de panico), sin importar mayusculas ni
+        espacios. Cualquier otro texto se ignora, para que un error de tipeo no deje al robot en un modo raro.
         Al cambiar se borran las ordenes guardadas: el robot arranca quieto en el modo
         nuevo hasta que llegue una orden nueva, y no repite una vieja.
         """
         modo = texto.strip().lower()
+        if modo == PARAR:
+            self.modo = MANUAL
+            self.ultima = {AUTO: (None, None), MANUAL: (None, None)}
+            return True
         if modo not in MODOS or modo == self.modo:
             return False
         self.modo = modo

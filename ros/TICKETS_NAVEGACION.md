@@ -461,6 +461,36 @@ El firmware no cambia: la ESP32 obedece a `/cmd_vel` venga de donde venga. Con e
 con `--ros-args -r __ns:=/prometeo`. **Atención:** en ese firmware el freno de emergencia está
 desactivado ("desactivado por ahora" en `cmd_vel_callback`, `micro_ros/main/main.c`), así que en
 manual no hay freno: manejar despacio.
+**Panel de navegación (hecho el 5/11/2026), funciona sin internet:**
+
+```bash
+ros2 launch my_robot_bringup panel.launch.py          # robot real (/prometeo)
+ros2 launch my_robot_bringup panel.launch.py ns:=''   # Gazebo
+# abrir http://localhost:8082
+```
+
+Arranca rosbridge, el selector y la página (`my_robot_bringup/web/panel.html`). Muestra el modo,
+los ultrasonidos, la orden que sale a la ESP32, la posición y el rastro según `odom`, los avisos y
+el mapa de la libreta. Teclas: **M** manual, **A** automático, **ESPACIO** parar (pánico, también
+frena si ya estaba en manual), flechas o W, S, Q, D para manejar. rosbridge no tiene permiso
+sobre `cmd_vel`: todo pasa por el selector, que publica una copia en `orden_enviada`.
+
+Lo que el panel espera de los otros nodos (todavía no existen):
+
+- `navegacion/aviso` (`std_msgs/String`): texto libre. Si empieza con `AYUDA`, se muestra en rojo
+  arriba de todo. Ejemplo: `AYUDA: trabado en el lugar 4, llevalo hasta el lugar 2`.
+- `mapeo/libreta` (`std_msgs/String` con JSON), cada vez que cambia:
+
+```json
+{"lugares": [{"numero": 1, "x": 1.2, "y": 0.4, "tipo": "bifurcacion",
+              "salidas": [{"direccion": "norte", "estado": "pendiente", "lleva_a": null}]}],
+ "actual": 1, "camino": [1, 0]}
+```
+
+`estado` es `probada`, `pendiente` o `trabada`. `camino` es el que eligió Dijkstra, de lugar en
+lugar. **El robot real todavía no publica `odom`** (solo `velocidad`, estimada): sin eso no hay
+posición ni rastro, y Mapeo tampoco puede anotar dónde está cada lugar.
+
 Navegación alta deja de publicar en `/cmd_vel` y pasa a `/cmd_vel_auto`. Para la vuelta con la
 libreta partida, ver T8.
 
