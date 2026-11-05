@@ -12,6 +12,7 @@
 #include "sensores.h"
 #include "seguridad.h"
 #include "mg90s.h"
+#include "encoder.h"
 
 // Librerías base de micro-ROS
 #include <uros_network_interfaces.h>
@@ -70,6 +71,8 @@ static rcl_node_t node;
 static rcl_publisher_t publisher;
 static rcl_publisher_t pub_dist;
 static rcl_publisher_t pub_freno;
+static rcl_publisher_t pub_vel;
+static rcl_publisher_t pub_servos;
 static rcl_subscription_t sub_cmd_vel;
 static rcl_subscription_t sub_seguridad;
 static rcl_subscription_t sub_camara;
@@ -81,12 +84,22 @@ static std_msgs__msg__Float32MultiArray msg_dist;
 static float buf_dist[NUM_SENSORS];
 static uint32_t ultima_medicion = 0;   // última medición publicada en /distancias
 static std_msgs__msg__Bool msg_freno;
+static geometry_msgs__msg__Twist msg_vel;                 // velocidad estimada (lazo abierto)
+static std_msgs__msg__Float32MultiArray msg_servos;      // ángulos actuales, en orden SERVO_1..SERVO_5
+static float buf_servos[CANT_SERVOS];
 static int freno_publicado = -1;       // último valor publicado en /freno_emergencia (-1 = ninguno)
 static std_msgs__msg__Bool msg_seguridad;
 static geometry_msgs__msg__Twist msg_cmd_vel;
 static std_msgs__msg__Float32 msg_camara;
 static std_msgs__msg__Float32MultiArray msg_brazo;
 static float buf_brazo[BRAZO_JUNTAS];
+
+// /velocidad_ruedas: [vel_izq m/s, vel_der m/s, rpm_izq, rpm_der]
+#define VEL_RUEDAS_LEN 4
+static rcl_publisher_t pub_vel_ruedas;
+static rcl_timer_t timer_ruedas;
+static std_msgs__msg__Float32MultiArray msg_vel_ruedas;
+static float buf_vel_ruedas[VEL_RUEDAS_LEN];
 
 static void log_heap(const char *donde)
 {
@@ -109,15 +122,17 @@ static void cmd_vel_callback(const void *msgin)
 {
     const geometry_msgs__msg__Twist *m = (const geometry_msgs__msg__Twist *)msgin;
 
-    // + adelante, - atrás. Pasa por el freno de emergencia: si hay pared cerca, 0
-    float avance = seguridad_filtrar((float)m->linear.x);
-    float giro   = (float)m->angular.z;   // + izquierda, - derecha
+    // Un NaN/inf en el objetivo se queda pegado en la rampa y deja los motores muertos
+    if (!isfinite(m->linear.x) || !isfinite(m->angular.z)) {
+        ESP_LOGW(TAG, "/cmd_vel con NaN/inf: ignorado");
+        return;
+    }
 
-    // Cinemática diferencial (versión simple, valores -1..1)
-    float izq = avance - giro;
-    float der = avance + giro;
-
-    motores_set(izq, der);   // la librería limita a -1..1 y alimenta el failsafe
+    // linear.x en m/s (+ adelante), angular.z en rad/s (+ izquierda): igual que Gazebo.
+    // El freno de emergencia usa el avance normalizado (-1..1):
+    // float avance_norm = seguridad_filtrar(m->linear.x / (CONFIG_PROMETEO_VEL_MAX_MM_S / 1000.0f));   // desactivado por ahora
+    // La cinemática de 4 ruedas, el escalado y el failsafe están en motores_set_twist()
+    motores_set_twist((float)m->linear.x, (float)m->angular.z);
     estado_actual = "MOVIENDO";
 }
 
@@ -181,6 +196,44 @@ static void timer_callback(rcl_timer_t * t, int64_t last_call_time)
 }
 
 // =========================================================
+// PUBLICAR VELOCIDAD DE LAS RUEDAS cada PERIOD_MS (lo mismo que tarda el
+// driver en recalcularla). CON SIGNO (+ adelante, - atrás): el encoder tiene
+// un solo canal y no sabe para qué lado gira, así que el sentido se toma del
+// motor de esa rueda (lo que se le está aplicando de verdad, después de la rampa).
+// =========================================================
+
+// Qué motor mueve cada rueda con encoder (según los nombres del Kconfig).
+// VERIFICAR en el robot: con /cmd_vel angular.z > 0, izq tiene que dar - y der +.
+static const motor_id_t MOTOR_DE_RUEDA[ENC_CANTIDAD] = {
+    [ENC_DEL_IZQ]  = MOTOR_A,
+    [ENC_TRAS_IZQ] = MOTOR_B,
+    [ENC_DEL_DER]  = MOTOR_C,
+    [ENC_TRAS_DER] = MOTOR_D,
+};
+
+static float con_signo(encoder_id_t e, float valor)
+{
+    return (float)motor_get_sentido(MOTOR_DE_RUEDA[e]) * valor;
+}
+
+static void timer_ruedas_callback(rcl_timer_t * t, int64_t last_call_time)
+{
+    RCLC_UNUSED(last_call_time);
+    if (t != NULL) {
+        // Promedio de la rueda delantera y la trasera de cada lado
+        buf_vel_ruedas[0] = (con_signo(ENC_DEL_IZQ, encoder_get_vel(ENC_DEL_IZQ)) +
+                             con_signo(ENC_TRAS_IZQ, encoder_get_vel(ENC_TRAS_IZQ))) / 2.0f;
+        buf_vel_ruedas[1] = (con_signo(ENC_DEL_DER, encoder_get_vel(ENC_DEL_DER)) +
+                             con_signo(ENC_TRAS_DER, encoder_get_vel(ENC_TRAS_DER))) / 2.0f;
+        buf_vel_ruedas[2] = (con_signo(ENC_DEL_IZQ, encoder_get_rpm(ENC_DEL_IZQ)) +
+                             con_signo(ENC_TRAS_IZQ, encoder_get_rpm(ENC_TRAS_IZQ))) / 2.0f;
+        buf_vel_ruedas[3] = (con_signo(ENC_DEL_DER, encoder_get_rpm(ENC_DEL_DER)) +
+                             con_signo(ENC_TRAS_DER, encoder_get_rpm(ENC_TRAS_DER))) / 2.0f;
+        RCSOFTCHECK(rcl_publish(&pub_vel_ruedas, &msg_vel_ruedas, NULL));
+    }
+}
+
+// =========================================================
 // PUBLICAR DISTANCIAS apenas hay una medición nueva (~cada 120 ms):
 // [izq, der, frente] en cm (-1 = sin eco, 400 = lejos)
 // Se llama desde micro_ros_task: rcl no se puede usar desde otra tarea.
@@ -208,6 +261,34 @@ static void publicar_freno_si_cambio(void)
 }
 
 // =========================================================
+// PUBLICAR /velocidad y /servos/estado cada TELEMETRIA_PERIODO_MS
+// velocidad: ESTIMADA a lazo abierto desde el duty de los motores (no hay encoders)
+// servos/estado: ángulos actuales [camara, base, hombro, codo, garra] (SERVO_1..SERVO_5)
+// =========================================================
+#define TELEMETRIA_PERIODO_MS 200
+
+static void publicar_telemetria_si_toca(void)
+{
+    static TickType_t ultima = 0;
+    TickType_t ahora = xTaskGetTickCount();
+    if ((ahora - ultima) < pdMS_TO_TICKS(TELEMETRIA_PERIODO_MS)) {
+        return;
+    }
+    ultima = ahora;
+
+    float v, w;
+    motores_get_velocidad(&v, &w);
+    msg_vel.linear.x  = v;
+    msg_vel.angular.z = w;
+    RCSOFTCHECK(rcl_publish(&pub_vel, &msg_vel, NULL));
+
+    for (int s = 0; s < CANT_SERVOS; s++) {
+        buf_servos[s] = servo_get_actual((servo_id_t)s);
+    }
+    RCSOFTCHECK(rcl_publish(&pub_servos, &msg_servos, NULL));
+}
+
+// =========================================================
 // CREAR / DESTRUIR micro-ROS
 // =========================================================
 static bool crear_entidades(void)
@@ -229,12 +310,22 @@ static bool crear_entidades(void)
     RCRET(rclc_publisher_init_best_effort(&pub_dist, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "distancias"));
 
+    // Igual que /distancias: escuchar con QoS best effort
+    RCRET(rclc_publisher_init_best_effort(&pub_vel_ruedas, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "velocidad_ruedas"));
+
     RCRET(rclc_subscription_init_best_effort(&sub_cmd_vel, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "cmd_vel"));
 
     // Reliable: son eventos poco frecuentes que no se pueden perder
     RCRET(rclc_publisher_init_default(&pub_freno, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "freno_emergencia"));
+
+    // Telemetría periódica: best effort, la siguiente reemplaza a la que se pierda
+    RCRET(rclc_publisher_init_best_effort(&pub_vel, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "velocidad"));
+    RCRET(rclc_publisher_init_best_effort(&pub_servos, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "servos/estado"));
 
     RCRET(rclc_subscription_init_default(&sub_seguridad, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "seguridad_habilitada"));
@@ -245,10 +336,12 @@ static bool crear_entidades(void)
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "brazo/cmd"));
 
     RCRET(rclc_timer_init_default(&timer, &support, RCL_MS_TO_NS(500), timer_callback));
+    RCRET(rclc_timer_init_default(&timer_ruedas, &support, RCL_MS_TO_NS(PERIOD_MS), timer_ruedas_callback));
 
     executor = rclc_executor_get_zero_initialized_executor();
-    RCRET(rclc_executor_init(&executor, &support.context, 5, &allocator));  // timer + 4 suscripciones
+    RCRET(rclc_executor_init(&executor, &support.context, 6, &allocator));  // 2 timers + 4 suscripciones
     RCRET(rclc_executor_add_timer(&executor, &timer));
+    RCRET(rclc_executor_add_timer(&executor, &timer_ruedas));
     RCRET(rclc_executor_add_subscription(&executor, &sub_cmd_vel, &msg_cmd_vel,
           &cmd_vel_callback, ON_NEW_DATA));
     RCRET(rclc_executor_add_subscription(&executor, &sub_seguridad, &msg_seguridad,
@@ -275,7 +368,11 @@ static void destruir_entidades(void)
     (void) rcl_publisher_fini(&publisher, &node);
     (void) rcl_publisher_fini(&pub_dist, &node);
     (void) rcl_publisher_fini(&pub_freno, &node);
+    (void) rcl_publisher_fini(&pub_vel_ruedas, &node);
+    (void) rcl_publisher_fini(&pub_vel, &node);
+    (void) rcl_publisher_fini(&pub_servos, &node);
     (void) rcl_timer_fini(&timer);
+    (void) rcl_timer_fini(&timer_ruedas);
     (void) rclc_executor_fini(&executor);
     (void) rcl_node_fini(&node);
     (void) rclc_support_fini(&support);
@@ -304,6 +401,13 @@ static void micro_ros_task(void * arg)
     msg_dist.data.size = NUM_SENSORS;
     msg_dist.data.capacity = NUM_SENSORS;
 
+    msg_vel_ruedas.data.data = buf_vel_ruedas;
+    msg_vel_ruedas.data.size = VEL_RUEDAS_LEN;
+    msg_vel_ruedas.data.capacity = VEL_RUEDAS_LEN;
+    msg_servos.data.data = buf_servos;
+    msg_servos.data.size = CANT_SERVOS;
+    msg_servos.data.capacity = CANT_SERVOS;
+
     // El mensaje de /brazo/cmd también usa un buffer fijo (layout.dim queda vacío:
     // quien publique no debe llenar el layout)
     msg_brazo.data.data = buf_brazo;
@@ -329,7 +433,7 @@ static void micro_ros_task(void * arg)
 
         case AGENTE_DISPONIBLE:
             if (crear_entidades()) {
-                ESP_LOGI(TAG, "CONECTADO. Escuchando /cmd_vel, /camara/cmd y /brazo/cmd, publicando /distancias");
+                ESP_LOGI(TAG, "CONECTADO. Escuchando /cmd_vel, /camara/cmd y /brazo/cmd, publicando /distancias y /velocidad_ruedas");
                 estado = CONECTADO;
                 ms_desde_ping = 0;
             } else {
@@ -349,6 +453,7 @@ static void micro_ros_task(void * arg)
             rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
             publicar_distancias_si_hay_nuevas();
             publicar_freno_si_cambio();
+            publicar_telemetria_si_toca();
             vTaskDelay(pdMS_TO_TICKS(10));
             ms_desde_ping += 20;
             break;
@@ -370,6 +475,9 @@ void app_main(void)
 {
     // 1. Iniciar la librería de motores (arranca frenado)
     motores_init();
+
+    // 1a. Iniciar los encoders (cuentan pulsos por interrupción aunque no haya agente)
+    encoders_init();
 
     // 1b. Iniciar los servos (van a su posición home sin saltos)
     servos_init();

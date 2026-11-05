@@ -26,3 +26,6 @@ firmware/esp32_cam/calibracion/imagenes/
 firmware/esp32_cam/calibracion/resultados/
 firmware/esp32_cam/calibracion/pruebas_flechas/
 
+# ESP32 (bajo nivel)
+mcpwm_servo_control/
+sdkconfig

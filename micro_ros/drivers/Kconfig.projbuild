@@ -136,3 +136,83 @@ menu "Prometeo - Pines GPIO"
         default 25
 
 endmenu
+
+menu "Prometeo - Cinematica"
+
+    config PROMETEO_WHEEL_SEPARATION_MM
+        int "Separacion entre ruedas izq/der (mm)"
+        range 50 1000
+        default 161
+        help
+            Distancia entre el centro de las ruedas izquierdas y derechas
+            (URDF: wheel_separation = 0.1605 m).
+
+    config PROMETEO_VEL_MAX_MM_S
+        int "Velocidad lineal con motores al 100% (mm/s)"
+        range 50 5000
+        default 700
+        help
+            Velocidad del robot en linea recta a duty 1.0. ESTIMADO: medir
+            cronometrando cuanto tarda en recorrer 1 m a fondo.
+            Tambien la usa el freno de emergencia (seguridad.c).
+
+    config PROMETEO_TURN_FACTOR_PCT
+        int "Factor de giro skid-steer (%)"
+        range 50 500
+        default 100
+        help
+            Multiplica la separacion entre ruedas para girar. Con 4 ruedas sin
+            direccion las ruedas patinan al girar y el ancho efectivo es mayor
+            que el real (tipico 150-250%). Ajustar girando en el lugar a una
+            velocidad angular conocida: si gira de menos, bajar el factor.
+
+endmenu
+
+menu "Prometeo - Test de motores"
+
+    config PROMETEO_BUILD_MOTOR_TEST
+        bool "Compilar el firmware de TEST DE MOTORES (en vez del normal)"
+        default n
+        help
+            Compila main/main_test_motores.c: recorre los 4 motores (adelante y atras),
+            publica su estado por micro-ROS y acepta comandos. No inicia servos ni
+            sensores. Para volver al firmware normal, desactivar esta opcion.
+
+    config PROMETEO_TEST_AUTOSTART
+        bool "Arrancar el ciclo solo, unos segundos despues de iniciar"
+        depends on PROMETEO_BUILD_MOTOR_TEST
+        default n
+        help
+            Si esta desactivado el test arranca en pausa y espera el comando "auto".
+
+    config PROMETEO_TEST_AUTOSTART_DELAY_S
+        int "Segundos de espera antes de arrancar solo"
+        depends on PROMETEO_TEST_AUTOSTART
+        range 1 60
+        default 10
+
+    config PROMETEO_TEST_DUTY_MAX_PCT
+        int "Potencia maxima del test (%)"
+        depends on PROMETEO_BUILD_MOTOR_TEST
+        range 10 100
+        default 60
+
+    config PROMETEO_TEST_RAMP_MS
+        int "Duracion de la subida de potencia (ms)"
+        depends on PROMETEO_BUILD_MOTOR_TEST
+        range 200 10000
+        default 1500
+
+    config PROMETEO_TEST_HOLD_MS
+        int "Tiempo a potencia maxima (ms)"
+        depends on PROMETEO_BUILD_MOTOR_TEST
+        range 100 10000
+        default 800
+
+    config PROMETEO_TEST_PAUSE_MS
+        int "Pausa entre pasos (ms)"
+        depends on PROMETEO_BUILD_MOTOR_TEST
+        range 100 10000
+        default 700
+
+endmenu

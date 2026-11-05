@@ -24,6 +24,7 @@ void  servos_detener(void);                  // congela cada servo donde está (
 
 // ===== ESTADO =====
 float servo_get_angulo(servo_id_t s);        // ángulo OBJETIVO (no el actual)
+float servo_get_actual(servo_id_t s);        // ángulo ACTUAL (el que va siguiendo la rampa)
 bool  servo_en_movimiento(servo_id_t s);     // true si todavía no llegó al objetivo
 bool  servos_en_movimiento(void);            // true si algún servo se está moviendo
 
