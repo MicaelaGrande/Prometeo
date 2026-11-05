@@ -30,6 +30,12 @@
   .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .modo { font-size: 1.6rem; font-weight: 700; text-transform: uppercase; }
   .modo.auto { color: var(--ok); } .modo.manual { color: var(--warn); } .modo.pausa { color: var(--idle); }
+  .modo.rpm { color: var(--accent); }
+  .enc { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px;
+         padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-variant-numeric: tabular-nums; }
+  .enc .rpm { font-size: 1.5rem; font-weight: 700; }
+  .enc .obj { color: var(--muted); font-size: .9rem; text-align: right; }
+  .enc.cerca .rpm { color: var(--ok); } .enc.lejos .rpm { color: var(--warn); }
   .info { color: var(--muted); font-variant-numeric: tabular-nums; }
   .motors { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
   .motor { border: 2px solid var(--line); border-radius: 10px; padding: 12px; }
@@ -59,6 +65,16 @@
   #log { font: .82rem/1.5 ui-monospace, Menlo, Consolas, monospace; max-height: 180px; overflow: auto; color: var(--muted); }
   #log b { color: var(--text); }
   .aviso { color: var(--warn); font-size: .9rem; }
+  .alarma { background: var(--bad); color: #fff; border-radius: 12px; padding: 14px 16px; font-weight: 600;
+            display: flex; gap: 12px; align-items: center; }
+  .alarma[hidden] { display: none; }
+  .alarma .ico { font-size: 1.6rem; }
+  .encs { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 520px; }
+  .encbox { border: 2px solid var(--line); border-radius: 10px; padding: 10px 12px; transition: border-color .15s, background .15s; }
+  .encbox b { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+  .encbox small { color: var(--muted); display: block; }
+  .encbox.vivo { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 18%, transparent); }
+  .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text); }
 </style>
 </head>
 <body>
@@ -85,10 +101,24 @@
     </div>
   </section>
 
+  <div class="alarma" id="alarma" hidden>
+    <span class="ico">⚠</span>
+    <div><div id="alarma-txt"></div>
+      <small style="font-weight:400">Motores frenados por la protección. Revisá la rueda y los cables del encoder antes de seguir.</small></div>
+  </div>
+
+  <section>
+    <h2>Encoders · identificar cables</h2>
+    <div class="encs" id="encs"></div>
+    <p class="aviso" style="margin-bottom:0">Con los motores quietos, girá cada rueda con la mano: se tiene que iluminar la caja de <b>esa</b> rueda.
+      Si se ilumina otra, los cables de encoder no coinciden con menuconfig.</p>
+  </section>
+
   <section>
     <h2>Motores</h2>
     <div class="motors" id="motores"></div>
-    <p class="aviso">“probado” = el motor fue accionado, no hay realimentación: mirá si la rueda giró y marcá ok / fallo.</p>
+    <p class="aviso">“probado” = el motor fue accionado; mirá si la rueda giró (o si el encoder midió rpm) y marcá ok / fallo.
+      El encoder tiene un solo canal: el signo de las rpm es el del sentido pedido.</p>
   </section>
 
   <section>
@@ -124,12 +154,63 @@
         </div>
       </div>
       <div>
+        <label>Giro en el lugar</label>
+        <div class="row" style="align-items:center">
+          <label style="gap:6px;align-items:center">duración
+            <input type="number" id="g-ms" value="1000" min="100" max="10000" step="100" style="width:90px"> ms</label>
+        </div>
+        <div style="margin-top:10px">
+          <label><span>Potencia del giro</span><b id="g-duty-v">0.50</b></label>
+          <input type="range" id="g-duty" min="0.1" max="1" step="0.05" value="0.5">
+        </div>
+        <div class="row">
+          <button class="primary" id="b-gizq">⟲ Girar a la izquierda</button>
+          <button class="primary" id="b-gder">⟳ Girar a la derecha</button>
+        </div>
+        <div class="row" style="align-items:center;margin-top:14px">
+          <label style="gap:6px;align-items:center">en lazo cerrado
+            <input type="number" id="g-rpm" value="30" min="0" max="200" step="1" style="width:80px"> rpm</label>
+        </div>
+        <div class="row">
+          <button id="b-grizq">⟲ Izquierda a rpm</button>
+          <button id="b-grder">⟳ Derecha a rpm</button>
+        </div>
+        <small style="color:var(--muted)">Las ruedas izquierdas (A, B) van para un lado y las derechas (C, D) para el otro.
+          Si gira al revés, hay un motor con los cables invertidos. El giro a rpm usa la duración de lazo cerrado.</small>
+      </div>
+      <div>
+        <label>Velocidad en lazo cerrado (encoders)</label>
+        <div class="row" style="align-items:center">
+          <label style="gap:6px;align-items:center">duración
+            <input type="number" id="r-ms" value="10000" min="100" max="30000" step="1000" style="width:100px"> ms</label>
+        </div>
+        <div class="row" style="align-items:center">
+          <label style="gap:6px;align-items:center">rpm de todos (fija las 4 tarjetas)
+            <input type="number" id="r-rpm" value="30" min="0" max="200" step="1" style="width:80px"></label>
+        </div>
+        <div class="row">
+          <button class="primary" id="b-rfwd">▲ Adelante todos</button>
+          <button class="primary" id="b-rback">▼ Atrás todos</button>
+        </div>
+        <div class="row" style="align-items:center;margin-top:14px">
+          <label style="gap:6px;align-items:center">kp <input type="number" id="pi-kp" value="0.003" min="0" max="1" step="0.001" style="width:90px"></label>
+          <label style="gap:6px;align-items:center">ki <input type="number" id="pi-ki" value="0.02" min="0" max="1" step="0.005" style="width:90px"></label>
+          <button id="b-pi">Aplicar PI</button>
+        </div>
+        <small style="color:var(--muted)">PI actual en el ESP32: <span id="pi-act">—</span>. Si oscila, bajá kp/ki; si no llega, subí ki.
+          Hay una velocidad mínima real (zona muerta de los motores): si pedís menos, gira a esa mínima.</small>
+        <div class="row" style="align-items:center;margin-top:14px">
+          <label class="switch"><input type="checkbox" id="prot" checked> Protección: frenar si una rueda con potencia no da pulsos</label>
+        </div>
+        <small class="aviso" id="prot-off" hidden>⚠ Protección APAGADA: un motor trabado o con el encoder mal puede recalentar el driver.</small>
+      </div>
+      <div>
         <label>Comando de texto</label>
         <div class="row">
           <input type="text" id="txt" placeholder="set B 0.5 1500" style="flex:1;min-width:0;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text)">
           <button id="b-txt">Enviar</button>
         </div>
-        <small style="color:var(--muted)">auto · reset · pausa · siguiente · set X duty [ms] · setall a b c d [ms] · vmax [X] v · ok X · fallo X</small>
+        <small style="color:var(--muted)">auto · reset · pausa · siguiente · set X duty [ms] · setall a b c d [ms] · vmax [X] v · rpm X v [ms] · pi kp ki · proteccion on|off · ok X · fallo X</small>
       </div>
     </div>
   </section>
@@ -163,6 +244,17 @@ $("motores").innerHTML = MOTORES.map(([l, d]) => `
     <small>${d}</small>
     <div class="bar"><div class="fill" id="bar-${l}"></div></div>
     <div class="info" id="acc-${l}">detenido</div>
+    <div class="enc" id="enc-${l}">
+      <span><span class="rpm" id="rpm-${l}">—</span> rpm</span>
+      <span class="obj" id="obj-${l}">encoder</span>
+    </div>
+    <label style="margin-top:10px"><span>Lazo cerrado (rpm)</span>
+      <input type="number" id="rd-${l}" value="30" min="0" max="200" step="1" style="width:80px"></label>
+    <div class="row">
+      <button class="primary" data-rfwd="${l}">▲ rpm</button>
+      <button class="primary" data-rback="${l}">▼ rpm</button>
+      <button data-rstop="${l}">■</button>
+    </div>
     <label style="margin-top:10px"><span>Manual</span><b id="md-v-${l}">0.50</b></label>
     <input type="range" id="md-${l}" min="0" max="1" step="0.05" value="0.5">
     <div class="row">
@@ -176,6 +268,17 @@ $("motores").innerHTML = MOTORES.map(([l, d]) => `
       <button class="fail" data-fallo="${l}">✘ fallo</button>
     </div>
   </div>`).join("");
+
+// ---- UI de encoders (orden del firmware: DEL_IZQ, DEL_DER, TRAS_IZQ, TRAS_DER) ----
+const ENCS = [["delantera izquierda", "A"], ["delantera derecha", "C"],
+              ["trasera izquierda", "B"], ["trasera derecha", "D"]];
+const ENC_ORDEN = [0, 1, 2, 3];   // en pantalla: fila de adelante y fila de atrás, izq | der
+$("encs").innerHTML = ENC_ORDEN.map(i => `
+  <div class="encbox" id="encbox-${i}">
+    <small>Rueda ${ENCS[i][0]} · motor ${ENCS[i][1]} · <span id="encpin-${i}">GPIO ?</span></small>
+    <b id="encn-${i}">—</b> <small style="display:inline">pulsos</small>
+  </div>`).join("");
+const pulsosAnt = [null, null, null, null], vivoHasta = [0, 0, 0, 0];
 
 function pill(id, clase, texto) {
   const el = $(id); el.className = "pill " + clase;
@@ -193,7 +296,8 @@ function mostrar(e) {
   estadoActual = e;
   const modo = $("modo"); modo.textContent = e.modo; modo.className = "modo " + e.modo;
   $("detalle").textContent = `ciclo ${e.ciclo}` +
-    (e.motor ? ` · motor ${e.motor} ${e.accion} (${Number(e.duty).toFixed(2)})` : "");
+    (e.motor && e.modo !== "rpm" ? ` · motor ${e.motor} ${e.accion} (${Number(e.duty).toFixed(2)})` : "") +
+    (e.modo === "rpm" ? " · control de velocidad con encoders" : "");
   pill("p-fs", e.failsafe ? "warn" : "ok", e.failsafe ? "motores frenados" : "motores activos");
   for (const [l] of MOTORES) {
     const idx = MOTORES.findIndex(m => m[0] === l);
@@ -204,7 +308,35 @@ function mostrar(e) {
     const bar = $("bar-" + l);
     bar.style.left = d >= 0 ? "50%" : (50 - w) + "%"; bar.style.width = w + "%";
     $("acc-" + l).textContent = activo ? `${d > 0 ? "adelante" : "atrás"} · ${d.toFixed(2)}` : "detenido";
+    // encoder: medido vs objetivo (firmware viejo sin estos campos -> "—")
+    const med = e.rpm_med ? Number(e.rpm_med[idx]) : NaN, obj = e.rpm_obj ? Number(e.rpm_obj[idx]) : 0;
+    $("rpm-" + l).textContent = Number.isFinite(med) ? med.toFixed(1) : "—";
+    $("obj-" + l).textContent = obj ? `objetivo ${obj.toFixed(1)}` : "encoder";
+    const enc = $("enc-" + l);
+    enc.classList.toggle("cerca", !!obj && Math.abs(med - obj) <= Math.max(1, Math.abs(obj) * 0.1));
+    enc.classList.toggle("lejos", !!obj && Math.abs(med - obj) > Math.max(1, Math.abs(obj) * 0.1));
   }
+  // alarma de la protección
+  $("alarma").hidden = !e.alarma;
+  $("alarma-txt").textContent = e.alarma || "";
+  if (e.alarma && e.alarma !== mostrar.ultimaAlarma) log("ALARMA: " + e.alarma);
+  mostrar.ultimaAlarma = e.alarma;
+  if (typeof e.proteccion === "boolean") {
+    if (document.activeElement !== $("prot")) $("prot").checked = e.proteccion;
+    $("prot-off").hidden = e.proteccion;
+  }
+  // encoders crudos: se ilumina la caja que recibió pulsos en el último segundo
+  if (Array.isArray(e.pulsos)) {
+    const ahora = Date.now();
+    e.pulsos.forEach((n, i) => {
+      if (pulsosAnt[i] !== null && n !== pulsosAnt[i]) vivoHasta[i] = ahora + 1000;
+      pulsosAnt[i] = n;
+      $("encn-" + i).textContent = n;
+      $("encbox-" + i).classList.toggle("vivo", ahora < vivoHasta[i]);
+      if (e.enc_pin) $("encpin-" + i).textContent = "GPIO " + e.enc_pin[i];
+    });
+  }
+  if (e.pi) $("pi-act").textContent = `kp ${Number(e.pi.kp).toFixed(4)} · ki ${Number(e.pi.ki).toFixed(4)}`;
   for (const [l] of MOTORES) {   // máximo del ciclo de cada motor, tal como lo tiene el ESP32
     const s = $("vm-" + l);
     if (document.activeElement !== s) { s.value = e.vmax[l]; $("vm-v-" + l).textContent = e.vmax[l].toFixed(2); }
@@ -279,6 +411,51 @@ function manual(signo) {
 }
 $("b-fwd").onclick = () => manual(+1);
 $("b-back").onclick = () => manual(-1);
+// ---- giro en el lugar ----
+// sentido +1 = izquierda (antihorario): izquierdas (A, B) atrás y derechas (C, D) adelante.
+// sentido -1 = derecha (horario): al revés.
+const LADO = { A: -1, B: -1, C: +1, D: +1 };
+$("g-duty").oninput = () => $("g-duty-v").textContent = Number($("g-duty").value).toFixed(2);
+function girar(sentido) {
+  const p = Number($("g-duty").value);
+  const d = MOTORES.map(([l]) => (sentido * LADO[l] * p).toFixed(2));
+  enviarCmd(`setall ${d.join(" ")} ${$("g-ms").value}`);
+}
+function girarRpm(sentido) {
+  const v = Math.min(200, Math.max(0, Number($("g-rpm").value) || 0));
+  MOTORES.forEach(([l]) => enviarCmd(`rpm ${l} ${(sentido * LADO[l] * v).toFixed(1)} ${$("r-ms").value}`));
+}
+$("b-gizq").onclick = () => girar(+1);
+$("b-gder").onclick = () => girar(-1);
+$("b-grizq").onclick = () => girarRpm(+1);
+$("b-grder").onclick = () => girarRpm(-1);
+// ---- lazo cerrado (rpm) ----
+const rpmDe = l => Math.min(200, Math.max(0, Number($("rd-" + l).value) || 0));
+function rpmMotor(l, signo) { enviarCmd(`rpm ${l} ${(signo * rpmDe(l)).toFixed(1)} ${$("r-ms").value}`); }
+for (const [l] of MOTORES) {
+  document.querySelector(`[data-rfwd="${l}"]`).onclick = () => rpmMotor(l, +1);
+  document.querySelector(`[data-rback="${l}"]`).onclick = () => rpmMotor(l, -1);
+  document.querySelector(`[data-rstop="${l}"]`).onclick = () => enviarCmd(`rpm ${l} 0 ${$("r-ms").value}`);
+}
+// El valor global fija el de las 4 tarjetas (después se puede ajustar cada una)
+$("r-rpm").oninput = () => { for (const [l] of MOTORES) $("rd-" + l).value = $("r-rpm").value; };
+// Los 4 a la vez, cada uno con SU rpm: si son todas iguales va un solo "rpm all"
+function rpmTodos(signo) {
+  const v = MOTORES.map(([l]) => (signo * rpmDe(l)).toFixed(1));
+  if (v.every(x => x === v[0])) enviarCmd(`rpm all ${v[0]} ${$("r-ms").value}`);
+  else MOTORES.forEach(([l], i) => enviarCmd(`rpm ${l} ${v[i]} ${$("r-ms").value}`));
+}
+$("b-rfwd").onclick = () => rpmTodos(+1);
+$("b-rback").onclick = () => rpmTodos(-1);
+$("prot").onchange = () => {
+  if (!$("prot").checked && !confirm("¿Apagar la protección? Un motor trabado o con el encoder mal puede quemar el driver.")) {
+    $("prot").checked = true; return;
+  }
+  enviarCmd("proteccion " + ($("prot").checked ? "on" : "off"));
+  $("prot").blur();
+};
+$("b-pi").onclick = () => enviarCmd(`pi ${Number($("pi-kp").value)} ${Number($("pi-ki").value)}`);
+
 $("b-txt").onclick = () => { const t = $("txt").value.trim(); if (t && enviarCmd(t)) $("txt").value = ""; };
 $("txt").onkeydown = ev => { if (ev.key === "Enter") $("b-txt").click(); };
 

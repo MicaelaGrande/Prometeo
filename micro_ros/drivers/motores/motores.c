@@ -48,6 +48,11 @@ static const int pines[CANT_MOTORES][2] = {
 static volatile float objetivo[CANT_MOTORES] = {0};
 static volatile float actual[CANT_MOTORES]   = {0};
 
+// Último sentido aplicado a cada motor (+1 adelante, -1 atrás). Los encoders son de un
+// canal y no saben para qué lado gira la rueda: lo toman de acá. Con el motor en 0 se
+// mantiene el último (la rueda sigue girando por inercia).
+static volatile int sentido[CANT_MOTORES] = {1, 1, 1, 1};
+
 // 32 bits: en el ESP32 un int64 se lee en dos pasos y la tarea de rampa podía leer
 // un valor a medio escribir (falso failsafe). Se compara con resta sin signo (vale hasta 71 min).
 static volatile uint32_t ultima_orden_us = 0;
@@ -61,6 +66,10 @@ static void escribir(int canal, int valor)
 
 static void aplicar(motor_id_t m, float v)
 {
+    // Sentido para el signo de los encoders (antes de 'invertido': es para dónde va el robot)
+    if (v >  0.001f) sentido[m] =  1;
+    if (v < -0.001f) sentido[m] = -1;
+
     if (invertido[m]) v = -v;
 
     float mag = (v < 0) ? -v : v;   // tamaño de la velocidad, sin signo
@@ -227,3 +236,5 @@ void motores_get_velocidad(float *v_mps, float *w_rads)
 }
 
 bool motores_en_falla(void) { return en_falla; }
+
+int motor_get_sentido(motor_id_t m) { return (m < CANT_MOTORES) ? sentido[m] : 1; }

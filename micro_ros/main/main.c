@@ -197,17 +197,38 @@ static void timer_callback(rcl_timer_t * t, int64_t last_call_time)
 
 // =========================================================
 // PUBLICAR VELOCIDAD DE LAS RUEDAS cada PERIOD_MS (lo mismo que tarda el
-// driver en recalcularla). Siempre >= 0: el encoder tiene un solo canal y
-// no sabe para qué lado gira.
+// driver en recalcularla). CON SIGNO (+ adelante, - atrás): el encoder tiene
+// un solo canal y no sabe para qué lado gira, así que el sentido se toma del
+// motor de esa rueda (lo que se le está aplicando de verdad, después de la rampa).
 // =========================================================
+
+// Qué motor mueve cada rueda con encoder (según los nombres del Kconfig).
+// VERIFICAR en el robot: con /cmd_vel angular.z > 0, izq tiene que dar - y der +.
+static const motor_id_t MOTOR_DE_RUEDA[ENC_CANTIDAD] = {
+    [ENC_DEL_IZQ]  = MOTOR_A,
+    [ENC_TRAS_IZQ] = MOTOR_B,
+    [ENC_DEL_DER]  = MOTOR_C,
+    [ENC_TRAS_DER] = MOTOR_D,
+};
+
+static float con_signo(encoder_id_t e, float valor)
+{
+    return (float)motor_get_sentido(MOTOR_DE_RUEDA[e]) * valor;
+}
+
 static void timer_ruedas_callback(rcl_timer_t * t, int64_t last_call_time)
 {
     RCLC_UNUSED(last_call_time);
     if (t != NULL) {
-        buf_vel_ruedas[0] = encoder_get_vel_izq();
-        buf_vel_ruedas[1] = encoder_get_vel_der();
-        buf_vel_ruedas[2] = encoder_get_rpm_izq();
-        buf_vel_ruedas[3] = encoder_get_rpm_der();
+        // Promedio de la rueda delantera y la trasera de cada lado
+        buf_vel_ruedas[0] = (con_signo(ENC_DEL_IZQ, encoder_get_vel(ENC_DEL_IZQ)) +
+                             con_signo(ENC_TRAS_IZQ, encoder_get_vel(ENC_TRAS_IZQ))) / 2.0f;
+        buf_vel_ruedas[1] = (con_signo(ENC_DEL_DER, encoder_get_vel(ENC_DEL_DER)) +
+                             con_signo(ENC_TRAS_DER, encoder_get_vel(ENC_TRAS_DER))) / 2.0f;
+        buf_vel_ruedas[2] = (con_signo(ENC_DEL_IZQ, encoder_get_rpm(ENC_DEL_IZQ)) +
+                             con_signo(ENC_TRAS_IZQ, encoder_get_rpm(ENC_TRAS_IZQ))) / 2.0f;
+        buf_vel_ruedas[3] = (con_signo(ENC_DEL_DER, encoder_get_rpm(ENC_DEL_DER)) +
+                             con_signo(ENC_TRAS_DER, encoder_get_rpm(ENC_TRAS_DER))) / 2.0f;
         RCSOFTCHECK(rcl_publish(&pub_vel_ruedas, &msg_vel_ruedas, NULL));
     }
 }

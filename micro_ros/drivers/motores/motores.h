@@ -32,3 +32,4 @@ void motores_set_twist(float v_mps, float w_rads); // cinemática diferencial de
 void motores_frenar(void);                     // freno de emergencia inmediato
 void motores_get_velocidad(float *v_mps, float *w_rads); // velocidad ESTIMADA a lazo abierto (sin encoders): m/s y rad/s
 bool motores_en_falla(void);                   // true si frenó por falta de órdenes
+int  motor_get_sentido(motor_id_t m);          // +1 adelante / -1 atrás: último sentido aplicado (signo de los encoders)
