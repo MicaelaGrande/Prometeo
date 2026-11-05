@@ -456,8 +456,11 @@ Teclado o joystick (manual)  ──► /cmd_vel_manual ─┘         ▲
 | El detector avisa lugares | sí | pausado |
 | Al volver a automático | — | `MIRANDO_ALREDEDOR` (T2) y ubicarse en la libreta (T3) |
 
-El firmware no cambia: la ESP32 obedece a `/cmd_vel` venga de donde venga, y el freno de
-emergencia (`seguridad_filtrar`, `micro_ros/main/main.c`) sigue activo en los dos modos.
+El firmware no cambia: la ESP32 obedece a `/cmd_vel` venga de donde venga. Con el firmware de
+`navegacion_bajo` el topic es `/prometeo/cmd_vel`, en m/s y rad/s, así que el selector se corre
+con `--ros-args -r __ns:=/prometeo`. **Atención:** en ese firmware el freno de emergencia está
+desactivado ("desactivado por ahora" en `cmd_vel_callback`, `micro_ros/main/main.c`), así que en
+manual no hay freno: manejar despacio.
 Navegación alta deja de publicar en `/cmd_vel` y pasa a `/cmd_vel_auto`. Para la vuelta con la
 libreta partida, ver T8.
 
