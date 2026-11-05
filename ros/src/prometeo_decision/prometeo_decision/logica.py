@@ -10,7 +10,8 @@
 #     Arranca con el primero que falte, cuando ve su flecha.
 #   - Mientras sigue ese color, ignora las flechas y los cubos de los otros.
 #   - El color se libera recien al depositar el cubo. Si el brazo falla,
-#     sigue buscando el mismo.
+#     lo intenta hasta MAXIMO_DE_INTENTOS veces en total. Si falla todas,
+#     abandona ese color, vuelve al inicio y sigue con el proximo.
 #   - Si no hay flecha de su color, o no se entiende hacia donde apunta,
 #     decide Exploracion.
 #
@@ -25,8 +26,9 @@ from typing import Optional
 BUSCANDO_COLOR = 'buscando_color'  # todavia no eligio que color seguir
 SIGUIENDO = 'siguiendo'            # sigue las flechas de color_actual
 ACERCANDO = 'acercando'            # vio su cubo y se esta acercando
+VOLVIENDO_SIN_CUBO = 'volviendo_sin_cubo'  # abandono el color y vuelve al inicio
 VOLVIENDO = 'volviendo'            # agarro el cubo y vuelve a depositarlo (T8)
-TERMINADO = 'terminado'            # ya deposito los 3 cubos
+TERMINADO = 'terminado'            # ya no le queda ningun color por buscar
 
 # --- Colores ---------------------------------------------------------------
 # Escritos igual que en huggin_vision_msgs/Detection.msg.
@@ -67,6 +69,10 @@ SALIDA_SEGUN_FLECHA = {
 # repetido: lo mismo en al menos 2 de las ultimas 3 imagenes.
 IMAGENES_A_MIRAR = 3
 MINIMO_PARA_CREER = 2
+
+# --- Intentos de agarre ----------------------------------------------------
+# Cuantas veces en total intenta agarrar el cubo antes de abandonar el color.
+MAXIMO_DE_INTENTOS = 3
 
 # --- Acciones que puede pedir Decision -------------------------------------
 IR_A_SALIDA = 'ir_a_salida'  # tomar una salida concreta
@@ -124,6 +130,8 @@ class Decision:
         # Las claves de lo que se vio en las ultimas imagenes. Guarda solo
         # las ultimas IMAGENES_A_MIRAR y tira la mas vieja sola.
         self.ultimas = deque(maxlen=IMAGENES_A_MIRAR)
+        # Cuantas veces intento agarrar el cubo que tiene adelante.
+        self.intentos = 0
 
     def proximo_color(self):
         """El primer color de ORDEN_DE_COLORES que todavia falta.
@@ -244,8 +252,9 @@ class Decision:
         if self.estado != ACERCANDO:
             return None
 
-        # El estado sigue en ACERCANDO: pasa a VOLVIENDO recien cuando
-        # el brazo avisa que lo agarro (cubo_agarrado).
+        # Es el primer intento. El estado sigue en ACERCANDO: pasa a VOLVIENDO
+        # recien cuando el brazo avisa que lo agarro (cubo_agarrado).
+        self.intentos = 1
         return Orden(AGARRAR)
 
     # -----------------------------------------------------------------------
@@ -264,6 +273,31 @@ class Decision:
         self.estado = VOLVIENDO
         return Orden(VOLVER)
 
+    def cubo_no_agarrado(self):
+        """El brazo avisa que no pudo agarrar el cubo.
+
+        Si le quedan intentos, pide agarrarlo otra vez. Si ya fallo
+        MAXIMO_DE_INTENTOS veces, abandona el color y pide volver al inicio.
+        Devuelve None si no se estaba acercando.
+        """
+        # Solo tiene sentido si se estaba acercando a su cubo.
+        if self.estado != ACERCANDO:
+            return None
+
+        # Le quedan intentos: lo vuelve a intentar, con el mismo color.
+        if self.intentos < MAXIMO_DE_INTENTOS:
+            self.intentos += 1
+            return Orden(AGARRAR)
+
+        # Fallo todas las veces: abandona este color para siempre.
+        self.cubos_faltantes.discard(self.color_actual)
+        self.color_actual = None
+        self.flecha_pendiente = None
+        self.ultimas.clear()
+        self.intentos = 0
+        self.estado = VOLVIENDO_SIN_CUBO
+        return Orden(VOLVER)
+
     def cubo_depositado(self):
         """Avisan que el cubo quedo en su deposito. Libera el color."""
         if self.estado != VOLVIENDO:
@@ -274,6 +308,19 @@ class Decision:
         self.color_actual = None
         self.flecha_pendiente = None
         self.ultimas.clear()  # el color nuevo empieza a contar de cero
+
+        if self.cubos_faltantes:
+            self.estado = BUSCANDO_COLOR
+        else:
+            self.estado = TERMINADO
+
+    def llegue_al_inicio(self):
+        """Volver al inicio avisa que el robot llego a la entrada sin cubo.
+
+        Pasa a buscar el proximo color, o termina si ya no queda ninguno.
+        """
+        if self.estado != VOLVIENDO_SIN_CUBO:
+            return
 
         if self.cubos_faltantes:
             self.estado = BUSCANDO_COLOR

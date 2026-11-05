@@ -9,7 +9,8 @@ from types import SimpleNamespace
 from prometeo_decision.logica import (
     ACERCANDO, ACERCARSE, AGARRAR, BIFURCACION, BUSCANDO_COLOR, CALLEJON, CURVA,
     DERECHA, Decision, EXPLORAR, IR_A_SALIDA, IZQUIERDA, ADELANTE,
-    SIGUIENDO, TERMINADO, VOLVER, VOLVIENDO,
+    MAXIMO_DE_INTENTOS, SIGUIENDO, TERMINADO, VOLVER, VOLVIENDO,
+    VOLVIENDO_SIN_CUBO,
 )
 
 
@@ -179,6 +180,29 @@ def test_llegar_al_cubo_sin_estar_acercandose_no_hace_nada():
     assert d.estado == BUSCANDO_COLOR
 
 
+def test_si_no_lo_agarra_lo_intenta_de_nuevo():
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    ver_varias(d, [cubo('red')])
+    d.llegue_al_cubo()
+    orden = d.cubo_no_agarrado()
+
+    assert orden.accion == AGARRAR     # lo vuelve a intentar
+    assert d.estado == ACERCANDO       # no vuelve sin el cubo
+    assert d.color_actual == 'red'     # sigue con el mismo color
+
+    # Al segundo intento lo agarra y ahi si vuelve.
+    assert d.cubo_agarrado().accion == VOLVER
+
+
+def test_no_agarrado_sin_estar_acercandose_no_hace_nada():
+    d = Decision()
+    orden = d.cubo_no_agarrado()
+
+    assert orden is None
+    assert d.estado == BUSCANDO_COLOR
+
+
 def test_agarrar_el_cubo_pide_volver():
     d = Decision()
     ver_varias(d, [flecha('red')])
@@ -262,3 +286,56 @@ def test_un_cubo_en_una_sola_imagen_no_alcanza():
     assert d.estado == SIGUIENDO
     orden = d.ver([cubo('red')])          # 2 veces: ahora si
     assert orden.accion == ACERCARSE
+
+
+# --- 8. Intentos de agarre y abandonar el color ------------------------------
+
+def llegar_al_cubo_rojo():
+    """Arma una Decision que siguio el rojo y ya esta frente a su cubo."""
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    ver_varias(d, [cubo('red')])
+    d.llegue_al_cubo()  # intento 1
+    return d
+
+
+def test_falla_3_veces_y_abandona_el_color():
+    d = llegar_al_cubo_rojo()
+    assert d.cubo_no_agarrado().accion == AGARRAR  # intento 2
+    assert d.cubo_no_agarrado().accion == AGARRAR  # intento 3
+    orden = d.cubo_no_agarrado()                   # fallo el 3: abandona
+
+    assert orden.accion == VOLVER
+    assert d.estado == VOLVIENDO_SIN_CUBO
+    assert d.color_actual is None
+    assert d.cubos_faltantes == {'green', 'blue'}  # el rojo quedo descartado
+
+
+def test_al_llegar_al_inicio_sigue_con_el_verde():
+    d = llegar_al_cubo_rojo()
+    for _ in range(MAXIMO_DE_INTENTOS):
+        d.cubo_no_agarrado()
+    d.llegue_al_inicio()
+    assert d.estado == BUSCANDO_COLOR
+
+    ver_varias(d, [flecha('red'), flecha('blue'), flecha('green')])
+    assert d.color_actual == 'green'  # el rojo ya no cuenta
+
+
+def test_con_el_color_nuevo_los_intentos_empiezan_de_cero():
+    d = llegar_al_cubo_rojo()
+    for _ in range(MAXIMO_DE_INTENTOS):
+        d.cubo_no_agarrado()
+    d.llegue_al_inicio()
+    ver_varias(d, [flecha('green')])
+    ver_varias(d, [cubo('green')])
+    d.llegue_al_cubo()
+
+    assert d.cubo_no_agarrado().accion == AGARRAR  # no abandona el verde enseguida
+
+
+def test_llegar_al_inicio_sin_haber_abandonado_no_hace_nada():
+    d = Decision()
+    d.llegue_al_inicio()
+
+    assert d.estado == BUSCANDO_COLOR
