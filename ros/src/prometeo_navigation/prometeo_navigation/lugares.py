@@ -6,8 +6,11 @@
 # Son solo cuentas, sin ROS: reciben numeros y devuelven numeros, asi se pueden
 # probar sin robot y sin simulador. Las distancias van en cm.
 # None significa "el sensor no tiene dato".
+# De ROS solo usa las constantes de Lugar (los textos que entiende Decision).
 
 import math
+
+from prometeo_interfaces.msg import Lugar
 
 
 def entro_al_pasillo(izquierda_cm, derecha_cm, margen_cm):
@@ -105,6 +108,28 @@ class Promedio:
         if self.cantidad == 0:
             return None
         return self.suma / self.cantidad
+
+
+def armar_lugar(izquierda_abierta, adelante_abierto, derecha_abierta):
+    """Con lo que quedo abierto, arma (tipo, salidas) para avisarle a Decision.
+
+    Es el traductor entre el detector y Decision: recibe tres si/no y devuelve
+    lo que va en /navegacion/lugar. El tipo sale de contar las salidas:
+    0 = callejon, 1 = curva, 2 o mas = bifurcacion.
+    Las salidas van siempre en el mismo orden: izquierda, adelante, derecha.
+    Los textos son las constantes de Lugar.msg, escritos una sola vez para
+    navegacion y Decision.
+    """
+    salidas = [nombre for nombre, abierta in (
+        (Lugar.IZQUIERDA, izquierda_abierta),
+        (Lugar.ADELANTE, adelante_abierto),
+        (Lugar.DERECHA, derecha_abierta)) if abierta]
+    if len(salidas) == 0:
+        return Lugar.CALLEJON, salidas
+    if len(salidas) == 1:
+        return Lugar.CURVA, salidas
+    return Lugar.BIFURCACION, salidas
+
 
 # ===================== Maquina de estados =====================
 # Se acuerda de en que etapa esta el robot, para avisar una sola vez por lugar

@@ -6,9 +6,10 @@
 
 import math
 
+from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.lugares import (
     EN_PASILLO, MIDIENDO_LUGAR, Confirmador, DetectorDeLugares, Promedio,
-    costado_abierto, entro_al_pasillo, frente_muy_cerca, lectura_vigente)
+    armar_lugar, costado_abierto, entro_al_pasillo, frente_muy_cerca, lectura_vigente)
 
 
 def test_entro_si_las_dos_paredes_estan_parecidas():
@@ -228,3 +229,38 @@ def test_no_anota_f0_sin_un_frente_que_sirva():
     detector.actualizar(45, 20, frente_cm=90)  # ahora si hay un numero
     assert detector.etapa == MIDIENDO_LUGAR
     assert detector.frente_inicial_cm == 90
+
+
+# --- armar_lugar: el traductor para Decision (una prueba por fila de la tabla) ---
+# armar_lugar(izquierda_abierta, adelante_abierto, derecha_abierta)
+
+def test_esquina_a_la_izquierda_es_curva():
+    assert armar_lugar(True, False, False) == (Lugar.CURVA, [Lugar.IZQUIERDA])
+
+
+def test_esquina_a_la_derecha_es_curva():
+    assert armar_lugar(False, False, True) == (Lugar.CURVA, [Lugar.DERECHA])
+
+
+def test_esquina_con_los_dos_costados_abiertos_es_bifurcacion():  # una T
+    assert armar_lugar(True, False, True) == (
+        Lugar.BIFURCACION, [Lugar.IZQUIERDA, Lugar.DERECHA])
+
+
+def test_puerta_a_la_izquierda_es_bifurcacion():
+    assert armar_lugar(True, True, False) == (
+        Lugar.BIFURCACION, [Lugar.IZQUIERDA, Lugar.ADELANTE])
+
+
+def test_puerta_a_la_derecha_es_bifurcacion():
+    assert armar_lugar(False, True, True) == (
+        Lugar.BIFURCACION, [Lugar.ADELANTE, Lugar.DERECHA])
+
+
+def test_cruce_es_bifurcacion_con_tres_salidas():
+    assert armar_lugar(True, True, True) == (
+        Lugar.BIFURCACION, [Lugar.IZQUIERDA, Lugar.ADELANTE, Lugar.DERECHA])
+
+
+def test_sin_salidas_es_callejon():
+    assert armar_lugar(False, False, False) == (Lugar.CALLEJON, [])
