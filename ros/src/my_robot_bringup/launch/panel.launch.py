@@ -19,8 +19,10 @@ def generate_launch_description():
     Puertos: 8082 pagina, 9092 rosbridge, 8083 camara. No choca con test_motores
     (8081/9091) ni con el dashboard (8080/9090).
 
-    Arranca tambien el joystick Xbox (joystick:=false para no) y la camara del panel
-    (camara:=false para no). Botones del joystick en config/joystick_xbox.yaml.
+    Arranca tambien el joystick Xbox (joystick:=false para no) y la camara (camara:=false
+    para no). La camara se busca sola en la red (buscar_camara.py: prueba camara_ip si se
+    pasa, y si no recorre la red buscando la que tiene la MAC camara_mac) y arranca
+    camera_bridge. Botones del joystick en config/joystick_xbox.yaml.
 
     Este rosbridge no tiene permiso sobre cmd_vel: el panel maneja por cmd_vel_manual,
     asi todo pasa por el selector. Lo que sale a la ESP32 lo ve en orden_enviada.
@@ -40,7 +42,13 @@ def generate_launch_description():
         DeclareLaunchArgument('joystick', default_value='true',
                               description='arrancar el joystick Xbox'),
         DeclareLaunchArgument('camara', default_value='true',
-                              description='arrancar la camara del panel (puerto 8083)'),
+                              description='buscar la ESP32-CAM y mostrarla en el panel'),
+        DeclareLaunchArgument('camara_ip', default_value='',
+                              description='IP de la ESP32-CAM, si se sabe (si no, se busca)'),
+        DeclareLaunchArgument('camara_mac', default_value='d4:e9:f4:8a:b6:68',
+                              description="MAC de nuestra ESP32-CAM ('' = cualquier camara)"),
+        DeclareLaunchArgument('cam_port', default_value='8083',
+                              description='puerto del video para el panel'),
     ]
 
     topics = PythonExpression([
@@ -88,10 +96,22 @@ def generate_launch_description():
              parameters=[config_joy], condition=con_joystick),
     ]
 
-    camara = Node(
-        package='my_robot_bringup', executable='camara_panel.py', name='camara_panel',
-        output='screen', condition=IfCondition(LaunchConfiguration('camara')),
-    )
+    con_camara = IfCondition(LaunchConfiguration('camara'))
+    camara = [
+        # Busca la ESP32-CAM en la red y arranca camera_bridge (-> /camera/image_raw)
+        ExecuteProcess(
+            cmd=['ros2', 'run', 'my_robot_bringup', 'buscar_camara.py',
+                 ['camara_ip:=', LaunchConfiguration('camara_ip')],
+                 ['camara_mac:=', LaunchConfiguration('camara_mac')]],
+            output='screen', condition=con_camara,
+        ),
+        # Le pasa la imagen al panel (prefiere la de vision, con los recuadros)
+        Node(
+            package='my_robot_bringup', executable='camara_panel.py', name='camara_panel',
+            parameters=[{'puerto': ParameterValue(LaunchConfiguration('cam_port'), value_type=int)}],
+            output='screen', condition=con_camara,
+        ),
+    ]
 
     # Servidor de la pagina. La raiz redirige al panel con el namespace y el puerto.
     servidor = (
@@ -100,7 +120,7 @@ def generate_launch_description():
         '    def do_GET(self):\n'
         '        if self.path.split("?")[0] in ("", "/", "/index.html"):\n'
         '            self.send_response(302)\n'
-        '            self.send_header("Location", "/panel.html?ws=" + sys.argv[3] + "&ns=" + sys.argv[4])\n'
+        '            self.send_header("Location", "/panel.html?ws=" + sys.argv[3] + "&ns=" + sys.argv[4] + "&cam=" + sys.argv[5])\n'
         '            self.end_headers()\n'
         '        else:\n'
         '            super().do_GET()\n'
@@ -108,11 +128,11 @@ def generate_launch_description():
     )
     web = ExecuteProcess(
         cmd=['python3', '-c', servidor, LaunchConfiguration('web_port'), web_dir,
-             LaunchConfiguration('ws_port'), ns],
+             LaunchConfiguration('ws_port'), ns, LaunchConfiguration('cam_port')],
         output='screen',
     )
 
     aviso = LogInfo(msg=['Panel: http://localhost:', LaunchConfiguration('web_port'),
                          '/  (namespace "', ns, '")'])
 
-    return LaunchDescription(arguments + [rosbridge, selector, camara, web, aviso] + joystick)
+    return LaunchDescription(arguments + [rosbridge, selector, web, aviso] + camara + joystick)

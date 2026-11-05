@@ -8,7 +8,18 @@ Todo funciona **sin internet**. Los comandos se corren desde la carpeta del repo
 Hacen falta **2 terminales** y el navegador. Seguir los pasos en orden y revisar cada
 "✔ Anduvo si…" antes de pasar al siguiente.
 
-### Paso 1. La compu en la red correcta
+### Paso 0. Una sola vez, después de traer cambios del código
+
+```bash
+cd ~/Documentos/Robotica/Prometeo/ros
+source /opt/ros/jazzy/setup.bash
+colcon build
+```
+
+Si ya había un panel abierto, cerrarlo con `Ctrl+C` y volver a arrancarlo (paso 4): el que
+estaba corriendo sigue con el código viejo.
+
+### Paso 1. Prender el robot y la cámara, con la compu en la misma red WiFi
 
 La ESP32 se conecta a una red WiFi y busca al agente en **una IP fija**, que se elige al
 cargarle el firmware. La compu tiene que estar en esa red y **tener esa IP**.
@@ -35,6 +46,8 @@ volver a cargar el firmware con la IP de la compu. Preguntarle a quien cargó el
 **En la competencia la red va a ser otra**, así que esto hay que resolverlo allá, antes de la
 ronda.
 
+La **cámara** no necesita nada de esto: el panel la busca sola en la red (paso 4).
+
 ### Paso 2. Terminal 1: el agente de micro-ROS
 
 ```bash
@@ -43,7 +56,7 @@ source ~/Documentos/Robotica/micro_ws/install/local_setup.bash
 ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888
 ```
 
-Dejar esta terminal abierta. Prender el robot.
+Dejar esta terminal abierta.
 
 ✔ Anduvo si al rato aparecen líneas con `session established` y `create_publisher` /
 `create_subscriber`. Si no aparece nada, volver al paso 1.
@@ -60,7 +73,7 @@ ros2 node list
 ✔ Anduvo si aparece `/prometeo/body`. Si aparece `/nodo_motores_esp32`, es el firmware viejo:
 en el paso 4 agregar `ns:=''` al final del comando.
 
-### Paso 4. Terminal 2: arrancar el panel
+### Paso 4. Terminal 2: arrancar el panel (con la cámara)
 
 En la misma terminal 2:
 
@@ -68,24 +81,48 @@ En la misma terminal 2:
 ros2 launch my_robot_bringup panel.launch.py
 ```
 
-✔ Anduvo si aparece `Rosbridge WebSocket server started on port 9092`,
-`Selector listo en modo manual` y `Camara del panel en http://localhost:8083/stream`.
+Este único comando arranca el selector de modo, rosbridge, la página, el joystick y **la
+cámara**: busca la ESP32-CAM en la red (tarda unos 6 segundos), la reconoce por su MAC
+(`d4:e9:f4:8a:b6:68`, así no se conecta a la cámara de otro equipo) y arranca `camera_bridge`
+con su IP. Si la cámara se prende después, la sigue buscando cada 5 segundos.
+
+✔ Anduvo si aparecen estas líneas:
+
+- `Rosbridge WebSocket server started on port 9092`
+- `Selector listo en modo manual`
+- `[buscar_camara] Camara encontrada: http://172.16.0.117/stream` (la IP puede cambiar)
+- `[camera_bridge]: Stream conectado`
+
 Si no hay un joystick enchufado, el nodo del joystick avisa que no encuentra ninguno: es normal.
+
+Opciones del comando, si hacen falta:
+
+| Agregar | Para qué |
+|---|---|
+| `camara_ip:=172.16.0.117` | probar primero esa IP (más rápido) |
+| `camara:=false` | no usar la cámara |
+| `joystick:=false` | no usar el joystick |
+| `ns:=''` | firmware viejo o Gazebo (topics sin `/prometeo`) |
+
+Para ver la IP de la cámara sin arrancar nada: `ros2 run my_robot_bringup buscar_camara.py --solo-buscar`
 
 ### Paso 5. Abrir el panel
 
 En el navegador de la misma compu: **http://localhost:8082**
 
 ✔ Anduvo si arriba están en verde **rosbridge**, **selector**, **ESP32** y **ultrasonidos**, y
-el modo dice **Manual**. **Cámara** y **visión** se ponen en verde si están corriendo la cámara y
-el nodo de visión (se arrancan aparte, con `vision_real.launch.py`).
+el modo dice **Manual**, y a la derecha se ve **la cámara**. **Visión** queda en amarillo: el
+nodo de visión se arranca aparte (`ros2 launch my_robot_bringup vision_real.launch.py`, en otra
+terminal) y en el robot real todavía no detecta nada porque falta calibrar la cámara (T10: sin
+`calibration_file`, `camera_bridge` no publica `camera_info`). Mientras tanto el panel muestra la
+imagen cruda.
 
 | Indicador en rojo | Qué pasa | Qué hacer |
 |---|---|---|
 | rosbridge | la página no habla con ROS | revisar que el paso 4 siga corriendo |
 | selector | el selector no arrancó | mirar los errores en la terminal 2 |
 | ESP32 / ultrasonidos | no llega nada del robot | revisar el agente (paso 2) y `ros2 node list` (paso 3) |
-| cámara | no llega imagen | revisar que esté corriendo la cámara (o visión) |
+| cámara | no llega imagen | mirar en la terminal 2 qué dice `[buscar_camara]`; revisar que la cámara esté prendida y en la misma red |
 
 En la pestaña **Monitoreo** hay una tabla "Qué está llegando" con cada dato y hace cuánto llegó.
 
