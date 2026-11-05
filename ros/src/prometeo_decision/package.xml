@@ -7,8 +7,12 @@
   <maintainer email="natasha.vodanovich@mi.unc.edu.ar">natasha</maintainer>
   <license>TODO: License declaration</license>
 
-  <!-- Otros paquetes que este necesita. Por ahora solo pytest, para las pruebas:
-       la logica es Python comun y todavia no habla con ROS. -->
+  <!-- Otros paquetes que este necesita. La logica es Python comun; el nodo
+       (nodo_decision.py) usa ROS y los mensajes de Vision y de prometeo_interfaces. -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>huggin_vision_msgs</exec_depend>
+  <exec_depend>prometeo_interfaces</exec_depend>
   <test_depend>python3-pytest</test_depend>
 
   <!-- Le indica a colcon que este paquete es de Python, no de C++ -->

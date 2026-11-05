@@ -28,9 +28,11 @@ setup(
     description='Decision del robot Prometeo: elige un color y sigue sus flechas hasta el cubo',
     license='TODO: License declaration',
 
-    # Los programas que se pueden correr con "ros2 run". Todavia no hay ninguno:
-    # por ahora la logica es codigo que usan otros, no un programa que arranca solo.
+    # Los programas que se pueden correr con "ros2 run":
+    # nombre = carpeta.archivo:funcion que arranca.
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'nodo_decision = prometeo_decision.nodo_decision:main',
+        ],
     },
 )
