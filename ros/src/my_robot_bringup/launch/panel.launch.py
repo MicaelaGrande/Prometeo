@@ -47,6 +47,13 @@ def generate_launch_description():
                               description='IP de la ESP32-CAM, si se sabe (si no, se busca)'),
         DeclareLaunchArgument('camara_mac', default_value='d4:e9:f4:8a:b6:68',
                               description="MAC de nuestra ESP32-CAM ('' = cualquier camara)"),
+        DeclareLaunchArgument('vision', default_value='true',
+                              description='arrancar el nodo de vision (dibuja lo que detecta)'),
+        DeclareLaunchArgument(
+            'calibracion',
+            default_value=PathJoinSubstitution([FindPackageShare('my_robot_bringup'), 'config',
+                                                'calibracion_camara_ov3660.npz']),
+            description='calibracion de la ESP32-CAM (copia de firmware/esp32_cam/calibracion)'),
         DeclareLaunchArgument('cam_port', default_value='8083',
                               description='puerto del video para el panel'),
     ]
@@ -102,8 +109,20 @@ def generate_launch_description():
         ExecuteProcess(
             cmd=['ros2', 'run', 'my_robot_bringup', 'buscar_camara.py',
                  ['camara_ip:=', LaunchConfiguration('camara_ip')],
-                 ['camara_mac:=', LaunchConfiguration('camara_mac')]],
+                 ['camara_mac:=', LaunchConfiguration('camara_mac')],
+                 ['calibracion:=', LaunchConfiguration('calibracion')]],
             output='screen', condition=con_camara,
+        ),
+        # Vision: detecta flechas, cubos y zonas y publica /vision/annotated con los recuadros
+        # (igual que vision_real.launch.py)
+        Node(
+            package='huggin_vision', executable='object_recognition', name='vision_node',
+            parameters=[PathJoinSubstitution([FindPackageShare('my_robot_bringup'), 'config',
+                                              'vision.yaml'])],
+            output='screen',
+            condition=IfCondition(PythonExpression([
+                "'", LaunchConfiguration('camara'), "' == 'true' and '",
+                LaunchConfiguration('vision'), "' == 'true'"])),
         ),
         # Le pasa la imagen al panel (prefiere la de vision, con los recuadros)
         Node(

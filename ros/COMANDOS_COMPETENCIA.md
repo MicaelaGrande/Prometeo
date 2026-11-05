@@ -100,7 +100,8 @@ Opciones del comando, si hacen falta:
 | Agregar | Para qué |
 |---|---|
 | `camara_ip:=172.16.0.117` | probar primero esa IP (más rápido) |
-| `camara:=false` | no usar la cámara |
+| `camara:=false` | no usar la cámara (ni visión) |
+| `vision:=false` | cámara sin visión: imagen cruda, sin recuadros |
 | `joystick:=false` | no usar el joystick |
 | `ns:=''` | firmware viejo o Gazebo (topics sin `/prometeo`) |
 
@@ -111,11 +112,13 @@ Para ver la IP de la cámara sin arrancar nada: `ros2 run my_robot_bringup busca
 En el navegador de la misma compu: **http://localhost:8082**
 
 ✔ Anduvo si arriba están en verde **rosbridge**, **selector**, **ESP32** y **ultrasonidos**, y
-el modo dice **Manual**, y a la derecha se ve **la cámara**. **Visión** queda en amarillo: el
-nodo de visión se arranca aparte (`ros2 launch my_robot_bringup vision_real.launch.py`, en otra
-terminal) y en el robot real todavía no detecta nada porque falta calibrar la cámara (T10: sin
-`calibration_file`, `camera_bridge` no publica `camera_info`). Mientras tanto el panel muestra la
-imagen cruda.
+el modo dice **Manual**, y a la derecha se ve **la cámara con los recuadros de lo que detecta
+visión**. El panel arranca también el nodo de visión y le carga a la cámara su calibración
+(`config/calibracion_camara_ov3660.npz`, copia de `firmware/esp32_cam/calibracion`): sin
+calibración, visión no detecta nada. Si visión no anda, el panel muestra la imagen cruda.
+
+**La ESP32-CAM acepta una sola conexión a la vez.** Si la imagen no llega, revisar que no haya
+otro programa mirándola (otro panel, `camera_bridge` suelto o el navegador en `http://<ip>/stream`).
 
 | Indicador en rojo | Qué pasa | Qué hacer |
 |---|---|---|

@@ -91,8 +91,10 @@ def buscar(ip_preferida='', mac=MAC_NUESTRA):
 def main():
     args = sys.argv[1:]
     solo_buscar = '--solo-buscar' in args
-    ip_preferida, mac = '', MAC_NUESTRA
+    ip_preferida, mac, calibracion = '', MAC_NUESTRA, ''
     for a in args:
+        if a.startswith('calibracion:='):
+            calibracion = a.split(':=', 1)[1]
         if a.startswith('camara_ip:='):
             ip_preferida = a.split(':=', 1)[1]
         if a.startswith('camara_mac:='):
@@ -113,8 +115,12 @@ def main():
         if solo_buscar:
             return 0
         ip_preferida = ip   # si se corta, probar primero la misma
-        subprocess.run(['ros2', 'run', 'prometeo_camera_bridge', 'camera_bridge',
-                        '--ros-args', '-p', f'stream_url:={url}'])
+        comando = ['ros2', 'run', 'prometeo_camera_bridge', 'camera_bridge',
+                   '--ros-args', '-p', f'stream_url:={url}']
+        if calibracion:
+            # Sin calibracion camera_bridge no publica camera_info y vision no detecta nada
+            comando += ['-p', f'calibration_file:={calibracion}']
+        subprocess.run(comando)
         print('[buscar_camara] camera_bridge se cerro. Vuelvo a buscar.', flush=True)
         time.sleep(2)
 
