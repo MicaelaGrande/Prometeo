@@ -27,8 +27,11 @@
 
   <xacro:property name="wall_x"      value="2.0"/>
   <xacro:property name="wall_thick"  value="0.01"/>
-  <xacro:property name="wall_width"  value="0.32"/>
-  <xacro:property name="wall_height" value="0.16"/>
+  <xacro:property name="corridor_width" value="0.40"/>
+  <xacro:property name="wall_height" value="0.20"/>
+  <xacro:property name="forbidden_size" value="0.40"/>
+  <xacro:property name="zone_line" value="0.02"/>
+  <xacro:property name="obstacle_size" value="0.20"/>
 
   <xacro:property name="area_size" value="0.8"/>
   <xacro:property name="start_x" value="3.2"/>
@@ -36,15 +39,19 @@
   <xacro:property name="end_x" value="-3.2"/>
   <xacro:property name="end_y" value="0"/>
 
-  <xacro:property name="NORTH" value="0"/>
-  <xacro:property name="WEST"  value="1"/>
-  <xacro:property name="EAST"  value="3"/>
-  <xacro:property name="SOUTH" value="2"/>
-
   <xacro:property name="box_size"     value="0.02"/>
   <xacro:property name="box_mass"     value="0.02"/>
   <xacro:property name="cylinder_height" value="0.1"/>
   <xacro:property name="cylinder_radius" value="${box_size}"/>
   <xacro:property name="arrow_base_z" value="0.5"/>
   <xacro:property name="spacing"      value="0.4"/>
+
+  <xacro:property name="container_size"   value="0.15"/>
+  <xacro:property name="container_height" value="0.06"/>
+  <xacro:property name="container_thick"  value="0.01"/>
+
+  <!-- Named colors ("r g b"; alpha is always 1). SDF has no named materials, so macros look them up here. -->
+  <xacro:property name="COLORS" value="${dict(rojo='0.9 0.05 0.05', verde='0.05 0.8 0.1', azul='0.1 0.2 0.9', negro='0.1 0.1 0.1', wall='0.92 0.92 0.92', gris='0.45 0.45 0.45')}"/>
+  <!-- Vertical slot of each arrow color on a wall (0 = top), so up to three arrows fit one above the other -->
+  <xacro:property name="SLOT" value="${dict(rojo=0, verde=1, azul=2)}"/>
 </sdf>

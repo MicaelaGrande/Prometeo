@@ -22,6 +22,27 @@
         </visual>
     </xacro:macro>
 
+    <!-- Visual con formas simples -->
+    <xacro:macro name="box_visual" params="x y z material xyz rpy:='0 0 0'">
+        <visual>
+            <origin xyz="${xyz}" rpy="${rpy}" />
+            <geometry>
+                <box size="${x} ${y} ${z}"/>
+            </geometry>
+            <material name="${material}" />
+        </visual>
+    </xacro:macro>
+
+    <xacro:macro name="cylinder_visual" params="radius height material xyz rpy:='0 0 0'">
+        <visual>
+            <origin xyz="${xyz}" rpy="${rpy}" />
+            <geometry>
+                <cylinder radius="${radius}" length="${height}"/>
+            </geometry>
+            <material name="${material}" />
+        </visual>
+    </xacro:macro>
+
 <!-- ============================================================================== -->
 <!-- Macros Colisiones                                                              -->
 <!-- ============================================================================== -->
@@ -84,7 +105,7 @@
 
     <xacro:macro
         name="sphere_inertia"
-        params="mass radius o_xyz o_rpy"
+        params="mass radius xyz rpy"
     >
         <inertial>
             <mass value="${mass}"/>
@@ -111,6 +132,43 @@
             >
             </inertia>
         </inertial>
+    </xacro:macro>
+
+<!-- ============================================================================== -->
+<!-- Macros de Partes                                                               -->
+<!-- ============================================================================== -->
+
+
+    <!-- offset la malla nace en una cara de la rueda; lo corre medio ancho (+ izquierda, - derecha)
+         para que gire sobre su centro. El link queda con el eje de giro en y, como en prometeo_description. -->
+    <xacro:macro name="wheel" params="name mesh xyz offset">
+        <link name="${name}_link">
+            <xacro:mesh_link
+                mesh="${mesh}" scale="${wheel_scale}"
+                material="negro"
+                xyz="0 ${offset} 0" rpy="${-pi/2} 0 0"
+            />
+            <xacro:cylinder_collision
+                radius="${wheel_radius}" height="${wheel_thickness}"
+                xyz="0 0 0" rpy="${-pi/2} 0 0"
+            />
+            <!-- cilindro con el eje de giro en y -->
+            <inertial>
+                <mass value="${wheel_mass}"/>
+                <inertia
+                    ixx="${wheel_mass * (3*wheel_radius**2 + wheel_thickness**2) / 12}" ixy="0" ixz="0"
+                    iyy="${wheel_mass * wheel_radius**2 / 2}" iyz="0"
+                    izz="${wheel_mass * (3*wheel_radius**2 + wheel_thickness**2) / 12}"
+                />
+            </inertial>
+        </link>
+        <joint name="${name}_joint" type="continuous">
+          <parent link="base_link"/>
+          <child link="${name}_link"/>
+          <origin xyz="${xyz}"/>
+
+          <axis xyz="0 1 0"/>
+        </joint>
     </xacro:macro>
 
 </robot>

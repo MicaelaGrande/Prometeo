@@ -1,0 +1,169 @@
+<?xml version="1.0"?>
+<!--
+  Laberinto de prueba, con una isla y pasillos de distintos anchos.
+
+  SDF es el formato de los mundos de Gazebo. Aca tambien usamos xacro para no
+  repetir lo mismo por cada pared.
+
+  Visto desde arriba (el robot arranca en R, mirando a la derecha):
+
+        +==========================+
+        |      norte: 60 cm        |
+        |    +==============+      |
+        | 40 |              |  50  +=========+
+        | cm |     ISLA     |  cm    rama 40 |  sin salida
+        |    |              |      +=========+
+        |    +==============+      |
++=======+                          |
+| R     A     sur: 40 cm           |
++==================================+
+
+  En A el robot elige entre seguir recto o doblar a la izquierda: los dos caminos
+  dan la vuelta a la isla. La rama del lado este es un callejon.
+
+  No hace falta que sea el laberinto de la competencia, porque cambia entre
+  fases. Sirve para probar lo que importa: bifurcaciones, un callejon y una vuelta
+  cerrada, en pasillos de distintos anchos.
+-->
+<sdf version="1.9" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <world name="laberinto">
+
+    <!-- ===== MEDIDAS (en metros) ===== -->
+    <xacro:property name="pasillo" value="0.40"/>        <!-- ancho libre minimo -->
+    <xacro:property name="pasillo_este" value="0.50"/>   <!-- a la derecha de la isla -->
+    <xacro:property name="pasillo_norte" value="0.60"/>  <!-- arriba de la isla -->
+    <xacro:property name="largo_entrada" value="0.81"/>  <!-- de la pared de atras hasta A -->
+    <xacro:property name="largo_isla" value="0.80"/>
+    <xacro:property name="fondo_isla" value="0.77"/>
+    <xacro:property name="altura_rama" value="0.29"/>    <!-- cuanto arriba de la isla sur arranca la rama -->
+    <xacro:property name="largo_rama" value="0.64"/>
+    <xacro:property name="alto_pared" value="0.20"/>
+    <xacro:property name="espesor" value="0.02"/>        <!-- no figura en el reglamento -->
+
+    <!-- Las paredes se dibujan por su linea central. Le sumamos un espesor para que
+         el espacio libre entre las dos caras siga siendo el ancho del pasillo. -->
+    <xacro:property name="ancho" value="${pasillo + espesor}"/>
+
+    <!-- Las lineas del plano. x positivo es adelante del robot e y positivo es izquierda. -->
+    <xacro:property name="x_atras" value="${-ancho/2}"/>                <!-- atras del robot -->
+    <xacro:property name="x_oeste" value="${x_atras + largo_entrada}"/> <!-- el punto A -->
+    <xacro:property name="x_isla_oeste" value="${x_oeste + ancho}"/>
+    <xacro:property name="x_isla_este" value="${x_isla_oeste + largo_isla}"/>
+    <xacro:property name="x_este" value="${x_isla_este + pasillo_este + espesor}"/>
+    <xacro:property name="x_fin_rama" value="${x_este + largo_rama}"/>
+    <xacro:property name="y_sur" value="${-ancho/2}"/>
+    <xacro:property name="y_isla_sur" value="${ancho/2}"/>              <!-- misma linea que la entrada -->
+    <xacro:property name="y_isla_norte" value="${y_isla_sur + fondo_isla}"/>
+    <xacro:property name="y_norte" value="${y_isla_norte + pasillo_norte + espesor}"/>
+    <xacro:property name="y_rama_sur" value="${y_isla_sur + altura_rama}"/>
+    <xacro:property name="y_rama_norte" value="${y_rama_sur + ancho}"/>
+
+    <!-- ===== PLUGINS DEL SIMULADOR ===== -->
+    <!-- La fisica: gravedad y choques -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <!-- Permite agregar el robot al mundo mientras el simulador corre -->
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <!-- Le pasa a la ventana de Gazebo lo que tiene que dibujar -->
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <!-- Hace funcionar los sensores que miden mirando la escena, como los rayos de
+         los ultrasonidos. ogre2 es el motor que dibuja esa escena. -->
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <light type="directional" name="sol">
+      <pose>0 0 5 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- ===== PUNTO DE PARTIDA ===== -->
+    <!-- gz.launch.py de my_robot_bringup busca este modelo y pone ahi al robot (R en el dibujo) -->
+    <model name="start_marker">
+      <static>true</static>
+      <pose>0 0 0.012 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry>
+            <cylinder><radius>0.099</radius><length>0.024</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0 1 0 1</ambient>
+            <diffuse>0 1 0 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ===== PISO ===== -->
+    <model name="piso">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane><normal>0 0 1</normal><size>10 10</size></plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane><normal>0 0 1</normal><size>10 10</size></plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ===== PAREDES ===== -->
+    <!-- Un molde: recibe los dos extremos de la pared y calcula su centro,
+         su largo y su giro. static significa que no se mueve aunque la choquen. -->
+    <xacro:macro name="pared" params="nombre x1 y1 x2 y2">
+      <!-- Suma un espesor para que las esquinas queden cerradas -->
+      <xacro:property name="largo" value="${sqrt((x2 - x1)**2 + (y2 - y1)**2) + espesor}"/>
+      <xacro:property name="medidas" value="${largo} ${espesor} ${alto_pared}"/>
+
+      <model name="${nombre}">
+        <static>true</static>
+        <pose>${(x1 + x2)/2} ${(y1 + y2)/2} ${alto_pared/2} 0 0 ${atan2(y2 - y1, x2 - x1)}</pose>
+        <link name="link">
+          <collision name="collision">
+            <geometry><box><size>${medidas}</size></box></geometry>
+          </collision>
+          <visual name="visual">
+            <geometry><box><size>${medidas}</size></box></geometry>
+            <material>
+              <ambient>0.45 0.45 0.5 1</ambient>
+              <diffuse>0.45 0.45 0.5 1</diffuse>
+            </material>
+          </visual>
+        </link>
+      </model>
+    </xacro:macro>
+
+    <!-- Entrada y contorno -->
+    <xacro:pared nombre="atras" x1="${x_atras}" y1="${y_sur}" x2="${x_atras}" y2="${y_isla_sur}"/>
+    <xacro:pared nombre="sur" x1="${x_atras}" y1="${y_sur}" x2="${x_este}" y2="${y_sur}"/>
+    <xacro:pared nombre="entrada" x1="${x_atras}" y1="${y_isla_sur}" x2="${x_oeste}" y2="${y_isla_sur}"/>
+    <xacro:pared nombre="oeste" x1="${x_oeste}" y1="${y_isla_sur}" x2="${x_oeste}" y2="${y_norte}"/>
+    <xacro:pared nombre="norte" x1="${x_oeste}" y1="${y_norte}" x2="${x_este}" y2="${y_norte}"/>
+
+    <!-- Lado este: son dos paredes porque en el medio se abre la rama -->
+    <xacro:pared nombre="este_abajo" x1="${x_este}" y1="${y_sur}" x2="${x_este}" y2="${y_rama_sur}"/>
+    <xacro:pared nombre="este_arriba" x1="${x_este}" y1="${y_rama_norte}" x2="${x_este}" y2="${y_norte}"/>
+
+    <!-- Rama sin salida -->
+    <xacro:pared nombre="rama_sur" x1="${x_este}" y1="${y_rama_sur}" x2="${x_fin_rama}" y2="${y_rama_sur}"/>
+    <xacro:pared nombre="rama_norte" x1="${x_este}" y1="${y_rama_norte}" x2="${x_fin_rama}" y2="${y_rama_norte}"/>
+    <xacro:pared nombre="rama_fin" x1="${x_fin_rama}" y1="${y_rama_sur}" x2="${x_fin_rama}" y2="${y_rama_norte}"/>
+
+    <!-- Isla: cuatro paredes sueltas en el medio -->
+    <xacro:pared nombre="isla_sur" x1="${x_isla_oeste}" y1="${y_isla_sur}" x2="${x_isla_este}" y2="${y_isla_sur}"/>
+    <xacro:pared nombre="isla_este" x1="${x_isla_este}" y1="${y_isla_sur}" x2="${x_isla_este}" y2="${y_isla_norte}"/>
+    <xacro:pared nombre="isla_norte" x1="${x_isla_oeste}" y1="${y_isla_norte}" x2="${x_isla_este}" y2="${y_isla_norte}"/>
+    <xacro:pared nombre="isla_oeste" x1="${x_isla_oeste}" y1="${y_isla_sur}" x2="${x_isla_oeste}" y2="${y_isla_norte}"/>
+
+  </world>
+</sdf>

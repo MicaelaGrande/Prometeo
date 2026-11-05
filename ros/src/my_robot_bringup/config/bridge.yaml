@@ -8,7 +8,9 @@
   direction: GZ_TO_ROS
 
 # ===== Control diferencial / odometría =====
-- ros_topic_name: "/cmd_vel"
+# PROVISORIO: Gazebo escucha la orden ya corregida por provisorio_bajo_nivel_sim
+# (centrado y freno). Al borrar ese paquete, volver a "/cmd_vel".
+- ros_topic_name: "/cmd_vel_corregido"
   gz_topic_name: "/cmd_vel"
   ros_type_name: "geometry_msgs/msg/Twist"
   gz_type_name: "gz.msgs.Twist"
@@ -43,4 +45,23 @@
   gz_topic_name: "/camera/camera_info"
   ros_type_name: "sensor_msgs/msg/CameraInfo"
   gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+# ===== Ultrasonidos (HC-SR04 simulado: abanico de rayos que consume hcsr04_sim) =====
+- ros_topic_name: "/ultrasonido/frente/rayos"
+  gz_topic_name: "/ultrasonido/frente/rayos"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/ultrasonido/izq/rayos"
+  gz_topic_name: "/ultrasonido/izq/rayos"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/ultrasonido/der/rayos"
+  gz_topic_name: "/ultrasonido/der/rayos"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS

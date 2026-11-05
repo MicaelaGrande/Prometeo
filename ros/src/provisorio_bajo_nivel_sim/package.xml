@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>provisorio_bajo_nivel_sim</name>
+  <version>0.0.0</version>
+  <!-- PROVISORIO: borrar cuando la ESP32 se centre sola en el pasillo (T9). Ver LEEME_BORRAR.md -->
+  <description>PROVISORIO: imita en Gazebo el centrado y el freno que va a hacer la ESP32</description>
+  <maintainer email="micaela.grande@mi.unc.edu.ar">micaela</maintainer>
+  <license>TODO: License declaration</license>
+
+  <!-- Otros paquetes que este necesita para funcionar -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <!-- Para correr las pruebas -->
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,36 @@
+# PROVISORIO: parametros del nodo centrado_simulado. Se borra junto con el paquete
+# (ver LEEME_BORRAR.md).
+#
+# Son estimados: ajustarlos probando en Gazebo.
+
+centrado_simulado:
+  ros__parameters:
+    use_sim_time: true
+
+    # ===== Freno: COPIA de micro_ros/main/seguridad.c =====
+    # Si Bajo nivel cambia estos numeros alla, cambiarlos aca.
+    t_reaccion_s: 0.14       # tiempo hasta darse cuenta de la pared
+    t_frenado_s: 0.08        # lo que sigue rodando despues de cortar
+    margen_cm: 1.0           # ruido del sensor + error de las estimaciones
+    umbral_min_cm: 3.0       # mas cerca, el HC-SR04 no mide bien
+    histeresis_cm: 2.0       # suelta recien a umbral + esto
+    lecturas_para_liberar: 3 # lecturas libres seguidas para soltar el freno
+
+    # ===== Centrado (nuevo, no existe en la ESP32) =====
+    # Cuanto corrige por cada metro de diferencia entre las dos paredes.
+    # Mas alto: se centra mas rapido, pero puede zigzaguear.
+    ganancia: 2.0            # rad/s por metro
+    giro_max_rad_s: 0.5      # el centrado nunca gira mas que esto
+    # Si quien manda gira menos que esto, se considera "derecho" y se centra
+    giro_minimo_rad_s: 0.05
+    # Si un costado mide mas que esto, se toma como una salida y se sigue derecho.
+    # En un pasillo de 40 cm cada costado mide unos 12 cm.
+    distancia_salida_cm: 50.0
+
+    # ===== Seguridad del propio nodo =====
+    # Sin /cmd_vel nuevo durante este tiempo, el robot se para (como el failsafe de la ESP32)
+    tiempo_sin_orden_s: 0.5
+    # Una lectura de ultrasonido mas vieja que esto cuenta como "sin dato"
+    tiempo_sensor_viejo_s: 0.5
+    # Cada cuanto publica /cmd_vel_corregido
+    frecuencia_hz: 20.0

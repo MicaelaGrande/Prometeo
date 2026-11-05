@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>prometeo_navigation</name>
+  <version>0.0.0</version>
+  <description>Navegacion autonoma del robot Prometeo: libreta del recorrido y exploracion</description>
+  <maintainer email="micaela.grande@mi.unc.edu.ar">micaela</maintainer>
+  <license>TODO: License declaration</license>
+
+  <!-- Otros paquetes que este necesita. Por ahora solo pytest, para las pruebas:
+       la libreta es Python comun y todavia no habla con ROS. -->
+  <test_depend>python3-pytest</test_depend>
+
+  <!-- Le indica a colcon que este paquete es de Python, no de C++ -->
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
