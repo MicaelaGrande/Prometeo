@@ -6,7 +6,8 @@
 # a un cubo.
 #
 # Reglas:
-#   - Sigue un color por vez. Lo elige con la primera flecha util que ve.
+#   - Sigue un color por vez, siempre en el orden rojo, verde y azul.
+#     Arranca con el primero que falte, cuando ve su flecha.
 #   - Mientras sigue ese color, ignora las flechas y los cubos de los otros.
 #   - El color se libera recien al depositar el cubo. Si el brazo falla,
 #     sigue buscando el mismo.
@@ -32,6 +33,10 @@ ROJO = 'red'
 VERDE = 'green'
 AZUL = 'blue'
 TODOS_LOS_COLORES = {ROJO, VERDE, AZUL}
+
+# En que orden se buscan los cubos. Es una lista (con corchetes) y no un
+# conjunto (con llaves), porque en una lista el orden importa.
+ORDEN_DE_COLORES = [ROJO, VERDE, AZUL]
 
 # --- Tipos de deteccion (campo kind de Detection.msg) ----------------------
 FLECHA = 'arrow'
@@ -60,13 +65,14 @@ SALIDA_SEGUN_FLECHA = {
 IR_A_SALIDA = 'ir_a_salida'  # tomar una salida concreta
 EXPLORAR = 'explorar'        # que Exploracion elija por donde seguir
 ACERCARSE = 'acercarse'      # acercarse al cubo que tiene adelante
+AGARRAR = 'agarrar'          # pedirle al brazo que agarre el cubo
 
 
 @dataclass
 class Orden:
     """Lo que Decision le pide al resto del robot."""
 
-    # Que hacer: IR_A_SALIDA, EXPLORAR o ACERCARSE.
+    # Que hacer: IR_A_SALIDA, EXPLORAR, ACERCARSE o AGARRAR.
     accion: str
 
     # Solo para IR_A_SALIDA: por donde ir (IZQUIERDA, ADELANTE o DERECHA).
@@ -98,6 +104,16 @@ class Decision:
         # Navegacion avise que llego.
         self.flecha_pendiente = None
 
+    def proximo_color(self):
+        """El primer color de ORDEN_DE_COLORES que todavia falta.
+
+        Devuelve None si ya no falta ninguno.
+        """
+        for color in ORDEN_DE_COLORES:
+            if color in self.cubos_faltantes:
+                return color
+        return None
+
     # -----------------------------------------------------------------------
     # Lo que llega de la camara
     # -----------------------------------------------------------------------
@@ -123,11 +139,12 @@ class Decision:
             if d.confidence >= self.confianza_minima and d.kind in (FLECHA, CUBO)
         ]
 
-        # 1) Si todavia no eligio color, toma el de la primera flecha
-        #    de un color que falte.
+        # 1) Si todavia no eligio color, espera la flecha del proximo color
+        #    del orden. Las flechas de los otros colores no lo hacen arrancar.
         if self.estado == BUSCANDO_COLOR:
+            siguiente = self.proximo_color()
             for d in utiles:
-                if d.kind == FLECHA and d.color in self.cubos_faltantes:
+                if d.kind == FLECHA and d.color == siguiente:
                     self.color_actual = d.color
                     self.estado = SIGUIENDO
                     break
@@ -188,6 +205,19 @@ class Decision:
 
         # No hay flecha de su color, o no se entiende hacia donde apunta.
         return Orden(EXPLORAR)
+
+    def llegue_al_cubo(self):
+        """Navegacion alta avisa que termino de acercarse al cubo.
+
+        Devuelve la Orden de agarrarlo, o None si no se estaba acercando.
+        """
+        # Solo tiene sentido si se estaba acercando a su cubo.
+        if self.estado != ACERCANDO:
+            return None
+
+        # El estado sigue en ACERCANDO: pasa a VOLVIENDO recien cuando
+        # el brazo avisa que lo agarro (cubo_agarrado).
+        return Orden(AGARRAR)
 
     # -----------------------------------------------------------------------
     # Lo que llega del brazo y de Volver al inicio

@@ -7,7 +7,7 @@
 from types import SimpleNamespace
 
 from prometeo_decision.logica import (
-    ACERCANDO, ACERCARSE, BIFURCACION, BUSCANDO_COLOR, CALLEJON, CURVA,
+    ACERCANDO, ACERCARSE, AGARRAR, BIFURCACION, BUSCANDO_COLOR, CALLEJON, CURVA,
     DERECHA, Decision, EXPLORAR, IR_A_SALIDA, IZQUIERDA, ADELANTE,
     SIGUIENDO, TERMINADO, VOLVIENDO,
 )
@@ -42,6 +42,32 @@ def test_una_flecha_dudosa_no_elige_color():
     assert d.color_actual is None
     assert d.estado == BUSCANDO_COLOR
 
+def test_con_las_3_flechas_arranca_por_rojo():
+    d = Decision()
+    # La roja va ultima en la lista a proposito: igual tiene que elegirla.
+    d.ver([flecha('blue'), flecha('green'), flecha('red')])
+
+    assert d.color_actual == 'red'
+
+
+def test_sin_flecha_roja_no_arranca_con_otro_color():
+    d = Decision()
+    d.ver([flecha('blue'), flecha('green')])
+
+    assert d.color_actual is None
+    assert d.estado == BUSCANDO_COLOR
+
+
+def test_despues_del_rojo_sigue_el_verde_y_no_el_azul():
+    d = Decision()
+    d.ver([flecha('red')])
+    d.ver([cubo('red')])
+    d.cubo_agarrado()
+    d.cubo_depositado()
+    # Ya deposito el rojo. La azul va primero en la lista a proposito.
+    d.ver([flecha('blue'), flecha('green')])
+
+    assert d.color_actual == 'green'
 
 # --- 2. Ignorar los otros colores -------------------------------------------
 
@@ -120,6 +146,23 @@ def test_ve_el_cubo_rojo_y_se_acerca():
 
     assert orden.accion == ACERCARSE
     assert d.estado == ACERCANDO
+
+def test_llegar_al_cubo_pide_agarrarlo():
+    d = Decision()
+    d.ver([flecha('red')])
+    d.ver([cubo('red')])
+    orden = d.llegue_al_cubo()
+
+    assert orden.accion == AGARRAR
+    assert d.estado == ACERCANDO   # sigue aca hasta que el brazo confirme
+
+
+def test_llegar_al_cubo_sin_estar_acercandose_no_hace_nada():
+    d = Decision()
+    orden = d.llegue_al_cubo()
+
+    assert orden is None
+    assert d.estado == BUSCANDO_COLOR
 
 
 # --- 6. Agarrar, depositar y terminar ---------------------------------------
