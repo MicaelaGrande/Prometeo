@@ -29,22 +29,22 @@ menu "Prometeo - Pines GPIO"
     config PROMETEO_ENCODER_DEL_DER_PIN
         int "Encoder rueda delantera derecha - pin"
         range 0 39
-        default 2
+        default 5
 
     config PROMETEO_ENCODER_DEL_IZQ_PIN
         int "Encoder rueda delantera izquierda - pin"
         range 0 39
-        default 5
+        default 2
 
     config PROMETEO_ENCODER_TRAS_DER_PIN
         int "Encoder rueda trasera derecha - pin"
         range 0 39
-        default 13
+        default 14
 
     config PROMETEO_ENCODER_TRAS_IZQ_PIN
         int "Encoder rueda trasera izquierda - pin"
         range 0 39
-        default 14
+        default 13
 
     comment "======== Control Brazo ========"
 
