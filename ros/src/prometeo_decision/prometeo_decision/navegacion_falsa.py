@@ -34,7 +34,7 @@ class NavegacionFalsa(Node):
         time.sleep(self.demora)
         pedido.succeed()
         self.get_logger().info('/mover: terminada')
-        return Mover.Result(resultado='terminada')
+        return Mover.Result(resultado=Mover.Result.TERMINADA)
 
     def atender_volver(self, pedido):
         color = pedido.request.color or '(sin cubo)'
@@ -42,7 +42,7 @@ class NavegacionFalsa(Node):
         time.sleep(self.demora)
         pedido.succeed()
         self.get_logger().info('/volver: terminada')
-        return Volver.Result(resultado='terminada')
+        return Volver.Result(resultado=Volver.Result.TERMINADA)
 
 
 def main():

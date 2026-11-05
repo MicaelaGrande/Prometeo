@@ -157,11 +157,11 @@ class NodoDecision(Node):
         self.get_logger().info(f'Orden: {orden}  (estado: {self.logica.estado})')
 
         if orden.accion == IR_A_SALIDA:
-            self.pedir_mover('ir_a_salida', orden.salida, orden.length_class)
+            self.pedir_mover(Mover.Goal.IR_A_SALIDA, orden.salida, orden.length_class)
 
         elif orden.accion == ACERCARSE:
             self.pub_seguridad.publish(Bool(data=False))  # modo recoger: sin freno
-            self.pedir_mover('acercarse')
+            self.pedir_mover(Mover.Goal.ACERCARSE)
 
         elif orden.accion == EXPLORAR:
             self.pub_explorar.publish(Empty())
@@ -215,12 +215,12 @@ class NodoDecision(Node):
         self.get_logger().info(f'/mover ({accion}) contesto: {resultado}')
         # Solo importa cuando termina de acercarse: ahi llego al cubo.
         # (Si termina un ir_a_salida, sigue andando y no hay nada que decidir.)
-        if accion == 'acercarse' and resultado == 'terminada':
+        if accion == Mover.Goal.ACERCARSE and resultado == Mover.Result.TERMINADA:
             self.hacer(self.logica.llegue_al_cubo())
 
     def al_terminar_volver(self, resultado):
         self.get_logger().info(f'/volver contesto: {resultado}')
-        if resultado != 'terminada':
+        if resultado != Volver.Result.TERMINADA:
             return
         if self.logica.estado == VOLVIENDO:
             self.logica.cubo_depositado()   # volvio con el cubo

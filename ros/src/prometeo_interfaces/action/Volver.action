@@ -1,7 +1,10 @@
 # Lo que pide Decision
 string color           # color del cubo que lleva (red, green o blue). Vacio = vuelve sin cubo
 ---
-# Lo que contesta Volver cuando termina
-string resultado       # terminada, bloqueada o cancelada
+# Lo que contesta Volver cuando termina (Volver.Result.TERMINADA, etc.)
+string TERMINADA="terminada"
+string BLOQUEADA="bloqueada"
+string CANCELADA="cancelada"
+string resultado       # TERMINADA, BLOQUEADA o CANCELADA
 ---
 # Lo que va contando mientras vuelve (por ahora nada)
