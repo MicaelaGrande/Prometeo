@@ -27,7 +27,7 @@ from std_msgs.msg import String
 
 NS = "/prometeo/l9110s_test"
 CMD_OK = re.compile(
-    r"^(stop|list|run( all| dirs| side| timeout| deadtime| cfg| nan| stall [abcd])?|clear (all|[abcd]))$"
+    r"^(stop|list|run( all| dirs| side| timeout| deadtime| cfg| nan| effort| stall [abcd])?|clear (all|[abcd]))$"
 )
 
 clientes = set()
@@ -199,7 +199,7 @@ td{padding:6px 4px;border-top:1px solid var(--line)}td:last-child{text-align:rig
 <script>
 const NOM=['A','B','C','D'], DESC=['delantero izq','trasero izq','delantero der','trasero der'];
 const TESTS=[['boot','Arranque (automático)',0],['dirs','Giro de cada motor',1],['side','Lados por separado',1],['timeout','Watchdog de órdenes',1],
-             ['deadtime','Pausa al invertir',1],['cfg','Config por motor',1],['nan','NaN / inf frena',1],['stall','Atasco (manual)',0]];
+             ['deadtime','Pausa al invertir',1],['cfg','Config por motor',1],['nan','NaN / inf frena',1],['effort','Esfuerzo maximo',1],['stall','Atasco (manual)',0]];
 const $=id=>document.getElementById(id);
 function cmd(c){fetch('/cmd',{method:'POST',body:c}).then(r=>{if(!r.ok)add('[FAIL] comando rechazado: '+c)})}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'||(e.key===' '&&e.target===document.body)){e.preventDefault();cmd('stop')}});

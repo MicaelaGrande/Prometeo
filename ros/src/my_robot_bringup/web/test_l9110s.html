@@ -111,7 +111,7 @@
       <input type="text" id="txt" placeholder="run dirs" style="flex:1;min-width:0;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text)">
       <button id="b-txt">Enviar</button>
     </div>
-    <small style="color:var(--muted)">run [all|dirs|side|timeout|deadtime|cfg|nan] · run stall A|B|C|D · stop · clear A|B|C|D|all · list</small>
+    <small style="color:var(--muted)">run [all|dirs|side|timeout|deadtime|cfg|nan|effort] · run stall A|B|C|D · stop · clear A|B|C|D|all · list</small>
   </section>
 
   <section>
@@ -141,7 +141,8 @@ const TESTS = [["boot", "Arranque", "frenado, duties en 0 y watchdog activo ante
                ["deadtime", "Pausa al invertir", "no salta de + a − sin pasar por 0", true],
                ["cfg", "Config por motor", "validación, independencia, invertido / duty_max / trim", true],
                ["nan", "NaN / inf", "una orden inválida frena el motor", true],
-               ["stall", "Atasco (manual)", "rueda bloqueada: falla latcheada y motor frenado", false]];
+               ["effort", "Esfuerzo máximo", "límite bajado a propósito: salta, frenan los 4 motores y no se libera hasta enfriar", true],
+               ["stall", "Atasco (manual)", "rueda bloqueada: falla latcheada y los 4 motores frenados", false]];
 const $ = id => document.getElementById(id);
 let ultimo = 0, ws, reintento = 1000, previo = null;
 

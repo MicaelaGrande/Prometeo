@@ -10,11 +10,11 @@
  *   se suscribe  /prometeo/l9110s_test/cmd     std_msgs/String  comandos de texto
  *
  * Comandos (motores: A=FL delantero izq, B=RL trasero izq, C=FR delantero der, D=RR trasero der):
- *   run | run all        corre boot-check ya hecho + dirs, side, timeout, deadtime, cfg, nan
- *   run <test>           corre un test: dirs side timeout deadtime cfg nan
+ *   run | run all        corre boot-check ya hecho + dirs, side, timeout, deadtime, cfg, nan, effort
+ *   run <test>           corre un test: dirs side timeout deadtime cfg nan effort
  *   run stall <A|B|C|D>  MANUAL: bloquear con la mano la rueda del motor X antes de que arranque
  *   stop                 aborta el test en curso y frena todo
- *   clear <A|B|C|D|all>  libera atasco latcheado
+ *   clear <A|B|C|D|all>  libera atasco latcheado (all: tambien el sobreesfuerzo de los dos puentes)
  *   list                 lista los tests en el log
  *
  * Tests:
@@ -25,7 +25,8 @@
  *   deadtime  invertir el sentido: nunca salta de + a - sin pasar por 0, y la pausa >= deadtime_ms
  *   cfg       cfg_set rechaza valores invalidos; invertido, duty_max y trim se aplican
  *   nan       un NaN como orden frena el motor
- *   stall     rueda bloqueada: falla STALL latcheada, motor frenado, clear_fault lo libera
+ *   effort    limite de esfuerzo bajado a proposito: salta OVERLOAD, frenan los 4 motores, no se libera hasta enfriar
+ *   stall     rueda bloqueada: falla STALL latcheada, con stop_all frenan los 4 motores, clear_fault lo libera
  */
 #include <math.h>
 #include <stdarg.h>
@@ -82,8 +83,8 @@ static const encoder_id_t enc_de[L9110S_N] = {
 // =========================================================
 // TESTS Y ESTADO COMPARTIDO
 // =========================================================
-typedef enum { T_BOOT, T_DIRS, T_SIDE, T_TIMEOUT, T_DEAD, T_CFG, T_NAN, T_STALL, T_N } test_id_t;
-static const char *T_NOMBRE[T_N] = { "boot", "dirs", "side", "timeout", "deadtime", "cfg", "nan", "stall" };
+typedef enum { T_BOOT, T_DIRS, T_SIDE, T_TIMEOUT, T_DEAD, T_CFG, T_NAN, T_EFFORT, T_STALL, T_N } test_id_t;
+static const char *T_NOMBRE[T_N] = { "boot", "dirs", "side", "timeout", "deadtime", "cfg", "nan", "effort", "stall" };
 
 typedef enum { R_PEND, R_CORRIENDO, R_PASS, R_FAIL, R_PARCIAL, R_ABORT } res_t;
 static const char *R_TXT[] = { "pendiente", "corriendo", "pass", "fail", "parcial", "abortado" };
@@ -201,6 +202,16 @@ static void limpiar(void)
 {
     for (int m = 0; m < L9110S_N; m++) l9110s_clear_fault((l9110s_motor_t)m);
     l9110s_set(0, 0);
+    // el sobreesfuerzo solo se libera cuando el puente se enfrio: se espera hasta 4 s
+    for (int t = 0; t < 400; t += PASO_MS) {
+        bool libre = true;
+        for (int s = 0; s < 2; s++) {
+            if (l9110s_fault_mask() & L9110S_FAULT_OVERLOAD(s)) libre = l9110s_clear_overload((l9110s_side_t)s) && libre;
+        }
+        if (libre) break;
+        l9110s_feed();
+        vTaskDelay(pdMS_TO_TICKS(PASO_MS));
+    }
 }
 
 static res_t resultado(const char *test, bool ok, const char *fmt, ...)
@@ -433,6 +444,62 @@ static res_t test_nan(void)
     return r;
 }
 
+// Baja el limite de esfuerzo (0.3, tau 1 s) para que salte en <= 3 s con los 4 motores al duty de test
+static res_t test_effort(void)
+{
+    limpiar();
+    l9110s_safety_t orig, t;
+    l9110s_safety_get(&orig);
+    t = orig;
+    t.effort_enable = true;
+    t.stop_all = true;
+    t.effort_limit = 0.3f;
+    t.effort_tau_s = 1.0f;
+    if (l9110s_safety_set(&t) != ESP_OK) return resultado("effort", false, "safety_set fallo");
+
+    int64_t t0 = ms_ahora(), dt = -1;
+    res_t r = R_ABORT;
+    for (int k = 0; k < L9110S_N; k++) l9110s_motor_set((l9110s_motor_t)k, DUTY_TEST);
+    l9110s_feed();
+    while (ms_ahora() - t0 < 3000) {
+        if (abortar) goto fin;
+        l9110s_feed();
+        if (l9110s_fault_mask() & L9110S_FAULT_ANY_OVERLOAD) { dt = ms_ahora() - t0; break; }
+        vTaskDelay(pdMS_TO_TICKS(PASO_MS));
+    }
+    bool salto = dt >= 0;
+    if (!esperar(100, true)) goto fin;
+    bool todos = true;
+    for (int k = 0; k < L9110S_N; k++) todos = todos && l9110s_get_duty((l9110s_motor_t)k) == 0.0f;
+    // siguen frenados aunque se sigan mandando ordenes
+    for (int k = 0; k < L9110S_N; k++) l9110s_motor_set((l9110s_motor_t)k, DUTY_TEST);
+    if (!esperar(300, true)) goto fin;
+    for (int k = 0; k < L9110S_N; k++) todos = todos && l9110s_get_duty((l9110s_motor_t)k) == 0.0f;
+    uint32_t mask = l9110s_fault_mask();
+    // recien latcheado: todavia caliente, no se puede liberar
+    bool rechaza = true;
+    for (int s = 0; s < 2; s++)
+        if (mask & L9110S_FAULT_OVERLOAD(s)) rechaza = rechaza && !l9110s_clear_overload((l9110s_side_t)s);
+    // despues de enfriar si
+    bool libera = false;
+    for (int w = 0; w < 6000 && !libera; w += PASO_MS) {
+        if (abortar) goto fin;
+        l9110s_feed();
+        bool todas = true;
+        for (int s = 0; s < 2; s++)
+            if (l9110s_fault_mask() & L9110S_FAULT_OVERLOAD(s)) todas = l9110s_clear_overload((l9110s_side_t)s) && todas;
+        libera = todas && !(l9110s_fault_mask() & L9110S_FAULT_ANY_OVERLOAD);
+        vTaskDelay(pdMS_TO_TICKS(PASO_MS));
+    }
+    r = resultado("effort", salto && todos && rechaza && libera,
+                  "salto=%d en %lld ms todos_frenados=%d rechaza_en_caliente=%d libera_frio=%d",
+                  salto, (long long)dt, todos, rechaza, libera);
+fin:
+    l9110s_safety_set(&orig);
+    limpiar();
+    return r;
+}
+
 static res_t test_stall(int m)
 {
     limpiar();
@@ -441,7 +508,7 @@ static res_t test_stall(int m)
     ESPERA(5000, false);
     int64_t t0 = ms_ahora(), dt = -1;
     uint32_t p0 = pulsos(m);
-    l9110s_motor_set((l9110s_motor_t)m, DUTY_TEST);
+    for (int k = 0; k < L9110S_N; k++) l9110s_motor_set((l9110s_motor_t)k, DUTY_TEST);   // los 4 andando
     while (ms_ahora() - t0 < 6000) {
         if (abortar) return R_ABORT;
         l9110s_feed();
@@ -451,16 +518,22 @@ static res_t test_stall(int m)
     uint32_t dp = pulsos(m) - p0;
     bool latch = dt >= 0;
     bool frenado = l9110s_get_duty((l9110s_motor_t)m) == 0.0f;
+    l9110s_safety_t seg;
+    l9110s_safety_get(&seg);
+    bool todos = true;                                    // con stop_all, los 4 motores frenados
+    if (seg.stop_all) for (int k = 0; k < L9110S_N; k++) todos = todos && l9110s_get_duty((l9110s_motor_t)k) == 0.0f;
     ESPERA(300, true);
+    if (seg.stop_all)                                     // y siguen frenados aunque lleguen ordenes nuevas
+        for (int k = 0; k < L9110S_N; k++) todos = todos && l9110s_get_duty((l9110s_motor_t)k) == 0.0f;
     bool sigue = (l9110s_fault_mask() & L9110S_FAULT_STALL(m)) && l9110s_get_duty((l9110s_motor_t)m) == 0.0f;
     bool libera = l9110s_clear_fault((l9110s_motor_t)m) && !(l9110s_fault_mask() & L9110S_FAULT_STALL(m));
     if (latch && dp >= 10) INFO("stall %c: la rueda giró (%u pulsos): no estaba bien bloqueada", NOMBRES[m], (unsigned)dp);
     if (!latch) INFO("stall %c: no hubo atasco: ¿rueda libre o encoder sin conectar?", NOMBRES[m]);
-    bool ok = latch && frenado && sigue && libera;
+    bool ok = latch && frenado && sigue && libera && todos;
     char nom[16];
     snprintf(nom, sizeof(nom), "stall %c", NOMBRES[m]);
-    res_t r = resultado(nom, ok, "latch=%d en %lld ms freno=%d sigue_frenado=%d clear_ok=%d pulsos=%u",
-                        latch, (long long)dt, frenado, sigue, libera, (unsigned)dp);
+    res_t r = resultado(nom, ok, "latch=%d en %lld ms freno=%d todos_frenados=%d sigue_frenado=%d clear_ok=%d pulsos=%u",
+                        latch, (long long)dt, frenado, todos, sigue, libera, (unsigned)dp);
     limpiar();
     INFO("stall %c: soltar la rueda", NOMBRES[m]);
     return r;
@@ -486,6 +559,7 @@ static void correr(int t, int motor)
     case T_DEAD:    r = test_deadtime(); break;
     case T_CFG:     r = test_cfg();      break;
     case T_NAN:     r = test_nan();      break;
+    case T_EFFORT:  r = test_effort();   break;
     case T_STALL:   r = test_stall(motor); break;
     default:        r = R_FAIL;          break;
     }
@@ -542,7 +616,7 @@ static void test_task(void *arg)
             abortar = true; l9110s_brake_all(); INFO("stop: todo frenado");
             break;
         case C_LIST:
-            INFO("tests: dirs side timeout deadtime cfg nan | manual: run stall <A|B|C|D>");
+            INFO("tests: dirs side timeout deadtime cfg nan effort | manual: run stall <A|B|C|D>");
             break;
         case C_CLEAR:
             for (int m = 0; m < L9110S_N; m++)
@@ -550,6 +624,11 @@ static void test_task(void *arg)
                     bool h = l9110s_clear_fault((l9110s_motor_t)m);
                     INFO("clear %c: %s", NOMBRES[m], h ? "falla liberada" : "no había falla");
                 }
+            if (c.motor == -1)
+                for (int s = 0; s < 2; s++)
+                    if (l9110s_fault_mask() & L9110S_FAULT_OVERLOAD(s))
+                        INFO("clear puente %s: %s", s ? "derecho" : "izquierdo",
+                             l9110s_clear_overload((l9110s_side_t)s) ? "sobreesfuerzo liberado" : "todavía caliente, esperar");
             break;
         case C_RUN:
             if (c.test >= 0) correr(c.test, c.motor);
@@ -593,7 +672,7 @@ static void cmd_callback(const void *msgin)
     cmd_t c;
     if (!parsear(txt, &c)) {
         ESP_LOGW(TAG, "Comando no válido: '%s'", txt);
-        replog("INFO", "comando no válido: '%.60s' (run [all|dirs|side|timeout|deadtime|cfg|nan|stall X], stop, clear X, list)", txt);
+        replog("INFO", "comando no válido: '%.60s' (run [all|dirs|side|timeout|deadtime|cfg|nan|effort|stall X], stop, clear X, list)", txt);
         return;
     }
     if (c.tipo == C_STOP) { abortar = true; l9110s_brake_all(); }   // inmediato, sin esperar a la cola
@@ -619,8 +698,9 @@ static void timer_callback(rcl_timer_t *t, int64_t last_call_time)
         n += snprintf(buf_json + n, sizeof(buf_json) - n, "%s%u", m ? "," : "", (unsigned)pulsos(m));
     uint32_t mask = l9110s_fault_mask();
     n += snprintf(buf_json + n, sizeof(buf_json) - n,
-                  "],\"fallas\":{\"timeout\":%s,\"stall\":[%s,%s,%s,%s]},\"resultados\":{",
+                  "],\"fallas\":{\"timeout\":%s,\"overload\":[%s,%s],\"stall\":[%s,%s,%s,%s]},\"resultados\":{",
                   (mask & L9110S_FAULT_TIMEOUT) ? "true" : "false",
+                  (mask & L9110S_FAULT_OVERLOAD(0)) ? "true" : "false", (mask & L9110S_FAULT_OVERLOAD(1)) ? "true" : "false",
                   (mask & L9110S_FAULT_STALL(0)) ? "true" : "false", (mask & L9110S_FAULT_STALL(1)) ? "true" : "false",
                   (mask & L9110S_FAULT_STALL(2)) ? "true" : "false", (mask & L9110S_FAULT_STALL(3)) ? "true" : "false");
     for (int i = 0; i < T_N; i++)

@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 
 #include "encoder.h"
+#include "sdkconfig.h"
 
 static const char *TAG = "l9110s";
 
@@ -27,6 +28,22 @@ static const char *TAG = "l9110s";
 #define TIMEOUT_US       300000u                 // sin ordenes por mas de esto = frena
 #define STALL_GRACIA_MS  300                     // tras arrancar no se vigila el atasco
 
+// ===== SEGURIDAD (valores iniciales, menuconfig "Prometeo - Seguridad L9110S") =====
+#define STALL_MIN_PPS    ((float)CONFIG_PROMETEO_L9110S_STALL_MIN_PPS)
+#ifdef CONFIG_PROMETEO_L9110S_STOP_ALL
+#define STOP_ALL_DEF     true
+#else
+#define STOP_ALL_DEF     false
+#endif
+#ifdef CONFIG_PROMETEO_L9110S_EFFORT_ENABLE
+#define EFFORT_ENABLE_DEF true
+#else
+#define EFFORT_ENABLE_DEF false
+#endif
+#define EFFORT_LIMIT_DEF (CONFIG_PROMETEO_L9110S_EFFORT_LIMIT_PCT / 100.0f)
+#define EFFORT_TAU_DEF   ((float)CONFIG_PROMETEO_L9110S_EFFORT_TAU_S)
+#define EFFORT_COOL_FRAC 0.5f                    // l9110s_clear_overload exige esfuerzo <= 50 % del limite
+
 // ===== PINES: {IA, IB} por motor =====
 static const int pines[L9110S_N][2] = {
     { CONFIG_PROMETEO_MOTOR_A1_PIN, CONFIG_PROMETEO_MOTOR_A2_PIN },   // FL
@@ -41,11 +58,11 @@ static const encoder_id_t enc_de[L9110S_N] = {
 
 // Valores iniciales de cada motor (cambiar aca o con l9110s_cfg_set)
 static const l9110s_cfg_t cfg_def[L9110S_N] = {
-    //  inv    zona  dmax  rampa  trim  dead  stall_ms  stall_duty
-    { false, 0.40f, 1.0f, 0.05f, 1.0f, 150,  1500,     0.40f },   // FL
-    { false, 0.40f, 1.0f, 0.05f, 1.0f, 150,  1500,     0.40f },   // RL
-    { false, 0.40f, 1.0f, 0.05f, 1.0f, 150,  1500,     0.40f },   // FR
-    { false, 0.40f, 1.0f, 0.05f, 1.0f, 150,  1500,     0.40f },   // RR
+    //  inv    zona  dmax  rampa  trim  dead  stall_ms  stall_duty  min_pps
+    { false, 0.40f, 1.0f, 0.05f, 1.0f, 150,  1500,     0.40f,      STALL_MIN_PPS },   // FL
+    { false, 0.40f, 1.0f, 0.05f, 1.0f, 150,  1500,     0.40f,      STALL_MIN_PPS },   // RL
+    { false, 0.40f, 1.0f, 0.05f, 1.0f, 150,  1500,     0.40f,      STALL_MIN_PPS },   // FR
+    { false, 0.40f, 1.0f, 0.05f, 1.0f, 150,  1500,     0.40f,      STALL_MIN_PPS },   // RR
 };
 
 typedef struct {
@@ -55,14 +72,17 @@ typedef struct {
     float    aplicado;        // duty firmado escrito al hardware
     int      dead_restante;   // ticks de deadtime que faltan
     bool     invirtiendo;     // bajando a 0 para cambiar de sentido
-    uint32_t stall_acum_ms;
+    uint32_t stall_acum_ms;   // tiempo acumulado de la ventana de medicion de velocidad
+    uint32_t stall_pulsos;    // pulsos contados en esa ventana
     uint32_t gracia_ms;
     uint32_t pulsos_prev;
 } motor_state_t;
 
 static motor_state_t   st[L9110S_N];
 static SemaphoreHandle_t mtx;
-static uint32_t        fallas;            // bits STALL
+static uint32_t        fallas;            // bits STALL y OVERLOAD (latcheados)
+static l9110s_safety_t seg = { STOP_ALL_DEF, EFFORT_ENABLE_DEF, EFFORT_LIMIT_DEF, EFFORT_TAU_DEF };
+static float           esfuerzo[2];       // esfuerzo medio por puente (0=izq, 1=der)
 static bool            falla_timeout = true;
 static uint32_t        ultima_orden_us;
 static bool            listo;
@@ -121,6 +141,7 @@ static void frenar_motor(int m)
     s->dead_restante = 0;
     s->invirtiendo = false;
     s->stall_acum_ms = 0;
+    s->stall_pulsos = 0;
     s->gracia_ms = STALL_GRACIA_MS;
     escribir(m, 0.0f);
 }
@@ -135,30 +156,61 @@ static bool cfg_valida(const l9110s_cfg_t *c)
     if (c->deadtime_ms > 2000) return false;
     if (c->stall_ms != 0 && (c->stall_ms < 100 || c->stall_ms > 10000)) return false;
     if (!isfinite(c->stall_duty_min) || c->stall_duty_min < 0.0f || c->stall_duty_min > 1.0f) return false;
+    if (!isfinite(c->stall_min_pps) || c->stall_min_pps < 0.0f || c->stall_min_pps > 1000.0f) return false;
     return true;
 }
 
+static bool seg_valida(const l9110s_safety_t *s)
+{
+    if (!s) return false;
+    if (!isfinite(s->effort_limit) || s->effort_limit <= 0.0f || s->effort_limit > 2.0f) return false;
+    if (!isfinite(s->effort_tau_s) || s->effort_tau_s < 1.0f || s->effort_tau_s > 600.0f) return false;
+    return true;
+}
+
+// Promedia el esfuerzo de cada puente (P = suma de duty^2 de sus 2 motores) y latchea el sobreesfuerzo.
+// Devuelve los bits OVERLOAD recien latcheados. Mutex tomado.
+static uint32_t actualizar_esfuerzo(const float P[2])
+{
+    uint32_t nuevas = 0;
+    float a = (float)TICK_MS / (seg.effort_tau_s * 1000.0f);
+    for (int b = 0; b < 2; b++) {
+        esfuerzo[b] += (P[b] - esfuerzo[b]) * a;
+        if (seg.effort_enable && esfuerzo[b] > seg.effort_limit &&
+            !(fallas & L9110S_FAULT_OVERLOAD(b))) {
+            fallas |= L9110S_FAULT_OVERLOAD(b);
+            nuevas |= L9110S_FAULT_OVERLOAD(b);
+        }
+    }
+    return nuevas;
+}
+
 // ---------- tarea de control ----------
+#define FALLAS_LATCH (L9110S_FAULT_ANY_STALL | L9110S_FAULT_ANY_OVERLOAD)
+
 static void tick(void)
 {
-    uint32_t nuevo_stall = 0;
-    bool     nuevo_timeout = false;
+    uint32_t nuevas = 0;                              // fallas latcheadas en este tick
+    float    P[2] = { 0.0f, 0.0f };                   // suma de duty^2 por puente
 
     xSemaphoreTake(mtx, portMAX_DELAY);
 
     // 1) watchdog de ordenes
     if (falla_timeout) {
+        actualizar_esfuerzo(P);                       // todo frenado: el esfuerzo se enfria
         xSemaphoreGive(mtx);
         return;                                       // ya frenado
     }
     if ((uint32_t)(ahora_us() - ultima_orden_us) > TIMEOUT_US) {
         for (int m = 0; m < L9110S_N; m++) frenar_motor(m);
         falla_timeout = true;
-        nuevo_timeout = true;
         xSemaphoreGive(mtx);
         ESP_LOGW(TAG, "timeout de ordenes: frenado");
         return;
     }
+
+    // con stop_all, una falla latcheada mantiene los 4 motores frenados
+    bool bloqueo = seg.stop_all && (fallas & FALLAS_LATCH);
 
     for (int m = 0; m < L9110S_N; m++) {
         motor_state_t *s = &st[m];
@@ -168,8 +220,8 @@ static void tick(void)
         uint32_t dp = pul - s->pulsos_prev;
         s->pulsos_prev = pul;
 
-        // 2) atascado: queda frenado hasta l9110s_clear_fault
-        if (fallas & L9110S_FAULT_STALL(m)) {
+        // 2) bloqueo global o motor atascado: queda frenado hasta que se liberen las fallas
+        if (bloqueo || (fallas & L9110S_FAULT_STALL(m))) {
             frenar_motor(m);
             continue;
         }
@@ -201,34 +253,65 @@ static void tick(void)
         float duty = dar_forma(c, s->actual);
         s->aplicado = duty;
         escribir(m, duty);
+        P[m / 2] += duty * duty;                      // aporte al esfuerzo del puente
 
-        // 6) atasco: duty alto y el encoder no cuenta pulsos
+        // 6) atasco: con duty alto el encoder tiene que dar al menos stall_min_pps
+        //    (y siempre algun pulso) en cada ventana de stall_ms
         float mag = fabsf(duty);
         if (c->stall_ms == 0 || mag < c->stall_duty_min) {
             s->stall_acum_ms = 0;
+            s->stall_pulsos = 0;
             s->gracia_ms = STALL_GRACIA_MS;
         } else if (s->gracia_ms > 0) {
             s->gracia_ms = (s->gracia_ms > TICK_MS) ? s->gracia_ms - TICK_MS : 0;
             s->stall_acum_ms = 0;
-        } else if (dp == 0) {
-            s->stall_acum_ms += TICK_MS;
-            if (s->stall_acum_ms >= c->stall_ms) {
-                fallas |= L9110S_FAULT_STALL(m);
-                nuevo_stall |= L9110S_FAULT_STALL(m);
-                frenar_motor(m);
-            }
+            s->stall_pulsos = 0;
         } else {
-            s->stall_acum_ms = 0;
+            s->stall_acum_ms += TICK_MS;
+            s->stall_pulsos += dp;
+            if (s->stall_acum_ms >= c->stall_ms) {
+                float pps = (float)s->stall_pulsos * 1000.0f / (float)s->stall_acum_ms;
+                bool lento = (s->stall_pulsos == 0) || (pps < c->stall_min_pps);
+                if (lento) {
+                    fallas |= L9110S_FAULT_STALL(m);
+                    nuevas |= L9110S_FAULT_STALL(m);
+                    frenar_motor(m);
+                } else {
+                    s->stall_acum_ms = 0;
+                    s->stall_pulsos = 0;
+                }
+            }
+        }
+    }
+
+    // 7) esfuerzo de cada puente (modelo termico, sin sensor de corriente)
+    float esf[2];
+    nuevas |= actualizar_esfuerzo(P);
+    esf[0] = esfuerzo[0]; esf[1] = esfuerzo[1];
+
+    // 8) reaccion: con stop_all se frenan los 4 motores; si no, solo los afectados
+    if (nuevas) {
+        for (int m = 0; m < L9110S_N; m++) {
+            bool afectado = (nuevas & L9110S_FAULT_STALL(m)) ||
+                            (nuevas & L9110S_FAULT_OVERLOAD(m / 2));
+            if (seg.stop_all || afectado) frenar_motor(m);
         }
     }
 
     xSemaphoreGive(mtx);
 
-    (void)nuevo_timeout;
     for (int m = 0; m < L9110S_N; m++) {
-        if (nuevo_stall & L9110S_FAULT_STALL(m))
-            ESP_LOGE(TAG, "motor %d atascado (sin pulsos del encoder): frenado. "
-                          "Revisar encoders_init() y la rueda; l9110s_clear_fault() para liberar", m);
+        if (nuevas & L9110S_FAULT_STALL(m))
+            ESP_LOGE(TAG, "motor %d atascado (menos de %.1f pulsos/s del encoder): %s. "
+                          "Revisar encoders_init() y la rueda; l9110s_clear_fault() para liberar",
+                     m, (double)st[m].cfg.stall_min_pps, seg.stop_all ? "TODOS los motores frenados" : "motor frenado");
+    }
+    for (int b = 0; b < 2; b++) {
+        if (nuevas & L9110S_FAULT_OVERLOAD(b))
+            ESP_LOGE(TAG, "sobreesfuerzo en el puente %s (%.2f > %.2f): %s. "
+                          "Esperar que se enfrie y l9110s_clear_overload() para liberar",
+                     b ? "derecho" : "izquierdo", (double)esf[b], (double)seg.effort_limit,
+                     seg.stop_all ? "TODOS los motores frenados" : "puente frenado");
     }
 }
 
@@ -299,6 +382,7 @@ esp_err_t l9110s_init(void)
     }
 
     fallas = 0;
+    esfuerzo[0] = esfuerzo[1] = 0.0f;
     falla_timeout = true;                              // frenado hasta la primera orden
     listo = true;
 
@@ -394,6 +478,48 @@ bool l9110s_clear_fault(l9110s_motor_t m)
     if (hubo) frenar_motor(m);                         // arranca de cero, pide orden nueva
     xSemaphoreGive(mtx);
     return hubo;
+}
+
+esp_err_t l9110s_safety_set(const l9110s_safety_t *s)
+{
+    if (!listo) return ESP_ERR_INVALID_STATE;
+    if (!seg_valida(s)) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(mtx, portMAX_DELAY);
+    seg = *s;
+    xSemaphoreGive(mtx);
+    return ESP_OK;
+}
+
+void l9110s_safety_get(l9110s_safety_t *s)
+{
+    if (!listo || !s) return;
+    xSemaphoreTake(mtx, portMAX_DELAY);
+    *s = seg;
+    xSemaphoreGive(mtx);
+}
+
+bool l9110s_clear_overload(l9110s_side_t lado)
+{
+    if (!listo || (unsigned)lado > L9110S_RIGHT) return false;
+    xSemaphoreTake(mtx, portMAX_DELAY);
+    bool hubo = (fallas & L9110S_FAULT_OVERLOAD(lado)) != 0;
+    bool frio = esfuerzo[lado] <= seg.effort_limit * EFFORT_COOL_FRAC;
+    bool ok = hubo && frio;
+    if (ok) {
+        fallas &= ~L9110S_FAULT_OVERLOAD(lado);
+        for (int m = 2 * (int)lado; m < 2 * (int)lado + 2; m++) frenar_motor(m);   // arranca de cero, pide orden nueva
+    }
+    xSemaphoreGive(mtx);
+    return ok;
+}
+
+float l9110s_get_effort(l9110s_side_t lado)
+{
+    if (!listo || (unsigned)lado > L9110S_RIGHT) return 0.0f;
+    xSemaphoreTake(mtx, portMAX_DELAY);
+    float e = esfuerzo[lado];
+    xSemaphoreGive(mtx);
+    return e;
 }
 
 float l9110s_get_duty(l9110s_motor_t m)
