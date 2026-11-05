@@ -27,13 +27,13 @@ esp_err_t sensores_init(void);
  * @brief Copia la ultima distancia de cada sensor (en cm, ya calibrada).
  *        Indices: SENSOR_IZQ, SENSOR_DER, SENSOR_FRENTE.
  * @return Numero de medicion: aumenta en 1 cada vez que hay distancias nuevas
- *         (~cada 120 ms). Sirve para saber si cambio desde la ultima lectura.
+ *         (~cada 60-85 ms). Sirve para saber si cambio desde la ultima lectura.
  */
 uint32_t sensores_leer(float out_cm[NUM_SENSORS]);
 
 /**
  * @brief Igual que sensores_leer() pero sin mediana: la lectura del ultimo ciclo.
- *        Reacciona un ciclo antes (~120 ms) pero tiene mas ruido. La usa el freno
+ *        Reacciona un ciclo antes (~60-85 ms) pero tiene mas ruido. La usa el freno
  *        de emergencia; para navegar conviene sensores_leer().
  */
 uint32_t sensores_leer_crudo(float out_cm[NUM_SENSORS]);

@@ -206,7 +206,7 @@ static void timer_ruedas_callback(rcl_timer_t * t, int64_t last_call_time)
 }
 
 // =========================================================
-// PUBLICAR DISTANCIAS apenas hay una medición nueva (~cada 120 ms):
+// PUBLICAR DISTANCIAS apenas hay una medición nueva (~cada 60-85 ms):
 // [izq, der, frente] en cm (-1 = sin eco, 400 = lejos)
 // Se llama desde micro_ros_task: rcl no se puede usar desde otra tarea.
 // =========================================================

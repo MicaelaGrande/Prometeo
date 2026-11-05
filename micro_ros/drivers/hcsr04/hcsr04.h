@@ -20,7 +20,8 @@ extern "C" {
 
 /** Configuracion del sensor: solo hay que elegir los pines. */
 typedef struct {
-    gpio_num_t trig_gpio;   /*!< GPIO conectado a TRIG (salida del ESP32) */
+    gpio_num_t trig_gpio;   /*!< GPIO conectado a TRIG (salida del ESP32). GPIO_NUM_NC = este sensor comparte
+                                 el TRIG de otro: solo el primero del grupo lo crea y su pulso dispara a todos */
     gpio_num_t echo_gpio;   /*!< GPIO conectado a ECHO (entrada del ESP32, con divisor resistivo) */
 } hcsr04_config_t;
 
@@ -55,8 +56,8 @@ esp_err_t hcsr04_measure_cm(hcsr04_handle_t handle, float *distance_cm);
 /**
  * @brief Dispara VARIOS sensores a la vez y devuelve la distancia de cada uno.
  *
- * Usar solo con sensores que no se interfieran entre si (por ejemplo los dos
- * laterales, que apuntan en direcciones opuestas). Respeta los 60 ms minimos
+ * Usar solo con sensores que no se interfieran entre si. Si comparten TRIG, el grupo
+ * debe incluir al sensor que lo creo (el que tiene trig_gpio) y a todos los que cuelgan de el. Respeta los 60 ms minimos
  * desde el ultimo disparo de cualquier sensor. Bloquea hasta ~50 ms.
  *
  * @param hs           handles de los sensores del grupo
