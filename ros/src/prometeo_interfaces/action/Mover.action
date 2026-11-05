@@ -1,9 +1,15 @@
 # Lo que pide Decision
-string accion          # ir_a_salida o acercarse
-string salida          # izquierda, adelante o derecha (solo para ir_a_salida)
+# Acciones (constantes: en el codigo, Mover.Goal.IR_A_SALIDA y Mover.Goal.ACERCARSE)
+string IR_A_SALIDA="ir_a_salida"
+string ACERCARSE="acercarse"
+string accion          # IR_A_SALIDA o ACERCARSE
+string salida          # Lugar.IZQUIERDA, Lugar.ADELANTE o Lugar.DERECHA (solo para IR_A_SALIDA)
 string length_class    # largo de la flecha (close, normal o far), si hay
 ---
-# Lo que contesta Navegacion cuando termina
-string resultado       # terminada, bloqueada o cancelada
+# Lo que contesta Navegacion cuando termina (Mover.Result.TERMINADA, etc.)
+string TERMINADA="terminada"
+string BLOQUEADA="bloqueada"
+string CANCELADA="cancelada"
+string resultado       # TERMINADA, BLOQUEADA o CANCELADA
 ---
 # Lo que va contando mientras se mueve (por ahora nada)

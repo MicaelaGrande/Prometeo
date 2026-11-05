@@ -15,11 +15,19 @@
 #   - Si no hay flecha de su color, o no se entiende hacia donde apunta,
 #     decide Exploracion.
 #
-# Es Python comun, sin ROS, asi se puede probar sin robot y sin simulador.
+# Es Python comun, sin nodos de ROS, asi se puede probar sin robot y sin simulador.
+# Solo usa las constantes de prometeo_interfaces (hay que compilarlo y hacer
+# source install/setup.bash antes de correr las pruebas).
 
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional
+
+# Los textos que viajan por ROS estan escritos una sola vez, en prometeo_interfaces
+# (Lugar.msg y Mover.action). Aca se usan esas constantes: asi navegacion y
+# Decision no pueden escribirlos distinto.
+from prometeo_interfaces.action import Mover
+from prometeo_interfaces.msg import Lugar
 
 # --- Estados ---------------------------------------------------------------
 # En que parte de la mision esta el robot.
@@ -46,14 +54,14 @@ FLECHA = 'arrow'
 CUBO = 'cube'
 
 # --- Tipos de lugar (los avisa Navegacion alta por /navegacion/lugar) ------
-CURVA = 'curva'
-BIFURCACION = 'bifurcacion'
-CALLEJON = 'callejon'
+CURVA = Lugar.CURVA
+BIFURCACION = Lugar.BIFURCACION
+CALLEJON = Lugar.CALLEJON
 
 # --- Salidas, vistas desde el robot ----------------------------------------
-IZQUIERDA = 'izquierda'
-ADELANTE = 'adelante'
-DERECHA = 'derecha'
+IZQUIERDA = Lugar.IZQUIERDA
+ADELANTE = Lugar.ADELANTE
+DERECHA = Lugar.DERECHA
 
 # Como se traduce la direccion de una flecha en una salida.
 # 'down' y 'UNK' no estan: no dicen por donde seguir, asi que decide Exploracion.
@@ -75,9 +83,9 @@ MINIMO_PARA_CREER = 2
 MAXIMO_DE_INTENTOS = 3
 
 # --- Acciones que puede pedir Decision -------------------------------------
-IR_A_SALIDA = 'ir_a_salida'  # tomar una salida concreta
+IR_A_SALIDA = Mover.Goal.IR_A_SALIDA  # tomar una salida concreta
 EXPLORAR = 'explorar'        # que Exploracion elija por donde seguir
-ACERCARSE = 'acercarse'      # acercarse al cubo que tiene adelante
+ACERCARSE = Mover.Goal.ACERCARSE      # acercarse al cubo que tiene adelante
 AGARRAR = 'agarrar'          # pedirle al brazo que agarre el cubo
 VOLVER = 'volver'            # ya tiene el cubo: volver al deposito (T8)
 
