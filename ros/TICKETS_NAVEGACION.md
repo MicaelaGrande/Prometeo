@@ -167,6 +167,39 @@ centrado), 2) detectar curva, bifurcación o callejón, 3) girar 90° con la odo
 en la acción `/mover`. T2 no elige hacia dónde doblar: avisa qué lugar encontró y Decisión elige
 según las flechas de visión.
 
+**Detección de lugares (acordado el 5/11/2026):** va en `prometeo_navigation/lugares.py`.
+
+- **Costado abierto:** un costado está abierto cuando su ultrasonido pega un salto respecto del
+  promedio del pasillo, no cuando pasa una distancia fija. El promedio se empieza a tomar recién
+  cuando el robot entró al pasillo, o sea cuando la diferencia entre izquierda y derecha queda
+  dentro de un margen.
+- **Confirmación:** el salto tiene que repetirse en N lecturas seguidas (parámetro) para no
+  confundirse con una lectura mala. Si el frente está muy cerca, no se espera la confirmación.
+- **Puerta o esquina:** cuando se abre un costado, se anota la medida del frente (F0) y el robot
+  sigue avanzando.
+    - Si el costado se vuelve a cerrar, era una **puerta** (`bifurcacion`): el pasillo sigue
+      derecho y tiene una salida al costado. Se anota el frente en ese momento (F1).
+    - Si el costado sigue abierto y el frente llega a F0 / 2, es una **esquina** (`curva`). Ahí
+      el robot ya está centrado para girar.
+    - Si se abren los dos costados, es una **T** (`bifurcacion`, salidas `izquierda` y
+      `derecha`). Se trata igual que una esquina: avanza hasta que el frente mida F0 / 2.
+- **Doblar en una puerta:** cuando se confirma la puerta, el robot ya pasó la abertura. Si
+  Decisión elige doblar, retrocede despacio hasta que el frente mida (F0 + F1) / 2, que es el
+  medio de la salida, y recién ahí gira. Usa el ultrasonido de adelante, no la odometría, así
+  que no le afecta que patinen las ruedas.
+- **Cubo adelante:** si Visión ve un cubo, el frente que mide el ultrasonido es el cilindro, no
+  una pared. Eso no es un callejón, y F0 y F1 dejan de servir.
+
+Cuidados:
+
+1. **El ultrasonido tiembla:** para retroceder se usa el promedio de varias lecturas y un margen
+   (parámetro). Por ejemplo, frena entre 102 y 108 cm en vez de exactamente en 105.
+2. **Al retroceder se puede torcer:** en la abertura hay pared de un solo lado y el centrado no
+   ayuda del todo. Mirarlo en Gazebo. En el robot real, si se tuerce, bajar la velocidad de
+   retroceso (parámetro) para que patine menos.
+3. **El frente tiene que ser la misma pared:** si aparece un cubo entre F0 y F1, la cuenta no
+   vale (ver "Cubo adelante").
+
 **Aviso de lugar (acordado el 4/11/2026):** cada vez que T2 encuentra una curva, una
 bifurcación o un callejón, publica en el topic `/navegacion/lugar`. Lo escuchan Mapeo (T3) y
 Decisión (T7). Lleva:
