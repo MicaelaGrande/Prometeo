@@ -24,6 +24,7 @@ que miden los sensores y no por distancias fijas.
 | 7 | T8. Volver al inicio | Volver al inicio | T3 | Sin empezar |
 | En paralelo | T9. Bajo nivel en el robot real | Robot real | Nada | Parcial, sin mergear |
 | En paralelo | T10. Cámara en el robot real | Robot real | T6 | Parcial, sin mergear |
+| Antes de probar el robot real | T11. Modo manual de respaldo | Robot real | T2 | Diseño acordado |
 
 Los tickets conservan su número para no confundir al equipo: el orden de trabajo es el de la tabla.
 T3 y T4 van juntos: la libreta de Mapeo no sirve sin alguien que la use, y Exploración no puede
@@ -177,6 +178,14 @@ según las flechas de visión.
   nueva y su promedio se borra y arranca de cero. Así, después de girar, el lado que mira al
   pasillo de donde venía se arregla solo. Pendiente: si justo después de girar hay una salida,
   ese lado arranca el promedio con la salida y no la ve. Revisarlo con una grabación de Gazebo.
+- **Mirando alrededor (`MIRANDO_ALREDEDOR`):** es la etapa inicial. Se usa cuando el robot no
+  tiene historia de los costados: al empezar la ronda y al volver de manual (T11), porque los
+  promedios viejos ya no sirven y puede estar en el medio de una esquina. Sin promedio, compara
+  cada costado contra el ancho del pasillo (parámetro), confirmando con N lecturas. Si un lado
+  está abierto, arrancó en un lugar: lo avisa una vez y pasa a `AVISADO`. Si no, pasa a
+  `EN_PASILLO`. No hace falta después de un giro automático: ahí lo resuelve el bajón.
+- **En manual (T11):** el detector no avisa lugares, porque los giros y correcciones a mano
+  darían saltos falsos y ensuciarían la libreta.
 - **F0 tiene que ser un número:** si al confirmar el frente es `None` o `inf`, el robot espera
   con el costado confirmado hasta tener una medida, porque con `inf` F0 / 2 sería infinito.
 - **Confirmación:** el salto tiene que repetirse en N lecturas seguidas (parámetro) para no
@@ -263,6 +272,20 @@ Con el reglamento actual no se puede sumar LiDAR, por eso conviene esto y no un 
 **Estado:** `feature/ros/mapeo` tiene el paquete `prometeo_navigation`, con los datos `Lugar` y
 `Salida` y 3 pruebas. Falta agregar lugares, marcar salidas, reconocer un lugar repetido y el nodo.
 
+**Con el modo manual (T11, acordado el 5/11/2026):**
+
+- La libreta no se borra al pasar a manual ni al volver. `/odom` sigue sumando en manual, así
+  que el robot sabe aproximadamente dónde quedó.
+- Al pasar a manual, la salida que estaba recorriendo se marca como **`trabada`**, un tercer
+  estado además de `pendiente` y `probada`. Dijkstra no la usa, salvo que no haya otro camino.
+- Al volver a automático, el robot mira alrededor (T2). Si está cerca de **cualquier** lugar de
+  la libreta, se une a ese. Para no confundirse tienen que coincidir dos cosas: la posición según
+  `/odom`, con un margen (parámetro), y el parecido, o sea el mismo tipo y las mismas salidas en
+  norte, sur, este y oeste.
+- Si no está cerca de ninguno, el lugar nuevo queda en **otro grupo**: la libreta queda partida,
+  y el tramo hecho a mano es el vacío entre los grupos. El tramo manual no se anota, porque solo
+  se conoce por la odometría.
+
 ### T4. Exploración con memoria
 
 - **Objetivo:** encontrar el camino cuando no hay flecha, sin dar vueltas alrededor de una isla.
@@ -342,6 +365,22 @@ cubos. Falta corregir los casos de arriba y probarlo fuera de las pruebas sinté
 
 La libreta permite buscar el camino más corto de vuelta, sin repetir callejones.
 
+**Si la libreta quedó partida por el modo manual (acordado el 5/11/2026):**
+
+```text
+INICIO ── A ── B ╌╌╌ (manual) ╌╌╌ C ── D ── cubo
+└──── grupo 1 ────┘               └─── grupo 2 ───┘
+```
+
+1. La vuelta es siempre automática y con Dijkstra.
+2. Si el inicio está en el mismo grupo que el robot, Dijkstra calcula el camino directo.
+3. Si están en grupos distintos, el robot explora (T4) por salidas pendientes de su grupo hasta
+   reconocer un lugar del grupo del inicio (como en T3: cerca y parecido). Ahí se unen los grupos
+   y sigue con Dijkstra.
+4. La exploración tiene un límite (parámetro, de tiempo o de lugares nuevos). Al pasarlo avisa
+   "no encuentro el camino" y se pasa a manual para llevarlo a mano (T11). Sin límite, podría
+   quedarse dando vueltas sin que nos demos cuenta.
+
 **Recomendación:** girar y volver de frente. Los 3 ultrasonidos están adelante, así que en marcha atrás
 el robot va a ciegas. Lo que falta medir es si puede girar en todos los lugares: en un pasillo de 40 cm
 le quedan en teoría 4,6 cm por lado, sin contar el brazo.
@@ -387,6 +426,40 @@ sin medir, y el modelo 3D da 69 mm.
 
 **Bloqueante:** ninguna rama publica `camera_info` para la cámara real, y el nodo de visión descarta
 las imágenes sin ese dato. Sin esto no detecta nada, aunque reciba video.
+
+### T11. Modo manual de respaldo
+
+- **Objetivo:** si el robot se traba y no sabe cómo seguir, poder manejarlo a mano y volver a
+  automático sin perder lo recorrido.
+- **Entradas:** `/cmd_vel_auto` (Navegación alta), `/cmd_vel_manual` (teclado con
+  `teleop_twist_keyboard` o joystick con `teleop_twist_joy`, ya instalados) y `/modo`.
+- **Salidas:** `/cmd_vel`, el único que escucha la ESP32.
+- **Terminado cuando:**
+    - [ ] El nodo `selector_modo` deja pasar a `/cmd_vel` solo lo del modo elegido.
+    - [ ] Se cambia de modo publicando `auto` o `manual` en `/modo`, y después con un botón o tecla.
+    - [ ] En manual, si dejan de llegar órdenes (se cortó la conexión), manda parar.
+    - [ ] En manual, el detector de T2 no avisa lugares y Mapeo marca la salida como `trabada`.
+    - [ ] Al volver a automático, T2 arranca en `MIRANDO_ALREDEDOR` y Mapeo se ubica en la libreta (T3).
+
+```text
+Navegación alta (automático) ──► /cmd_vel_auto   ─┐
+                                                   ├─► selector_modo ──► /cmd_vel ──► ESP32
+Teclado o joystick (manual)  ──► /cmd_vel_manual ─┘         ▲
+                                                             │
+                                          /modo: "auto" o "manual"
+```
+
+| | Automático | Manual |
+|---|---|---|
+| `/odom` y sensores | siguen | siguen |
+| La libreta y la posición | siguen | siguen |
+| El detector avisa lugares | sí | pausado |
+| Al volver a automático | — | `MIRANDO_ALREDEDOR` (T2) y ubicarse en la libreta (T3) |
+
+El firmware no cambia: la ESP32 obedece a `/cmd_vel` venga de donde venga, y el freno de
+emergencia (`seguridad_filtrar`, `micro_ros/main/main.c`) sigue activo en los dos modos.
+Navegación alta deja de publicar en `/cmd_vel` y pasa a `/cmd_vel_auto`. Para la vuelta con la
+libreta partida, ver T8.
 
 ## Lógica de decisión
 
