@@ -16,6 +16,7 @@
 #
 # Es Python comun, sin ROS, asi se puede probar sin robot y sin simulador.
 
+from collections import deque
 from dataclasses import dataclass
 from typing import Optional
 
@@ -61,18 +62,25 @@ SALIDA_SEGUN_FLECHA = {
     'up': ADELANTE,
 }
 
+# --- Filtro "la mejor de 3" ------------------------------------------------
+# A la camara le cuesta reconocer, asi que Decision le cree solo a lo que ve
+# repetido: lo mismo en al menos 2 de las ultimas 3 imagenes.
+IMAGENES_A_MIRAR = 3
+MINIMO_PARA_CREER = 2
+
 # --- Acciones que puede pedir Decision -------------------------------------
 IR_A_SALIDA = 'ir_a_salida'  # tomar una salida concreta
 EXPLORAR = 'explorar'        # que Exploracion elija por donde seguir
 ACERCARSE = 'acercarse'      # acercarse al cubo que tiene adelante
 AGARRAR = 'agarrar'          # pedirle al brazo que agarre el cubo
+VOLVER = 'volver'            # ya tiene el cubo: volver al deposito (T8)
 
 
 @dataclass
 class Orden:
     """Lo que Decision le pide al resto del robot."""
 
-    # Que hacer: IR_A_SALIDA, EXPLORAR, ACERCARSE o AGARRAR.
+    # Que hacer: IR_A_SALIDA, EXPLORAR, ACERCARSE, AGARRAR o VOLVER.
     accion: str
 
     # Solo para IR_A_SALIDA: por donde ir (IZQUIERDA, ADELANTE o DERECHA).
@@ -81,6 +89,15 @@ class Orden:
     # Solo para IR_A_SALIDA: el largo de la flecha ('close', 'normal' o 'far').
     # No sirve para elegir; Navegacion alta lo usa para anticipar la proxima curva.
     length_class: Optional[str] = None
+
+
+def clave(d):
+    """Lo que tiene que coincidir entre imagenes para creerle a una deteccion.
+
+    Tipo (flecha o cubo) y color siempre; la direccion solo en las flechas.
+    """
+    direccion = d.direction if d.kind == FLECHA else ''
+    return (d.kind, d.color, direccion)
 
 
 class Decision:
@@ -103,6 +120,10 @@ class Decision:
         # flecha antes de llegar a la bifurcacion, asi que se guarda hasta que
         # Navegacion avise que llego.
         self.flecha_pendiente = None
+
+        # Las claves de lo que se vio en las ultimas imagenes. Guarda solo
+        # las ultimas IMAGENES_A_MIRAR y tira la mas vieja sola.
+        self.ultimas = deque(maxlen=IMAGENES_A_MIRAR)
 
     def proximo_color(self):
         """El primer color de ORDEN_DE_COLORES que todavia falta.
@@ -137,6 +158,14 @@ class Decision:
         utiles = [
             d for d in detecciones
             if d.confidence >= self.confianza_minima and d.kind in (FLECHA, CUBO)
+        ]
+
+        # Filtro "la mejor de 3": anota lo que vio en esta imagen y se queda
+        # solo con lo que aparece en al menos MINIMO_PARA_CREER de las ultimas.
+        self.ultimas.append({clave(d) for d in utiles})
+        utiles = [
+            d for d in utiles
+            if sum(clave(d) in imagen for imagen in self.ultimas) >= MINIMO_PARA_CREER
         ]
 
         # 1) Si todavia no eligio color, espera la flecha del proximo color
@@ -224,9 +253,16 @@ class Decision:
     # -----------------------------------------------------------------------
 
     def cubo_agarrado(self):
-        """El brazo avisa que agarro el cubo. Ahora vuelve al inicio (T8)."""
-        if self.estado == ACERCANDO:
-            self.estado = VOLVIENDO
+        """El brazo avisa que agarro el cubo. Ahora vuelve al deposito (T8).
+
+        Devuelve la Orden de volver, o None si no se estaba acercando.
+        """
+        # Solo tiene sentido si se estaba acercando a su cubo.
+        if self.estado != ACERCANDO:
+            return None
+
+        self.estado = VOLVIENDO
+        return Orden(VOLVER)
 
     def cubo_depositado(self):
         """Avisan que el cubo quedo en su deposito. Libera el color."""
@@ -237,6 +273,7 @@ class Decision:
         self.cubos_faltantes.discard(self.color_actual)
         self.color_actual = None
         self.flecha_pendiente = None
+        self.ultimas.clear()  # el color nuevo empieza a contar de cero
 
         if self.cubos_faltantes:
             self.estado = BUSCANDO_COLOR
