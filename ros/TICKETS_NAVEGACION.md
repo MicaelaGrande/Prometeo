@@ -199,6 +199,13 @@ Cuidados:
    retroceso (parámetro) para que patine menos.
 3. **El frente tiene que ser la misma pared:** si aparece un cubo entre F0 y F1, la cuenta no
    vale (ver "Cubo adelante").
+4. **Lecturas viejas:** cada ultrasonido llega por separado. Si uno deja de mandar (por ejemplo,
+   se corta el WiFi de la ESP32), su última lectura no se usa más: pasa a "no se sabe" con
+   `lectura_vigente()` y `edad_maxima_s` (parámetro). Esto va en el nodo de T2, no en el
+   provisorio, que se borra.
+5. **Un mensaje por vez:** el nodo de T2 usa el executor por defecto, que atiende los callbacks
+   de a uno. No pasarlo a `MultiThreadedExecutor` sin revisar los contadores, porque dos
+   lecturas podrían sumar a la vez (condición de carrera).
 
 **Aviso de lugar (acordado el 4/11/2026):** cada vez que T2 encuentra una curva, una
 bifurcación o un callejón, publica en el topic `/navegacion/lugar`. Lo escuchan Mapeo (T3) y
