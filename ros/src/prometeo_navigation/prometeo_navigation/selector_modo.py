@@ -15,6 +15,13 @@
 # Avisa el modo actual en /modo_actual. Lo guarda para quien se conecte tarde
 # (durabilidad transient_local), asi Navegacion alta sabe el modo aunque arranque despues.
 #
+# Los topics no llevan "/" adelante a proposito, asi toman el namespace con que se corra:
+#   - Gazebo:      ros2 run prometeo_navigation selector_modo
+#                  -> /cmd_vel, /cmd_vel_manual, /modo
+#   - Robot real con el firmware nuevo (nodo "body" en el namespace "prometeo"):
+#                  ros2 run prometeo_navigation selector_modo --ros-args -r __ns:=/prometeo
+#                  -> /prometeo/cmd_vel, /prometeo/cmd_vel_manual, /prometeo/modo
+#
 # Atiende un mensaje por vez (executor por defecto): no hay condiciones de carrera.
 
 import rclpy
@@ -39,13 +46,13 @@ class SelectorModo(Node):
         frecuencia_hz = self.declare_parameter('frecuencia_hz', 20.0).value
         self.selector = Selector(edad_maxima_s)
 
-        self.create_subscription(Twist, '/cmd_vel_auto', self.orden_auto, 10)
-        self.create_subscription(Twist, '/cmd_vel_manual', self.orden_manual, 10)
-        self.create_subscription(String, '/modo', self.pedido_de_modo, 10)
+        self.create_subscription(Twist, 'cmd_vel_auto', self.orden_auto, 10)
+        self.create_subscription(Twist, 'cmd_vel_manual', self.orden_manual, 10)
+        self.create_subscription(String, 'modo', self.pedido_de_modo, 10)
 
-        self.pub_cmd_vel = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.pub_cmd_vel = self.create_publisher(Twist, 'cmd_vel', 10)
         guardado = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.pub_modo = self.create_publisher(String, '/modo_actual', guardado)
+        self.pub_modo = self.create_publisher(String, 'modo_actual', guardado)
 
         self.create_timer(1.0 / frecuencia_hz, self.publicar)
         self.avisar_modo()
