@@ -33,6 +33,7 @@ setup(
     entry_points={
         'console_scripts': [
             'nodo_decision = prometeo_decision.nodo_decision:main',
+            'navegacion_falsa = prometeo_decision.navegacion_falsa:main',
         ],
     },
 )
