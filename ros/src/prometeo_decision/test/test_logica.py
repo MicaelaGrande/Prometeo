@@ -134,12 +134,59 @@ def test_flecha_sin_direccion_clara_pide_explorar():
     assert orden.accion == EXPLORAR
 
 
-def test_callejon_pide_explorar_y_curva_no_pide_nada():
+def test_callejon_pide_explorar():
     d = Decision()
     ver_varias(d, [flecha('red')])
 
     assert d.llegar_a_lugar(CALLEJON, []).accion == EXPLORAR
-    assert d.llegar_a_lugar(CURVA, [IZQUIERDA]) is None
+
+
+# --- 4b. Curvas: tambien tienen flecha --------------------------------------
+
+def test_curva_con_su_flecha_dobla_y_pasa_el_largo():
+    d = Decision()
+    ver_varias(d, [flecha('red', 'left', 'close')])
+    orden = d.llegar_a_lugar(CURVA, [IZQUIERDA])
+
+    assert orden.accion == IR_A_SALIDA
+    assert orden.salida == IZQUIERDA
+    assert orden.length_class == 'close'
+
+
+def test_curva_sin_flecha_dobla_igual_sin_largo():
+    d = Decision()
+    orden = d.llegar_a_lugar(CURVA, [DERECHA])   # todavia sin color: no hay flecha
+
+    assert orden.accion == IR_A_SALIDA
+    assert orden.salida == DERECHA
+    assert orden.length_class is None
+
+
+def test_curva_con_flecha_para_otro_lado_dobla_por_la_curva_sin_largo():
+    d = Decision()
+    ver_varias(d, [flecha('red', 'left', 'far')])   # la camara se equivoco
+    orden = d.llegar_a_lugar(CURVA, [DERECHA])
+
+    assert orden.salida == DERECHA
+    assert orden.length_class is None
+
+
+def test_la_flecha_de_una_curva_no_se_usa_en_la_bifurcacion_siguiente():
+    d = Decision()
+    ver_varias(d, [flecha('red', 'left')])
+    d.llegar_a_lugar(CURVA, [IZQUIERDA])                       # la usa la curva
+    orden = d.llegar_a_lugar(BIFURCACION, [IZQUIERDA, DERECHA])  # sin flecha nueva
+
+    assert orden.accion == EXPLORAR
+
+
+def test_la_flecha_se_borra_tambien_en_un_callejon():
+    d = Decision()
+    ver_varias(d, [flecha('red', 'left')])
+    d.llegar_a_lugar(CALLEJON, [])
+    orden = d.llegar_a_lugar(BIFURCACION, [IZQUIERDA, DERECHA])
+
+    assert orden.accion == EXPLORAR
 
 
 # --- 5. Cubos ----------------------------------------------------------------

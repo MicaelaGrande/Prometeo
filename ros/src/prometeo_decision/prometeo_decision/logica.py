@@ -223,22 +223,32 @@ class Decision:
         if self.estado not in (BUSCANDO_COLOR, SIGUIENDO):
             return None
 
-        # En una curva hay una sola salida: no hay nada que elegir.
-        if tipo == CURVA:
-            return None
+        # Hay flecha en cada curva y en cada bifurcacion (no en las islas).
+        # La flecha guardada sirve para UN lugar solo, sea curva, bifurcacion o
+        # callejon: se saca y se borra siempre, asi no se usa en el lugar siguiente.
+        flecha = self.flecha_pendiente
+        self.flecha_pendiente = None
+        salida_flecha = SALIDA_SEGUN_FLECHA.get(flecha.direction) if flecha else None
 
         # En un callejon hay que volver: Exploracion sabe a donde.
         if tipo == CALLEJON:
             return Orden(EXPLORAR)
 
+        # En una curva hay una sola salida: va por ahi siempre.
+        # Si la flecha apunta a esa salida, le pasa su largo (cuanto falta hasta la
+        # proxima curva). Si no hay flecha, o apunta a otro lado (la camara se
+        # equivoco), va igual, pero sin largo.
+        if tipo == CURVA:
+            if not salidas:
+                return Orden(EXPLORAR)  # no deberia pasar: una curva sin salida
+            salida = salidas[0]
+            largo = flecha.length_class if salida_flecha == salida else None
+            return Orden(IR_A_SALIDA, salida, largo)
+
         # En una bifurcacion: si hay una flecha de su color que indique una
         # salida que existe, la toma.
-        if self.flecha_pendiente is not None:
-            flecha = self.flecha_pendiente
-            self.flecha_pendiente = None  # una flecha sirve para una sola bifurcacion
-            salida = SALIDA_SEGUN_FLECHA.get(flecha.direction)
-            if salida in salidas:
-                return Orden(IR_A_SALIDA, salida, flecha.length_class)
+        if salida_flecha is not None and salida_flecha in salidas:
+            return Orden(IR_A_SALIDA, salida_flecha, flecha.length_class)
 
         # No hay flecha de su color, o no se entiende hacia donde apunta.
         return Orden(EXPLORAR)
