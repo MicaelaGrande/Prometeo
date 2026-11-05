@@ -244,6 +244,18 @@ freno**. A la derecha, siempre visibles: la **cámara** (con lo que detecta visi
 | **View** (Back) | modo manual |
 | **Menu** (Start) | modo automático |
 
+**Cómo se conecta:** enchufarlo a la compu **con el cable USB** (lo más seguro: Linux lo reconoce
+solo). Por Bluetooth también puede andar, pero algunos controles Xbox necesitan un programa extra
+en Linux y pueden numerar distinto los botones. Se puede enchufar antes o después de arrancar el
+panel. Para ver si la compu lo reconoce:
+
+```bash
+ros2 run joy joy_enumerate_devices
+```
+
+✔ Anduvo si en el panel el indicador **joystick** se pone en verde (sin tocar nada, porque el
+joystick manda su estado 20 veces por segundo).
+
 Si un botón no responde: `ros2 topic echo /prometeo/joy`, apretarlo, ver qué número cambia y
 ponerlo en `ros/src/my_robot_bringup/config/joystick_xbox.yaml` (después compilar).
 
