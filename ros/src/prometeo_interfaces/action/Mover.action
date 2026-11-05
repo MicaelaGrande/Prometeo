@@ -1,0 +1,9 @@
+# Lo que pide Decision
+string accion          # ir_a_salida o acercarse
+string salida          # izquierda, adelante o derecha (solo para ir_a_salida)
+string length_class    # largo de la flecha (close, normal o far), si hay
+---
+# Lo que contesta Navegacion cuando termina
+string resultado       # terminada, bloqueada o cancelada
+---
+# Lo que va contando mientras se mueve (por ahora nada)

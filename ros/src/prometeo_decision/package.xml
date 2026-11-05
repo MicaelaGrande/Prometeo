@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>prometeo_decision</name>
+  <version>0.0.0</version>
+  <description>Decision del robot Prometeo: elige un color y sigue sus flechas hasta el cubo</description>
+  <maintainer email="natasha.vodanovich@mi.unc.edu.ar">natasha</maintainer>
+  <license>TODO: License declaration</license>
+
+  <!-- Otros paquetes que este necesita. La logica es Python comun; el nodo
+       (nodo_decision.py) usa ROS y los mensajes de Vision y de prometeo_interfaces. -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>huggin_vision_msgs</exec_depend>
+  <exec_depend>prometeo_interfaces</exec_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <!-- Le indica a colcon que este paquete es de Python, no de C++ -->
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
