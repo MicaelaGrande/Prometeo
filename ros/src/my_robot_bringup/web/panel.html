@@ -150,7 +150,7 @@
   </div>
 </div>
 <div class="banner" id="b-freno">FRENO PUESTO · nadie puede mover el robot (ni el automático, ni la compu, ni el joystick). Para seguir: “Soltar freno”.</div>
-<div class="banner" id="b-obstaculo">Freno por obstáculo de la ESP32: no deja avanzar. Retroceder o girar para salir.</div>
+<div class="banner" id="b-obstaculo">Freno por obstáculo (ultrasonidos): no deja avanzar. Retroceder o girar para salir.</div>
 <div class="banner" id="b-ayuda"></div>
 
 <div class="cuerpo">
@@ -222,13 +222,13 @@
         <div class="nota">Los controles de la garra (abrir, cerrar, subir, bajar) se agregan cuando estén las posiciones de los servos.
           El ángulo de cada servo se ve en la pestaña Brazo.</div>
 
-        <h3>Freno por obstáculo de la ESP32</h3>
+        <h3>Freno por obstáculo (asistencia, con los ultrasonidos)</h3>
         <div class="fila">
           <button id="b-seg-on">Prender</button>
           <button id="b-seg-off">Apagar</button>
           <span class="info" id="seg-info">Sin cambios desde el panel.</span>
         </div>
-        <div class="nota">Prende y apaga los dos frenos por obstáculo: el de la <b>compu</b> (asistencia, si el panel se arrancó con
+        <div class="nota">No es el freno de emergencia (ese es PARAR). Este frena solo si hay algo adelante: solo bloquea <b>avanzar</b>, retroceder y girar siempre pasan.<br>Prende y apaga los dos frenos por obstáculo: el de la <b>compu</b> (asistencia, si el panel se arrancó con
           <code>asistencia:=true</code>) y el de la ESP32 (en <code>navegacion_bajo</code> está desconectado, pendiente en T11).
           Apagarlo sirve para acercarse a un objeto, por ejemplo para agarrar el cubo. El centrado sigue funcionando.</div>
       </div>
