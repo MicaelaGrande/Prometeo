@@ -67,10 +67,10 @@
 
   /* Cuerpo: pestañas a la izquierda, camara y ultrasonidos fijos a la derecha */
   .cuerpo { display: grid; gap: 14px; padding: 14px 16px; max-width: 1400px; margin: 0 auto;
-            grid-template-columns: minmax(0, 1fr) 500px; align-items: start; }
-  @media (max-width: 1050px) { .cuerpo { grid-template-columns: 1fr; } }
+            grid-template-columns: minmax(0, 1fr) 660px; align-items: start; }
+  @media (max-width: 1250px) { .cuerpo { grid-template-columns: 1fr; } }
   .lateral { position: sticky; top: 92px; display: grid; gap: 14px; }
-  @media (max-width: 1050px) { .lateral { position: static; } }
+  @media (max-width: 1250px) { .lateral { position: static; } }
   section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
   .pestanas { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
   .pestanas button { border: none; border-bottom: 3px solid transparent; border-radius: 0; background: none;
@@ -91,6 +91,9 @@
   #cam-caja { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 4 / 3; }
   #cam { width: 100%; height: 100%; object-fit: contain; display: block; }
   #cam-sin { position: absolute; inset: 0; display: grid; place-items: center; color: #aaa; text-align: center; padding: 20px; }
+  #cam-caja { cursor: zoom-in; }
+  /* Camara en grande: ocupa toda la pantalla; clic o Esc para volver */
+  #cam-caja.grande { position: fixed; inset: 0; z-index: 20; border-radius: 0; aspect-ratio: auto; cursor: zoom-out; }
 
   /* Ultrasonidos: numeros */
   .sensores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -131,6 +134,7 @@
     <span class="pill" id="p-sensores"><span class="dot"></span><span>ultrasonidos</span></span>
     <span class="pill" id="p-camara"><span class="dot"></span><span>cámara</span></span>
     <span class="pill" id="p-vision"><span class="dot"></span><span>visión</span></span>
+    <span class="pill" id="p-joy"><span class="dot"></span><span>joystick</span></span>
   </div>
 </header>
 
@@ -287,7 +291,8 @@
 
   <aside class="lateral">
     <section>
-      <h2>Cámara</h2>
+      <div class="fila" style="justify-content:space-between"><h2 style="margin:0">Cámara</h2>
+        <span class="info">clic en la imagen (o tecla F) para verla en grande</span></div>
       <div id="cam-caja">
         <img id="cam" alt="Lo que ve la cámara del robot">
         <div id="cam-sin">Sin imagen de la cámara.<br>Revisar que esté corriendo la cámara (o visión).</div>
@@ -319,6 +324,7 @@ const T = {
   distancias: P + "/distancias", odom: P + "/odom", aviso: P + "/navegacion/aviso", libreta: P + "/mapeo/libreta",
   estadoMot: P + "/estado_motores", velocidad: P + "/velocidad", ruedas: P + "/velocidad_ruedas",
   frenoObst: P + "/freno_emergencia", servos: P + "/servos/estado", deteccion: "/vision/detections",
+  joy: P + "/joy",
 };
 const TIPOS = {
   [T.estadoSel]: "std_msgs/msg/String", [T.orden]: "geometry_msgs/msg/Twist",
@@ -327,6 +333,7 @@ const TIPOS = {
   [T.estadoMot]: "std_msgs/msg/String", [T.velocidad]: "geometry_msgs/msg/Twist",
   [T.ruedas]: "std_msgs/msg/Float32MultiArray", [T.frenoObst]: "std_msgs/msg/Bool",
   [T.servos]: "std_msgs/msg/Float32MultiArray", [T.deteccion]: "huggin_vision_msgs/msg/DetectionArray",
+  [T.joy]: "sensor_msgs/msg/Joy",
 };
 // Para la tabla "Que esta llegando": nombre visible y cada cuanto deberia llegar (ms)
 const SALUD = [
@@ -334,7 +341,7 @@ const SALUD = [
   ["Estado de la ESP32", T.estadoMot, 3000], ["Velocidad estimada", T.velocidad, 3000],
   ["Ruedas (encoders)", T.ruedas, 3000], ["Freno por obstáculo", T.frenoObst, 0],
   ["Servos", T.servos, 3000], ["Visión", T.deteccion, 3000], ["Posición (odom)", T.odom, 3000],
-  ["Libreta (Mapeo)", T.libreta, 0], ["Avisos", T.aviso, 0],
+  ["Libreta (Mapeo)", T.libreta, 0], ["Avisos", T.aviso, 0], ["Joystick", T.joy, 0],
 ];
 const DIST_LEJOS_CM = 400;   // igual que micro_ros/main/sensores.h
 const CERCA_CM = 15;
@@ -522,6 +529,7 @@ function mostrarVision(dets) {
 // Si no llegan distancias, se vuelve a suscribir: rosbridge elige "best effort" solo si
 // la ESP32 ya estaba publicando cuando el panel se suscribio.
 const avisadoCaido = {};
+let joyEstaba = null;
 setInterval(() => {
   const ahora = Date.now();
   const edad = t => ultimo[t] ? ahora - ultimo[t] : Infinity;
@@ -531,6 +539,11 @@ setInterval(() => {
   pill("p-esp32", vivo(T.estadoMot, 3000) ? "ok" : "bad", vivo(T.estadoMot, 3000) ? "ESP32" : "ESP32: sin datos");
   pill("p-sensores", vivo(T.distancias, 2000) ? "ok" : "bad", vivo(T.distancias, 2000) ? "ultrasonidos" : "ultrasonidos: sin datos");
   pill("p-vision", vivo(T.deteccion, 3000) ? "ok" : "warn", vivo(T.deteccion, 3000) ? "visión" : "visión: sin datos");
+  // El joystick manda 20 veces por segundo mientras esta conectado (autorepeat_rate)
+  const joyVivo = vivo(T.joy, 1500);
+  if (joyVivo !== joyEstaba && joyEstaba !== null) anotar(joyVivo ? "Joystick conectado" : "Joystick desconectado", joyVivo ? "local" : "freno");
+  joyEstaba = joyVivo;
+  pill("p-joy", joyVivo ? "ok" : "warn", joyVivo ? "joystick" : "joystick: no conectado");
   document.querySelectorAll(".sensor").forEach(s => s.classList.toggle("viejo", !vivo(T.distancias, 2000)));
   const tb = $("salud"); tb.innerHTML = "";
   for (const [nombre, topic, ms] of SALUD) {
@@ -551,6 +564,8 @@ setInterval(() => {
 }, 1000);
 
 // ---------- Camara ----------
+function camaraGrande(si) { $("cam-caja").classList.toggle("grande", si); }
+$("cam-caja").onclick = () => camaraGrande(!$("cam-caja").classList.contains("grande"));
 function conectarCamara() { $("cam").src = CAM_URL + "?t=" + Date.now(); }
 $("cam").onload = () => { $("cam-sin").style.display = "none"; pill("p-camara", "ok", "cámara"); };
 $("cam").onerror = () => {
@@ -603,6 +618,8 @@ document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.repeat && !MAPA_TECLAS[e.key]) return;
   if (e.code === "Space") { e.preventDefault(); if (!estado.freno) $("b-parar").click(); return; }
   if (e.key === "m" || e.key === "M") { pedirModo("manual"); return; }
+  if (e.key === "f" || e.key === "F") { camaraGrande(!$("cam-caja").classList.contains("grande")); return; }
+  if (e.key === "Escape") { camaraGrande(false); return; }
   if ((e.key === "a" || e.key === "A") && !teclas.size) { pedirModo("auto"); return; }
   const t = MAPA_TECLAS[e.key];
   if (t) { e.preventDefault(); teclas.add(t); }
