@@ -1,0 +1,6 @@
+# Valores que ESP-IDF usa cuando arma un sdkconfig nuevo (el sdkconfig no se sube a git).
+# Para que tome estos valores en una compu que ya tiene sdkconfig, borrarlo y compilar de nuevo.
+
+# La ESP32-CAM guarda cada foto en la PSRAM, el chip de memoria extra de la placa
+# (camera_manager.c: .fb_location = CAMERA_FB_IN_PSRAM). Sin esto la camara no arranca.
+CONFIG_SPIRAM=y
