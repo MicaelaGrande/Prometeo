@@ -7,6 +7,8 @@
 # probar sin robot y sin simulador. Las distancias van en cm.
 # None significa "el sensor no tiene dato".
 
+import math
+
 
 def entro_al_pasillo(izquierda_cm, derecha_cm, margen_cm):
     """True si el robot ya esta dentro de un pasillo: las dos paredes a distancias parecidas.
@@ -74,26 +76,98 @@ class Confirmador:
         return self.cuenta >= self.lecturas_necesarias
 
 
+
+class Promedio:
+    """Va sumando las lecturas de un costado y dice su promedio.
+
+    Hay uno para cada costado: el robot no siempre va justo en el medio, y asi
+    cada costado se compara contra lo que venia midiendo el mismo.
+    """
+
+    def __init__(self):
+        self.suma = 0.0
+        self.cantidad = 0
+
+    def agregar(self, medida_cm):
+        """Suma una lectura. Ignora None (sin dato) e inf (sin eco): no son una pared."""
+        if medida_cm is None or math.isinf(medida_cm):
+            return
+        self.suma += medida_cm
+        self.cantidad += 1
+
+    def reiniciar(self):
+        """Borra todo y arranca de cero (se usa cuando aparece una pared nueva)."""
+        self.suma = 0.0
+        self.cantidad = 0
+
+    def valor(self):
+        """El promedio, o None si todavia no sumo ninguna lectura."""
+        if self.cantidad == 0:
+            return None
+        return self.suma / self.cantidad
+
 # ===================== Maquina de estados =====================
 # Se acuerda de en que etapa esta el robot, para avisar una sola vez por lugar
 # (como tocar el timbre una vez y esperar, en vez de tocarlo sin parar).
 
 # Las etapas del detector. Constantes, igual que PENDIENTE y PROBADA en libreta.py.
-ENTRANDO = 'entrando'              # todavia no esta entre dos paredes
-EN_PASILLO = 'en_pasillo'          # entre dos paredes, mirando los costados
+EN_PASILLO = 'en_pasillo'          # mirando los costados, cada uno con su promedio
 MIDIENDO_LUGAR = 'midiendo_lugar'  # vio un costado abierto, decide que lugar es
 AVISADO = 'avisado'                # ya aviso, espera a Decision (el timbre ya se toco)
 
 
 class DetectorDeLugares:
-    """Se acuerda de en que etapa esta el robot, para avisar una sola vez por lugar."""
+    """Se acuerda de en que etapa esta el robot, para avisar una sola vez por lugar.
 
-    def __init__(self, margen_pasillo_cm):
-        self.margen_pasillo_cm = margen_pasillo_cm
-        self.etapa = ENTRANDO
+    Cada costado tiene su Promedio y su Confirmador. Con el mismo salto_cm:
+    - si un costado sube de golpe respecto de su promedio, se abrio una salida;
+    - si baja de golpe (bajon), aparecio una pared nueva: su promedio se borra y
+      arranca de cero. Asi, despues de girar, el lado que miraba al pasillo de donde
+      venia se arregla solo cuando aparece la pared.
+    """
 
-    def actualizar(self, izquierda_cm, derecha_cm):
-        """Recibe las lecturas de los costados y cambia de etapa si corresponde."""
-        if self.etapa == ENTRANDO:
-            if entro_al_pasillo(izquierda_cm, derecha_cm, self.margen_pasillo_cm):
-                self.etapa = EN_PASILLO
+    def __init__(self, salto_cm, lecturas_necesarias, distancia_frente_cm):
+        self.salto_cm = salto_cm
+        self.distancia_frente_cm = distancia_frente_cm
+        self.etapa = EN_PASILLO
+        self.promedio_izquierda = Promedio()
+        self.promedio_derecha = Promedio()
+        self.confirmador_izquierda = Confirmador(lecturas_necesarias)
+        self.confirmador_derecha = Confirmador(lecturas_necesarias)
+        self.frente_inicial_cm = None  # F0: el frente cuando se confirmo el costado abierto
+
+    def actualizar(self, izquierda_cm, derecha_cm, frente_cm):
+        """Recibe las lecturas de los tres ultrasonidos y cambia de etapa si corresponde."""
+        if self.etapa == EN_PASILLO:
+            izquierda = self._mirar_costado(izquierda_cm, self.promedio_izquierda,
+                                            self.confirmador_izquierda, frente_cm)
+            derecha = self._mirar_costado(derecha_cm, self.promedio_derecha,
+                                          self.confirmador_derecha, frente_cm)
+            # F0 tiene que ser un numero de verdad: con None no se sabe, y con inf
+            # F0 / 2 tambien seria infinito y creeria llegar a la esquina enseguida.
+            # Si no lo es, sigue esperando aca con el costado ya confirmado.
+            frente_sirve = frente_cm is not None and math.isfinite(frente_cm)
+            if (izquierda or derecha) and frente_sirve:
+                self.frente_inicial_cm = frente_cm
+                self.etapa = MIDIENDO_LUGAR
+
+    def _mirar_costado(self, medida_cm, promedio, confirmador, frente_cm):
+        """True si este costado quedo confirmado como abierto."""
+        valor = promedio.valor()
+        if medida_cm is None:
+            abierto = None                      # sin dato: no se sabe
+        elif valor is None:
+            promedio.agregar(medida_cm)         # primera pared de este lado
+            abierto = None                      # sin promedio todavia: no se sabe
+        elif valor - medida_cm >= self.salto_cm:
+            promedio.reiniciar()                # bajon: aparecio una pared nueva
+            promedio.agregar(medida_cm)
+            abierto = False
+        else:
+            abierto = costado_abierto(medida_cm, valor, self.salto_cm)
+            if abierto is False:
+                promedio.agregar(medida_cm)     # solo se suma cuando esta cerrado
+        confirmado = confirmador.agregar(abierto)
+        if abierto is True and frente_muy_cerca(frente_cm, self.distancia_frente_cm):
+            confirmado = True                   # frente cerca: no espera las N lecturas
+        return confirmado

@@ -170,9 +170,15 @@ según las flechas de visión.
 **Detección de lugares (acordado el 5/11/2026):** va en `prometeo_navigation/lugares.py`.
 
 - **Costado abierto:** un costado está abierto cuando su ultrasonido pega un salto respecto del
-  promedio del pasillo, no cuando pasa una distancia fija. El promedio se empieza a tomar recién
-  cuando el robot entró al pasillo, o sea cuando la diferencia entre izquierda y derecha queda
-  dentro de un margen.
+  promedio de ese costado, no cuando pasa una distancia fija. Cada costado tiene su propio
+  promedio, porque el robot no siempre va justo en el medio. Solo se suman las lecturas de
+  cuando está cerrado.
+- **Bajón:** si un costado baja de golpe (el mismo salto, pero para abajo), apareció una pared
+  nueva y su promedio se borra y arranca de cero. Así, después de girar, el lado que mira al
+  pasillo de donde venía se arregla solo. Pendiente: si justo después de girar hay una salida,
+  ese lado arranca el promedio con la salida y no la ve. Revisarlo con una grabación de Gazebo.
+- **F0 tiene que ser un número:** si al confirmar el frente es `None` o `inf`, el robot espera
+  con el costado confirmado hasta tener una medida, porque con `inf` F0 / 2 sería infinito.
 - **Confirmación:** el salto tiene que repetirse en N lecturas seguidas (parámetro) para no
   confundirse con una lectura mala. Si el frente está muy cerca, no se espera la confirmación.
 - **Puerta o esquina:** cuando se abre un costado, se anota la medida del frente (F0) y el robot

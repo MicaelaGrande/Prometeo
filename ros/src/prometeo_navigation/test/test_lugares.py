@@ -7,8 +7,8 @@
 import math
 
 from prometeo_navigation.lugares import (
-    ENTRANDO, EN_PASILLO, Confirmador, DetectorDeLugares, costado_abierto,
-    entro_al_pasillo, frente_muy_cerca, lectura_vigente)
+    EN_PASILLO, MIDIENDO_LUGAR, Confirmador, DetectorDeLugares, Promedio,
+    costado_abierto, entro_al_pasillo, frente_muy_cerca, lectura_vigente)
 
 
 def test_entro_si_las_dos_paredes_estan_parecidas():
@@ -113,21 +113,118 @@ def test_frente_sin_dato_no_se_sabe():
     assert frente_muy_cerca(None, distancia_cm=15) is None
 
 
-def test_el_detector_arranca_entrando():
-    detector = DetectorDeLugares(margen_pasillo_cm=5)
-
-    assert detector.etapa == ENTRANDO
+def test_promedio_sin_lecturas_no_se_sabe():
+    assert Promedio().valor() is None
 
 
-def test_con_paredes_parecidas_pasa_a_en_pasillo():
-    detector = DetectorDeLugares(margen_pasillo_cm=5)
-    detector.actualizar(18, 22)
+def test_promedio_de_varias_lecturas():
+    promedio = Promedio()
+    promedio.agregar(18)
+    promedio.agregar(20)
+    promedio.agregar(22)
+
+    assert promedio.valor() == 20
+
+
+def test_promedio_ignora_sin_dato_y_sin_eco():
+    promedio = Promedio()
+    promedio.agregar(20)
+    promedio.agregar(None)
+    promedio.agregar(math.inf)  # si lo sumara, el promedio quedaria infinito
+
+    assert promedio.valor() == 20
+    assert promedio.cantidad == 1
+
+
+def test_promedio_reiniciar_borra_todo():
+    promedio = Promedio()
+    promedio.agregar(60)
+    promedio.reiniciar()
+
+    assert promedio.valor() is None
+
+
+# --- Detector de lugares ---
+# Todas usan salto de 15 cm, 3 lecturas para confirmar y frente muy cerca a 15 cm.
+
+def nuevo_detector():
+    return DetectorDeLugares(salto_cm=15, lecturas_necesarias=3, distancia_frente_cm=15)
+
+
+def test_el_detector_arranca_en_el_pasillo():
+    assert nuevo_detector().etapa == EN_PASILLO
+
+
+def test_pasillo_normal_sigue_en_el_pasillo():
+    detector = nuevo_detector()
+    for izquierda, derecha in [(18, 22), (19, 21), (20, 20), (18, 22), (19, 21)]:
+        detector.actualizar(izquierda, derecha, frente_cm=100)
 
     assert detector.etapa == EN_PASILLO
 
 
-def test_con_una_pared_lejos_sigue_entrando():
-    detector = DetectorDeLugares(margen_pasillo_cm=5)
-    detector.actualizar(10, 30)
+def test_salto_repetido_pasa_a_midiendo_y_anota_f0():
+    detector = nuevo_detector()
+    detector.actualizar(20, 20, frente_cm=120)
+    detector.actualizar(20, 20, frente_cm=118)
+    detector.actualizar(45, 20, frente_cm=116)  # izquierda abierta 1
+    detector.actualizar(45, 20, frente_cm=114)  # 2
+    assert detector.etapa == EN_PASILLO
+    detector.actualizar(45, 20, frente_cm=112)  # 3: confirmado
 
-    assert detector.etapa == ENTRANDO
+    assert detector.etapa == MIDIENDO_LUGAR
+    assert detector.frente_inicial_cm == 112
+
+
+def test_un_salto_suelto_no_confirma():
+    detector = nuevo_detector()
+    for izquierda in [20, 20, 45, 20, 45, 20]:
+        detector.actualizar(izquierda, 20, frente_cm=100)
+
+    assert detector.etapa == EN_PASILLO
+
+
+def test_con_el_frente_muy_cerca_confirma_sin_esperar():
+    detector = nuevo_detector()
+    detector.actualizar(20, 20, frente_cm=30)
+    detector.actualizar(45, 20, frente_cm=12)  # una sola lectura abierta, frente cerca
+
+    assert detector.etapa == MIDIENDO_LUGAR
+
+
+def test_bajon_reinicia_el_promedio():
+    # El ejemplo acordado: despues de girar, la izquierda mira al pasillo de donde vino.
+    detector = nuevo_detector()
+    detector.actualizar(60, 20, frente_cm=100)
+    detector.actualizar(60, 20, frente_cm=100)
+    detector.actualizar(20, 20, frente_cm=100)  # bajon: aparecio la pared
+
+    assert detector.promedio_izquierda.valor() == 20
+    for _ in range(3):
+        detector.actualizar(45, 20, frente_cm=100)  # salida de verdad
+    assert detector.etapa == MIDIENDO_LUGAR
+
+
+def test_sin_eco_al_principio_espera_a_ver_una_pared():
+    detector = nuevo_detector()
+    detector.actualizar(math.inf, 20, frente_cm=100)  # mira al pasillo de atras, sin eco
+    detector.actualizar(math.inf, 20, frente_cm=100)
+    detector.actualizar(math.inf, 20, frente_cm=100)
+
+    assert detector.etapa == EN_PASILLO  # sin promedio no puede decir que se abrio
+    assert detector.promedio_izquierda.valor() is None
+
+
+def test_no_anota_f0_sin_un_frente_que_sirva():
+    detector = nuevo_detector()
+    detector.actualizar(20, 20, frente_cm=100)
+    for _ in range(3):
+        detector.actualizar(45, 20, frente_cm=math.inf)  # confirmado, pero frente sin eco
+    assert detector.etapa == EN_PASILLO
+
+    detector.actualizar(45, 20, frente_cm=None)
+    assert detector.etapa == EN_PASILLO
+
+    detector.actualizar(45, 20, frente_cm=90)  # ahora si hay un numero
+    assert detector.etapa == MIDIENDO_LUGAR
+    assert detector.frente_inicial_cm == 90
