@@ -10,16 +10,18 @@ import time
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from rclpy.qos import (
+    QoSProfile, ReliabilityPolicy, HistoryPolicy, qos_profile_sensor_data)
 from rclpy.time import Time
 import tf2_ros
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo, Range
 from geometry_msgs.msg import Point, PoseArray
 from std_msgs.msg import Float32
 from visualization_msgs.msg import MarkerArray
 from cv_bridge import CvBridge
 from huggin_vision_msgs.msg import Detection, DetectionArray
 
+from huggin_vision.arrow import SHAPES, ArrowSpec
 from huggin_vision.blobs import DetectorConfig, detect_blobs
 from huggin_vision.camera_model import (
     CameraMount, CameraView, view_from_mount)
@@ -34,6 +36,15 @@ from huggin_vision.zone import ZoneConfig
 FRAME_SIZE = (640, 480)  # (width, height) the frames are resized to
 OUTPUT_FRAME = 'base_footprint'  # on the floor, x forward, y left, z up
 MAX_FPS = 15.0  # 0 = process every image
+# Saturation over the background a color must have; the threshold is found
+# in each image (segmentation.auto_saturation). 0 = fixed thresholds
+SATURATION_MARGIN = 15.0
+# Distance to the wall ahead from the front ultrasonic, to class arrows by
+# their real length (see blobs.detect_arrow)
+WALL_RANGE_TOPIC = '/ultrasonido/frente'
+WALL_RANGE_TO_CAMERA = 0.045  # m the camera lens is behind the ultrasonic
+WALL_RANGE_MAX_AGE = 0.5  # s, an older reading is not used
+WALL_RANGE_MAX_PAN = 20.0  # deg, camera turned more: it sees another wall
 
 # Latest image wins: drop old ones instead of queueing when we are slow
 IMAGE_QOS = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -46,6 +57,7 @@ class VisionNode(Node):
         self.bridge = CvBridge()
         self.camera_matrix = None  # scaled to the resized frame
         self.pan_deg = None  # last servo command
+        self.wall_range = None  # (meters, monotonic time) of the front sonar
         self.last_image_time = 0.0
         self._declare_params()
 
@@ -55,6 +67,9 @@ class VisionNode(Node):
             Image, '/camera/image_raw', self.image_cb, IMAGE_QOS)
         self.create_subscription(
             Float32, self._param('camera.pan_topic'), self.pan_cb, 10)
+        self.create_subscription(
+            Range, self._param('wall_range.topic'), self.wall_range_cb,
+            qos_profile_sensor_data)
 
         self.detections_pub = self.create_publisher(
             DetectionArray, '/vision/detections', 10)
@@ -95,9 +110,19 @@ class VisionNode(Node):
         self.declare_parameter('zone_tolerance', config.zone.tolerance)
         self.declare_parameter('arrow_tolerance_deg',
                                config.arrow_tolerance_deg)
+        self.declare_parameter('arrow.body_width', config.arrow.body_width)
+        self.declare_parameter('arrow.head_width', config.arrow.head_width)
+        for name, (body, head) in config.arrow.shapes.items():
+            self.declare_parameter(f'arrow.body_length.{name}', body)
+            self.declare_parameter(f'arrow.head_length.{name}', head)
         self.declare_parameter('min_area.cube', config.min_area_cube)
         self.declare_parameter('min_area.arrow', config.min_area_arrow)
         self.declare_parameter('min_area.zone', config.min_area_zone)
+        self.declare_parameter('saturation_margin', SATURATION_MARGIN)
+        self.declare_parameter('wall_range.topic', WALL_RANGE_TOPIC)
+        self.declare_parameter('wall_range.to_camera', WALL_RANGE_TO_CAMERA)
+        self.declare_parameter('wall_range.max_age', WALL_RANGE_MAX_AGE)
+        self.declare_parameter('wall_range.max_pan_deg', WALL_RANGE_MAX_PAN)
         for color, (lower, upper) in HSV_RANGES.items():
             self.declare_parameter(f'hsv.{color}.lower', list(lower))
             self.declare_parameter(f'hsv.{color}.upper', list(upper))
@@ -128,8 +153,15 @@ class VisionNode(Node):
             min_area_arrow=self._param('min_area.arrow'),
             min_area_zone=self._param('min_area.zone'),
             arrow_tolerance_deg=self._param('arrow_tolerance_deg'),
+            arrow=ArrowSpec(
+                body_width=self._param('arrow.body_width'),
+                head_width=self._param('arrow.head_width'),
+                shapes={name: (self._param(f'arrow.body_length.{name}'),
+                               self._param(f'arrow.head_length.{name}'))
+                        for name in SHAPES}),
             zone=ZoneConfig(self._param('zone_size'),
-                            self._param('zone_tolerance')))
+                            self._param('zone_tolerance')),
+            wall_depth=self._wall_depth())
 
     def _mount(self):
         return CameraMount(
@@ -149,6 +181,30 @@ class VisionNode(Node):
 
     def pan_cb(self, msg):
         self.pan_deg = msg.data
+
+    def wall_range_cb(self, msg):
+        """Keep the last reading of the front ultrasonic, if it saw a wall."""
+        if np.isfinite(msg.range) and msg.min_range <= msg.range <= msg.max_range:
+            self.wall_range = (msg.range, time.monotonic())
+        else:
+            self.wall_range = None
+
+    def _wall_depth(self):
+        """Distance from the camera to the wall ahead (m), or None.
+
+        None if the reading is old or the camera is turned away, so the
+        ultrasonic is not measuring the wall the camera sees.
+        """
+        if self.wall_range is None:
+            return None
+        meters, stamp = self.wall_range
+        if time.monotonic() - stamp > self._param('wall_range.max_age'):
+            return None
+        if self.pan_deg is not None and abs(
+                self.pan_deg - self._param('camera.pan_center_deg')) \
+                > self._param('wall_range.max_pan_deg'):
+            return None
+        return meters + self._param('wall_range.to_camera')
 
     def _camera_view(self, header):
         """Camera pose in the output frame for this image, or None."""
@@ -188,7 +244,8 @@ class VisionNode(Node):
         started = time.perf_counter()
         bgr = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
         frame, hsv = preprocess(bgr, self._frame_size())
-        masks = color_masks(hsv, self._hsv_ranges())
+        masks = color_masks(hsv, self._hsv_ranges(),
+                            self._param('saturation_margin'))
         masked = time.perf_counter()
 
         config = self._detector_config()

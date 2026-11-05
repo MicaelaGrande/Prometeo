@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
+#include "esp_heap_caps.h"
 
 // Nuestras librerías de motores, sensores y freno de emergencia
 #include "motores.h"
@@ -29,7 +30,8 @@
 #define MICRO_ROS_TASK_STACK 16000
 #define MICRO_ROS_TASK_PRIO  5
 
-#define PING_PERIODO_MS 1000   // cada cuánto se chequea que el agente siga vivo
+#define ENTIDAD_TIMEOUT_MS 5000   // espera máxima del agente al crear cada entidad
+#define PING_PERIODO_MS 1000  // cada cuánto se chequea que el agente siga vivo
 
 // ===== SERVOS =====
 // Todos los servos se mueven a la misma velocidad. AJUSTAR probando.
@@ -53,7 +55,7 @@
 static const servo_id_t brazo[BRAZO_JUNTAS]     = { SERVO_BASE, SERVO_HOMBRO, SERVO_CODO, SERVO_GARRA };
 static const servo_id_t brazo_vel_gps[BRAZO_JUNTAS] = { SERVO_BASE_VEL, SERVO_HOMBRO_VEL, SERVO_CODO_VEL, SERVO_GARRA_VEL };
 
-static const char *TAG = "microROS_motores";
+static const char *TAG = "prometeo_body";
 
 static const char *volatile estado_actual = "ESPERANDO ORDENES";
 
@@ -86,8 +88,17 @@ static std_msgs__msg__Float32 msg_camara;
 static std_msgs__msg__Float32MultiArray msg_brazo;
 static float buf_brazo[BRAZO_JUNTAS];
 
-#define RCRET(fn) { if ((fn) != RCL_RET_OK) { \
-    ESP_LOGE(TAG, "Fallo en linea %d", __LINE__); return false; } }
+static void log_heap(const char *donde)
+{
+    ESP_LOGI(TAG, "HEAP %s: libre=%u min=%u mayor_bloque=%u",
+             donde,
+             (unsigned)esp_get_free_heap_size(),
+             (unsigned)esp_get_minimum_free_heap_size(),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
+
+#define RCRET(fn) { rcl_ret_t temp_rc = fn; if (temp_rc != RCL_RET_OK) { \
+    ESP_LOGE(TAG, "Fallo en linea %d: rc=%d", __LINE__, (int)temp_rc); log_heap("al fallar"); return false; } }
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if ((temp_rc != RCL_RET_OK)) { \
     ESP_LOGW(TAG, "Fallo en linea %d: %d. Continuando.", __LINE__, (int)temp_rc); } }
 
@@ -201,8 +212,13 @@ static void publicar_freno_si_cambio(void)
 // =========================================================
 static bool crear_entidades(void)
 {
+    log_heap("PRE");
     RCRET(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
-    RCRET(rclc_node_init_default(&node, "nodo_motores_esp32", "", &support));
+    // Por WiFi cada entidad espera la respuesta del agente: el default (1000 ms) no alcanza
+    rmw_context_t *rmw_context = rcl_context_get_rmw_context(&support.context);
+    (void) rmw_uros_set_context_entity_creation_session_timeout(rmw_context, ENTIDAD_TIMEOUT_MS);
+
+    RCRET(rclc_node_init_default(&node, "body", "prometeo", &support));
 
     RCRET(rclc_publisher_init_default(&publisher, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "estado_motores"));
@@ -242,6 +258,7 @@ static bool crear_entidades(void)
     RCRET(rclc_executor_add_subscription(&executor, &sub_brazo, &msg_brazo,
           &brazo_callback, ON_NEW_DATA));
 
+    log_heap("POST");
     freno_publicado = -1;   // al (re)conectar se publica el estado actual
     return true;
 }

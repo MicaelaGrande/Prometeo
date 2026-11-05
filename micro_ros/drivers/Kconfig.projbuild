@@ -1,0 +1,138 @@
+menu "Prometeo - Pines GPIO"
+
+    comment "======== Concentrador Delantero ========"
+
+    comment "== Sensores HC-SR04 =="
+
+    config PROMETEO_SENSOR_TRIG_PIN
+        int "Sensores (izq, der, frente) - pin TRIG compartido"
+        range 0 33
+        default 4
+
+    config PROMETEO_SENSOR_IZQ_ECHO_PIN
+        int "Sensor izquierdo - pin ECHO"
+        range 0 39
+        default 32
+
+    config PROMETEO_SENSOR_DER_ECHO_PIN
+        int "Sensor derecho - pin ECHO"
+        range 0 39
+        default 34
+
+    config PROMETEO_SENSOR_FRENTE_ECHO_PIN
+        int "Sensor frontal - pin ECHO"
+        range 0 39
+        default 35
+
+    comment "== Encoders =="
+
+    config PROMETEO_ENCODER_DEL_DER_PIN
+        int "Encoder rueda delantera derecha - pin"
+        range 0 39
+        default 2
+
+    config PROMETEO_ENCODER_DEL_IZQ_PIN
+        int "Encoder rueda delantera izquierda - pin"
+        range 0 39
+        default 5
+
+    config PROMETEO_ENCODER_TRAS_DER_PIN
+        int "Encoder rueda trasera derecha - pin"
+        range 0 39
+        default 13
+
+    config PROMETEO_ENCODER_TRAS_IZQ_PIN
+        int "Encoder rueda trasera izquierda - pin"
+        range 0 39
+        default 14
+
+    comment "======== Control Brazo ========"
+
+    config PROMETEO_SERVO_1_PIN
+        int "Servo 1 (camara) - pin"
+        range 0 33
+        default 0
+
+    config PROMETEO_SERVO_2_PIN
+        int "Servo 2 (base) - pin"
+        range 0 33
+        default 33
+
+    config PROMETEO_SERVO_3_PIN
+        int "Servo 3 (hombro) - pin"
+        range 0 33
+        default 26
+
+    config PROMETEO_SERVO_4_PIN
+        int "Servo 4 (codo) - pin"
+        range 0 33
+        default 27
+
+    config PROMETEO_SERVO_5_PIN
+        int "Servo 5 (garra) - pin"
+        range 0 33
+        default 12
+
+    comment "======== Camara ========"
+
+    config PROMETEO_CAMARA_UART_TX_PIN
+        int "Camara UART - pin TX"
+        range 0 33
+        default 1
+
+    config PROMETEO_CAMARA_UART_RX_PIN
+        int "Camara UART - pin RX"
+        range 0 33
+        default 3
+
+    comment "======== Placa Motor ========"
+
+    comment "== Delantero Izquierdo (motor A) =="
+
+    config PROMETEO_MOTOR_A1_PIN
+        int "Motor A (delantero izquierdo) - pin IA"
+        range 0 39
+        default 21
+
+    config PROMETEO_MOTOR_A2_PIN
+        int "Motor A (delantero izquierdo) - pin IB"
+        range 0 39
+        default 22
+
+    comment "== Trasero Izquierdo (motor B) =="
+
+    config PROMETEO_MOTOR_B1_PIN
+        int "Motor B (trasero izquierdo) - pin IA"
+        range 0 39
+        default 16
+
+    config PROMETEO_MOTOR_B2_PIN
+        int "Motor B (trasero izquierdo) - pin IB"
+        range 0 39
+        default 23
+
+    comment "== Delantero Derecho (motor C) =="
+
+    config PROMETEO_MOTOR_C1_PIN
+        int "Motor C (delantero derecho) - pin IA"
+        range 0 39
+        default 18
+
+    config PROMETEO_MOTOR_C2_PIN
+        int "Motor C (delantero derecho) - pin IB"
+        range 0 39
+        default 19
+
+    comment "== Trasero Derecho (motor D) =="
+
+    config PROMETEO_MOTOR_D1_PIN
+        int "Motor D (trasero derecho) - pin IA"
+        range 0 39
+        default 17
+
+    config PROMETEO_MOTOR_D2_PIN
+        int "Motor D (trasero derecho) - pin IB"
+        range 0 39
+        default 25
+
+endmenu
