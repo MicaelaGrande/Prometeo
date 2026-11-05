@@ -198,16 +198,53 @@ ros2 topic echo /prometeo/orden_enviada           # lo que se le manda a la ESP3
 ros2 topic echo /prometeo/distancias --qos-reliability best_effort   # [izq, der, frente] en cm
 ```
 
-## 5. Simulación (Gazebo), solo para practicar sin el robot
+## 5. Opción 2: probar en Gazebo, sin el robot
 
-**En la competencia no hace falta.** Sirve para probar el panel hoy, sin el robot.
+Sirve para practicar el manejo y probar el panel sin el robot. **En la competencia no hace
+falta.**
+
+**Qué se puede probar en Gazebo:**
+
+| Qué | ¿Se puede? |
+|---|---|
+| Manejar el robot con el panel (manual, automático, PARAR) | sí |
+| Ultrasonidos (izquierda, derecha y frente) | sí |
+| Posición y rastro en el mapa del panel (`/odom`) | sí (el robot real todavía no lo tiene) |
+| Centrado en el pasillo y freno (nodo provisorio que imita a la ESP32) | sí |
+| Cámara y visión (flechas, cubos, zonas) | sí, en el mundo `vision_testground` |
+| **Mover el brazo y la garra** | **no**: en esta rama el brazo está dibujado pero no se mueve. Ignacio tiene una garra a medio andar en `feature/ros/sim-merge` ("todavía rebota demasiado"), sin mergear |
+
+**Terminal 1: Gazebo.** Elegir un mundo:
 
 ```bash
-ros2 launch my_robot_bringup gazebo.launch.py world_name:=laberinto
-ros2 launch my_robot_bringup panel.launch.py ns:=''      # en otra terminal
+cd ~/Documentos/Robotica/Prometeo
+source /opt/ros/jazzy/setup.bash
+source ros/install/setup.bash
+ros2 launch my_robot_bringup gazebo.launch.py world_name:=laberinto           # el laberinto
+ros2 launch my_robot_bringup gazebo.launch.py world_name:=vision_testground   # con flechas y cubos
 ```
 
-En Gazebo los topics no llevan `/prometeo` adelante (`/modo`, `/cmd_vel_manual`, etc.).
+✔ Anduvo si se abren Gazebo y RViz con el robot.
+
+**Terminal 2: el panel**, sin namespace (en Gazebo los topics no llevan `/prometeo`):
+
+```bash
+cd ~/Documentos/Robotica/Prometeo
+source /opt/ros/jazzy/setup.bash
+source ros/install/setup.bash
+ros2 launch my_robot_bringup panel.launch.py ns:=''
+```
+
+Abrir **http://localhost:8082** y manejar con las flechas, igual que con el robot real.
+✔ Anduvo si los tres indicadores están en verde y el robot se mueve en Gazebo.
+
+**Ojo:** el launch de Gazebo también arranca el control por joystick, que manda directo a
+`/cmd_vel` sin pasar por el selector. Si no hay un joystick conectado no molesta; si hay uno,
+puede pisar las órdenes del panel.
+
+**No correr Gazebo con el robot real conectado.** Con el firmware viejo los dos usan los mismos
+topics y se mezclan las órdenes; con el nuevo no se mezclan, pero es fácil abrir el panel
+equivocado y manejar el que no es.
 
 ## 6. Cerrar todo
 
