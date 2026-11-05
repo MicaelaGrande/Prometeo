@@ -7,145 +7,302 @@
 <!--
   Panel de navegacion (T11). Funciona SIN INTERNET: no usa librerias ni fuentes de afuera.
   Lo sirve la propia compu con panel.launch.py y habla con ROS por rosbridge.
+  La camara llega aparte, como video MJPEG, desde camara_panel.py.
 
-  Parametros en la URL: ?ns=prometeo&ws=9092&host=<ip>
+  Parametros en la URL: ?ns=prometeo&ws=9092&cam=8083&host=<ip>
     ns=prometeo  -> robot real (firmware de navegacion_bajo, topics en /prometeo)
     ns=          -> Gazebo (topics sin namespace)
 
-  Teclas: M manual, A automatico, ESPACIO parar (panico).
-          Flechas o W A S D para manejar en manual (A se usa para automatico solo
-          si no se esta manejando: para girar a la izquierda usar la flecha o Q).
+  Teclas: M manual, A automatico, ESPACIO freno (PARAR).
+          Flechas o W S Q D para manejar en manual.
 -->
 <style>
   :root {
     --bg: #f4f5f7; --card: #ffffff; --text: #1d2330; --muted: #6a7385; --line: #dde1e8;
-    --ok: #1a8f4c; --warn: #b7791f; --bad: #c0392b; --idle: #6a7385; --accent: #2f62c8; --accent-text: #fff;
+    --ok: #1a8f4c; --warn: #b7791f; --bad: #c0392b; --idle: #6a7385; --accent: #2f62c8;
     --probada: #6a7385; --pendiente: #2f62c8; --trabada: #c0392b; --camino: #1a8f4c;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #14171d; --card: #1d222b; --text: #e7eaf0; --muted: #9aa3b5; --line: #2d3442;
-            --ok: #3ccf7a; --warn: #e3a93b; --bad: #ff6b5b; --idle: #9aa3b5; --accent: #6b9cff; --accent-text: #0f1420;
+            --ok: #3ccf7a; --warn: #e3a93b; --bad: #ff6b5b; --idle: #9aa3b5; --accent: #6b9cff;
             --probada: #9aa3b5; --pendiente: #6b9cff; --trabada: #ff6b5b; --camino: #3ccf7a; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
-         font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+         font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
   header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-           padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
-  h1 { margin: 0; font-size: 1.15rem; }
-  h2 { margin: 0 0 12px; font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
-  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px;
-          border: 1px solid var(--line); font-size: .9rem; color: var(--muted); }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--idle); }
+           padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+  h1 { margin: 0; font-size: 1.05rem; }
+  h2 { margin: 0 0 10px; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  h3 { margin: 16px 0 8px; font-size: .95rem; }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+          border: 1px solid var(--line); font-size: .82rem; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--idle); }
   .ok .dot { background: var(--ok); } .warn .dot { background: var(--warn); } .bad .dot { background: var(--bad); }
-  main { display: grid; gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto;
-         grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
-  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
-  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
-  .ancho { grid-column: 1 / -1; }
-  .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  .modo { font-size: 2rem; font-weight: 800; text-transform: uppercase; }
+
+  /* Barra de estado: siempre visible */
+  #estado { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line);
+            padding: 10px 16px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .etq { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .modo { font-size: 1.7rem; font-weight: 800; text-transform: uppercase; line-height: 1.1; }
   .modo.auto { color: var(--ok); } .modo.manual { color: var(--warn); } .modo.nada { color: var(--idle); }
-  .botones { display: flex; gap: 10px; flex-wrap: wrap; }
-  button { font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 10px; cursor: pointer;
+  .fuente { font-size: 1.15rem; font-weight: 700; padding: 4px 12px; border-radius: 8px; border: 2px solid var(--line); }
+  .fuente.compu { border-color: var(--warn); color: var(--warn); }
+  .fuente.joystick { border-color: var(--accent); color: var(--accent); }
+  .fuente.auto { border-color: var(--ok); color: var(--ok); }
+  .fuente.freno { border-color: var(--bad); color: var(--bad); }
+  .botones { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  button { font: inherit; font-weight: 600; padding: 9px 14px; border-radius: 10px; cursor: pointer;
            border: 1px solid var(--line); background: var(--bg); color: var(--text); }
-  button kbd { font: .75rem ui-monospace, monospace; opacity: .7; margin-left: 6px; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button kbd { font: .72rem ui-monospace, monospace; opacity: .7; margin-left: 6px; }
   button.activo { outline: 3px solid var(--accent); }
-  button.panico { background: var(--bad); color: #fff; border-color: var(--bad); font-size: 1.1rem; padding: 12px 22px; }
-  .info { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .9rem; }
-  .fila { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
-  label { display: flex; gap: 8px; align-items: center; font-size: .9rem; color: var(--muted); }
+  button.peligro { background: var(--bad); color: #fff; border-color: var(--bad); font-size: 1.05rem; padding: 10px 20px; }
+  button.verde { background: var(--ok); color: #fff; border-color: var(--ok); }
+  .banner { display: none; color: #fff; font-weight: 700; padding: 10px 16px; font-size: 1.05rem; }
+  #b-freno { background: var(--bad); }
+  #b-ayuda { background: #8e44ad; }
+  #b-obstaculo { background: var(--warn); color: #111; }
+
+  /* Cuerpo: pestañas a la izquierda, camara y ultrasonidos fijos a la derecha */
+  .cuerpo { display: grid; gap: 14px; padding: 14px 16px; max-width: 1400px; margin: 0 auto;
+            grid-template-columns: minmax(0, 1fr) 500px; align-items: start; }
+  @media (max-width: 1050px) { .cuerpo { grid-template-columns: 1fr; } }
+  .lateral { position: sticky; top: 92px; display: grid; gap: 14px; }
+  @media (max-width: 1050px) { .lateral { position: static; } }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
+  .pestanas { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+  .pestanas button { border: none; border-bottom: 3px solid transparent; border-radius: 0; background: none;
+                     padding: 8px 12px; color: var(--muted); }
+  .pestanas button.activa { color: var(--text); border-bottom-color: var(--accent); }
+  .pestana { display: none; } .pestana.activa { display: block; }
+  .info { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .88rem; }
+  .fila { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  label { display: flex; gap: 8px; align-items: center; font-size: .88rem; color: var(--muted); }
   input[type=range] { width: 140px; }
-  .teclas { display: grid; grid-template-columns: repeat(3, 44px); gap: 6px; justify-content: start; }
-  .tecla { height: 44px; border: 1px solid var(--line); border-radius: 8px; display: grid; place-items: center;
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: .9rem; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: .8rem; }
+  .nota { border-left: 4px solid var(--warn); padding: 8px 12px; background: var(--bg); border-radius: 6px; font-size: .9rem; margin: 10px 0; }
+  .nota.roja { border-left-color: var(--bad); }
+
+  /* Camara */
+  #cam-caja { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 4 / 3; }
+  #cam { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #cam-sin { position: absolute; inset: 0; display: grid; place-items: center; color: #aaa; text-align: center; padding: 20px; }
+
+  /* Ultrasonidos: numeros */
+  .sensores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .sensor { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .sensor .valor { font-size: 1.7rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .sensor .min { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sensor.cerca .valor { color: var(--bad); }
+  .sensor.viejo { opacity: .45; }
+
+  /* Manejo */
+  .teclas { display: grid; grid-template-columns: repeat(3, 42px); gap: 5px; }
+  .tecla { height: 42px; border: 1px solid var(--line); border-radius: 8px; display: grid; place-items: center;
            font-weight: 700; color: var(--muted); user-select: none; }
   .tecla.on { background: var(--warn); color: #111; border-color: var(--warn); }
-  .sensores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .sensor { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-  .sensor .valor { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .sensor .barra { height: 6px; border-radius: 3px; background: var(--line); margin-top: 6px; overflow: hidden; }
-  .sensor .barra div { height: 100%; background: var(--accent); width: 0; }
-  .sensor.cerca .valor { color: var(--bad); } .sensor.cerca .barra div { background: var(--bad); }
-  .sensor.viejo { opacity: .45; }
-  #mapa { width: 100%; height: 440px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); display: block; }
-  .leyenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: .85rem; color: var(--muted); margin-top: 8px; }
+
+  /* Mapa */
+  #mapa { width: 100%; height: 420px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); display: block; }
+  .leyenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: .82rem; color: var(--muted); margin-top: 8px; }
   .leyenda span::before { content: ""; display: inline-block; width: 18px; height: 4px; border-radius: 2px;
                           margin-right: 6px; vertical-align: middle; background: var(--c); }
-  #avisos { max-height: 260px; overflow-y: auto; font: .9rem/1.5 ui-monospace, monospace; }
-  #avisos div { padding: 2px 0; border-bottom: 1px solid var(--line); }
-  #avisos .ayuda { color: var(--bad); font-weight: 700; }
-  #avisos .local { color: var(--muted); }
-  #banner { display: none; background: var(--bad); color: #fff; font-weight: 700; padding: 12px 16px; font-size: 1.1rem; }
+
+  /* Registro */
+  .log { max-height: 520px; overflow-y: auto; font: .85rem/1.5 ui-monospace, monospace; }
+  .log div { padding: 2px 0; border-bottom: 1px solid var(--line); }
+  .log .ayuda, .log .freno { color: var(--bad); font-weight: 700; }
+  .log .local { color: var(--muted); }
+  .log .modo { color: var(--accent); }
+  .grande { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
-<div id="banner"></div>
 <header>
   <h1>Prometeo · Panel de navegación</h1>
   <div class="pills">
     <span class="pill" id="p-ws"><span class="dot"></span><span>rosbridge</span></span>
     <span class="pill" id="p-selector"><span class="dot"></span><span>selector</span></span>
-    <span class="pill" id="p-sensores"><span class="dot"></span><span>sensores</span></span>
+    <span class="pill" id="p-esp32"><span class="dot"></span><span>ESP32</span></span>
+    <span class="pill" id="p-sensores"><span class="dot"></span><span>ultrasonidos</span></span>
+    <span class="pill" id="p-camara"><span class="dot"></span><span>cámara</span></span>
+    <span class="pill" id="p-vision"><span class="dot"></span><span>visión</span></span>
   </div>
 </header>
-<main>
-  <section class="ancho">
-    <div class="top">
-      <div>
-        <div class="info">Modo actual</div>
-        <div class="modo nada" id="modo">sin datos</div>
-      </div>
-      <div class="botones">
-        <button id="b-manual">Manual<kbd>M</kbd></button>
-        <button id="b-auto">Automático<kbd>A</kbd></button>
-        <button id="b-parar" class="panico">PARAR<kbd>ESPACIO</kbd></button>
-      </div>
-    </div>
-  </section>
 
-  <section>
-    <h2>Manejo manual</h2>
-    <div class="fila">
-      <div class="teclas">
-        <span></span><div class="tecla" id="t-up">↑</div><span></span>
-        <div class="tecla" id="t-left">←</div><div class="tecla" id="t-down">↓</div><div class="tecla" id="t-right">→</div>
+<div id="estado">
+  <div><div class="etq">Modo</div><div class="modo nada" id="modo">sin datos</div></div>
+  <div><div class="etq">Maneja</div><div class="fuente" id="fuente">—</div></div>
+  <div><div class="etq">Freno por obstáculo</div><div id="obst" class="info">sin datos</div></div>
+  <div class="botones">
+    <button id="b-manual">Manual<kbd>M</kbd></button>
+    <button id="b-auto">Automático<kbd>A</kbd></button>
+    <button id="b-parar" class="peligro">PARAR<kbd>ESPACIO</kbd></button>
+    <button id="b-soltar" class="verde" style="display:none">Soltar freno</button>
+  </div>
+</div>
+<div class="banner" id="b-freno">FRENO PUESTO · nadie puede mover el robot (ni el automático, ni la compu, ni el joystick). Para seguir: “Soltar freno”.</div>
+<div class="banner" id="b-obstaculo">Freno por obstáculo de la ESP32: no deja avanzar. Retroceder o girar para salir.</div>
+<div class="banner" id="b-ayuda"></div>
+
+<div class="cuerpo">
+  <main>
+    <section>
+      <nav class="pestanas" id="pestanas">
+        <button data-p="monitoreo" class="activa">Monitoreo</button>
+        <button data-p="manual">Manual</button>
+        <button data-p="automatico">Automático</button>
+        <button data-p="motores">Motores</button>
+        <button data-p="vision">Visión</button>
+        <button data-p="brazo">Brazo</button>
+        <button data-p="registro">Registro</button>
+      </nav>
+
+      <!-- MONITOREO -->
+      <div class="pestana activa" id="p-monitoreo">
+        <h2>Mapa de la libreta</h2>
+        <svg id="mapa" viewBox="0 0 600 420" role="img" aria-label="Mapa de lugares de la libreta"></svg>
+        <div class="leyenda">
+          <span style="--c: var(--probada)">probada</span>
+          <span style="--c: var(--pendiente)">pendiente</span>
+          <span style="--c: var(--trabada)">trabada</span>
+          <span style="--c: var(--camino)">camino elegido</span>
+          <span style="--c: var(--warn)">rastro del robot</span>
+        </div>
+        <p class="info" id="mapa-info"></p>
+        <p class="info" id="pose">Posición: sin odometría</p>
+        <h3>Últimos avisos</h3>
+        <div class="log" id="avisos-cortos" style="max-height:180px"></div>
+        <h3>Qué está llegando</h3>
+        <table><thead><tr><th>Dato</th><th>Topic</th><th>Último</th></tr></thead><tbody id="salud"></tbody></table>
       </div>
-      <div>
-        <label>Avance <input type="range" id="vel" min="0.05" max="0.4" step="0.01" value="0.15"> <span id="vel-v"></span></label>
-        <label>Giro <input type="range" id="giro" min="0.2" max="1.5" step="0.05" value="0.6"> <span id="giro-v"></span></label>
+
+      <!-- MANUAL -->
+      <div class="pestana" id="p-manual">
+        <h2>Manejo desde la compu</h2>
+        <div class="fila">
+          <div class="teclas">
+            <span></span><div class="tecla" id="t-up">↑</div><span></span>
+            <div class="tecla" id="t-left">←</div><div class="tecla" id="t-down">↓</div><div class="tecla" id="t-right">→</div>
+          </div>
+          <div>
+            <label>Avance <input type="range" id="vel" min="0.05" max="0.4" step="0.01" value="0.15"> <span id="vel-v"></span></label>
+            <label>Giro <input type="range" id="giro" min="0.2" max="1.5" step="0.05" value="0.6"> <span id="giro-v"></span></label>
+          </div>
+        </div>
+        <p class="info">Flechas o W, S, Q, D (hacer clic en la página primero). Solo mueve el robot en modo manual y sin freno.
+          Orden que recibe la ESP32: <span id="cmd">—</span></p>
+
+        <h3>Joystick Xbox</h3>
+        <table>
+          <tr><td><b>LB</b> mantener + stick izquierdo</td><td>manejar (si se suelta LB, frena)</td></tr>
+          <tr><td><b>RB</b> además</td><td>más rápido</td></tr>
+          <tr><td><b>B</b></td><td>PARAR (freno puesto)</td></tr>
+          <tr><td><b>Y</b> mantener 1 segundo</td><td>soltar el freno</td></tr>
+          <tr><td><b>View</b> (Back)</td><td>modo manual</td></tr>
+          <tr><td><b>Menu</b> (Start)</td><td>modo automático</td></tr>
+        </table>
+
+        <h3>Cubo</h3>
+        <div class="fila">
+          <button id="b-capturar">Capturar el cubo</button>
+          <button id="b-abandonar">Abandonar este cubo</button>
+        </div>
+        <p class="info">En manual: capturar avisa que lo agarran ustedes con la garra; abandonar lo deja anotado para Decisión, y el robot lo manejan ustedes.</p>
+
+        <h3>Garra</h3>
+        <div class="nota">Los controles de la garra (abrir, cerrar, subir, bajar) se agregan cuando estén las posiciones de los servos.
+          El ángulo de cada servo se ve en la pestaña Brazo.</div>
+
+        <h3>Freno por obstáculo de la ESP32</h3>
+        <div class="fila">
+          <button id="b-seg-on">Prender</button>
+          <button id="b-seg-off">Apagar</button>
+          <span class="info" id="seg-info">Sin cambios desde el panel.</span>
+        </div>
+        <div class="nota roja">Con el firmware de <code>navegacion_bajo</code> este freno está desconectado y estos botones no hacen nada todavía
+          (pendiente, ver T11). Apagarlo sirve para acercarse a un objeto, por ejemplo para agarrar el cubo.</div>
       </div>
-    </div>
-    <p class="info">Flechas o W, S, Q, D. Solo mueve el robot en modo manual.
-      Orden que recibe la ESP32: <span id="cmd">—</span></p>
 
-    <h2 style="margin-top:16px">Ultrasonidos</h2>
-    <div class="sensores">
-      <div class="sensor" id="s-izq"><div class="info">Izquierda</div><div class="valor">—</div><div class="barra"><div></div></div></div>
-      <div class="sensor" id="s-frente"><div class="info">Frente</div><div class="valor">—</div><div class="barra"><div></div></div></div>
-      <div class="sensor" id="s-der"><div class="info">Derecha</div><div class="valor">—</div><div class="barra"><div></div></div></div>
-    </div>
-    <p class="info" id="pose">Posición: sin odometría</p>
-  </section>
+      <!-- AUTOMATICO -->
+      <div class="pestana" id="p-automatico">
+        <h2>Rescate en automático</h2>
+        <div class="nota roja"><b>En la Categoría A cada botón de esta pestaña es una intervención humana: −20 puntos cada vez.</b>
+          Usarlos solo si el robot quedó trabado o se equivocó.</div>
+        <div class="fila">
+          <button id="b-capturar-a">Capturar el cubo (pasa a manual)</button>
+          <button id="b-abandonar-a">Abandonar este cubo y seguir con otro color</button>
+        </div>
+        <p class="info">Abandonar: Decisión vuelve a un lugar conocido donde pueda tomar una flecha de otro color.
+          Capturar: pasa a manual para agarrarlo con la garra a mano.</p>
+        <p class="info">Estos botones mandan el pedido a <code id="t-pedido"></code>. Funcionan cuando Decisión lo escuche.</p>
+      </div>
 
-  <section>
-    <h2>Mapa de la libreta</h2>
-    <svg id="mapa" viewBox="0 0 600 440" role="img" aria-label="Mapa de lugares de la libreta"></svg>
-    <div class="leyenda">
-      <span style="--c: var(--probada)">probada</span>
-      <span style="--c: var(--pendiente)">pendiente</span>
-      <span style="--c: var(--trabada)">trabada</span>
-      <span style="--c: var(--camino)">camino elegido</span>
-      <span style="--c: var(--warn)">rastro del robot</span>
-    </div>
-    <p class="info" id="mapa-info">Todavía no llega la libreta (falta el nodo de Mapeo). Se dibuja el rastro del robot según la odometría.</p>
-  </section>
+      <!-- MOTORES -->
+      <div class="pestana" id="p-motores">
+        <h2>Motores</h2>
+        <table>
+          <tr><th>Estado de la ESP32</th><td class="grande" id="m-estado">—</td></tr>
+          <tr><th>Freno por obstáculo</th><td id="m-freno">—</td></tr>
+          <tr><th>Orden enviada</th><td id="m-orden">—</td></tr>
+          <tr><th>Velocidad estimada (sin encoders)</th><td id="m-vel">—</td></tr>
+        </table>
+        <h3>Ruedas (encoders)</h3>
+        <table><thead><tr><th></th><th>Izquierda</th><th>Derecha</th></tr></thead>
+          <tr><td>Velocidad</td><td id="r-vi">—</td><td id="r-vd">—</td></tr>
+          <tr><td>Vueltas por minuto</td><td id="r-ri">—</td><td id="r-rd">—</td></tr>
+        </table>
+      </div>
 
-  <section class="ancho">
-    <h2>Avisos</h2>
-    <div id="avisos"></div>
-  </section>
-</main>
+      <!-- VISION -->
+      <div class="pestana" id="p-vision">
+        <h2>Lo que detecta visión</h2>
+        <p class="info" id="v-resumen">Sin detecciones todavía.</p>
+        <table><thead><tr><th>Qué</th><th>Color</th><th>Dirección</th><th>Largo</th><th>Confianza</th></tr></thead>
+          <tbody id="v-tabla"></tbody></table>
+      </div>
+
+      <!-- BRAZO -->
+      <div class="pestana" id="p-brazo">
+        <h2>Servos</h2>
+        <table><thead><tr><th>Servo</th><th>Ángulo</th></tr></thead><tbody id="servos"></tbody></table>
+        <div class="nota">Solo lectura por ahora. Los controles se agregan cuando estén las posiciones de la garra.</div>
+      </div>
+
+      <!-- REGISTRO -->
+      <div class="pestana" id="p-registro">
+        <div class="fila" style="justify-content:space-between">
+          <h2 style="margin:0">Registro de todo lo que pasó</h2>
+          <button id="b-descargar">Descargar registro</button>
+        </div>
+        <p class="info">Se guarda mientras la página esté abierta. Descargarlo al terminar cada ronda (sirve para el jurado).</p>
+        <div class="log" id="registro"></div>
+      </div>
+    </section>
+  </main>
+
+  <aside class="lateral">
+    <section>
+      <h2>Cámara</h2>
+      <div id="cam-caja">
+        <img id="cam" alt="Lo que ve la cámara del robot">
+        <div id="cam-sin">Sin imagen de la cámara.<br>Revisar que esté corriendo la cámara (o visión).</div>
+      </div>
+    </section>
+    <section>
+      <h2>Ultrasonidos</h2>
+      <div class="sensores">
+        <div class="sensor" id="s-izq"><div class="etq">Izquierda</div><div class="valor">—</div><div class="min"></div></div>
+        <div class="sensor" id="s-frente"><div class="etq">Frente</div><div class="valor">—</div><div class="min"></div></div>
+        <div class="sensor" id="s-der"><div class="etq">Derecha</div><div class="valor">—</div><div class="min"></div></div>
+      </div>
+    </section>
+  </aside>
+</div>
 
 <script>
 "use strict";
@@ -155,57 +312,88 @@ const NS = q.has("ns") ? q.get("ns") : "prometeo";
 const P = NS ? "/" + NS : "";
 const HOST = q.get("host") || location.hostname || "localhost";
 const WS_URL = `ws://${HOST}:${q.get("ws") || 9092}`;
+const CAM_URL = `http://${HOST}:${q.get("cam") || 8083}/stream`;
 const T = {
-  modo: P + "/modo", modoActual: P + "/modo_actual",
-  manual: P + "/cmd_vel_manual", cmdVel: P + "/orden_enviada",
-  distancias: P + "/distancias", odom: P + "/odom",
-  aviso: P + "/navegacion/aviso", libreta: P + "/mapeo/libreta",
+  modo: P + "/modo", estadoSel: P + "/estado_selector", manual: P + "/cmd_vel_manual",
+  orden: P + "/orden_enviada", pedido: P + "/pedido_operador", seguridad: P + "/seguridad_habilitada",
+  distancias: P + "/distancias", odom: P + "/odom", aviso: P + "/navegacion/aviso", libreta: P + "/mapeo/libreta",
+  estadoMot: P + "/estado_motores", velocidad: P + "/velocidad", ruedas: P + "/velocidad_ruedas",
+  frenoObst: P + "/freno_emergencia", servos: P + "/servos/estado", deteccion: "/vision/detections",
 };
+const TIPOS = {
+  [T.estadoSel]: "std_msgs/msg/String", [T.orden]: "geometry_msgs/msg/Twist",
+  [T.distancias]: "std_msgs/msg/Float32MultiArray", [T.odom]: "nav_msgs/msg/Odometry",
+  [T.aviso]: "std_msgs/msg/String", [T.libreta]: "std_msgs/msg/String",
+  [T.estadoMot]: "std_msgs/msg/String", [T.velocidad]: "geometry_msgs/msg/Twist",
+  [T.ruedas]: "std_msgs/msg/Float32MultiArray", [T.frenoObst]: "std_msgs/msg/Bool",
+  [T.servos]: "std_msgs/msg/Float32MultiArray", [T.deteccion]: "huggin_vision_msgs/msg/DetectionArray",
+};
+// Para la tabla "Que esta llegando": nombre visible y cada cuanto deberia llegar (ms)
+const SALUD = [
+  ["Selector", T.estadoSel, 3000], ["Orden a la ESP32", T.orden, 1000], ["Ultrasonidos", T.distancias, 2000],
+  ["Estado de la ESP32", T.estadoMot, 3000], ["Velocidad estimada", T.velocidad, 3000],
+  ["Ruedas (encoders)", T.ruedas, 3000], ["Freno por obstáculo", T.frenoObst, 0],
+  ["Servos", T.servos, 3000], ["Visión", T.deteccion, 3000], ["Posición (odom)", T.odom, 3000],
+  ["Libreta (Mapeo)", T.libreta, 0], ["Avisos", T.aviso, 0],
+];
 const DIST_LEJOS_CM = 400;   // igual que micro_ros/main/sensores.h
 const CERCA_CM = 15;
+const SERVOS = ["Cámara", "Base del brazo", "Hombro", "Codo", "Garra"];   // orden de servos/estado
 const $ = id => document.getElementById(id);
+const ultimo = {};   // topic -> hora del ultimo mensaje (ms)
 
-// ---------- Avisos ----------
-function aviso(texto, clase) {
-  const d = document.createElement("div");
+// ---------- Registro y avisos ----------
+const registro = [];
+function anotar(texto, clase) {
   const hora = new Date().toLocaleTimeString();
-  d.textContent = `${hora}  ${texto}`;
-  if (clase) d.className = clase;
-  else if (/^\s*AYUDA/i.test(texto)) d.className = "ayuda";
-  const caja = $("avisos");
-  caja.prepend(d);
-  while (caja.children.length > 200) caja.lastChild.remove();
-  if (d.className === "ayuda") { $("banner").textContent = texto; $("banner").style.display = "block"; }
+  registro.push(`${new Date().toISOString()}  ${texto}`);
+  for (const id of ["registro", "avisos-cortos"]) {
+    const d = document.createElement("div");
+    d.textContent = `${hora}  ${texto}`;
+    if (clase) d.className = clase;
+    const caja = $(id); caja.prepend(d);
+    while (caja.children.length > (id === "registro" ? 2000 : 30)) caja.lastChild.remove();
+  }
 }
-function pill(id, estado, texto) {
-  const p = $(id); p.className = "pill " + estado; p.lastElementChild.textContent = texto;
-}
+$("b-descargar").onclick = () => {
+  const blob = new Blob([registro.join("\n") + "\n"], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `registro_prometeo_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.txt`;
+  a.click(); URL.revokeObjectURL(a.href);
+};
+function pill(id, estado, texto) { const p = $(id); p.className = "pill " + estado; p.lastElementChild.textContent = texto; }
+
+// ---------- Pestañas ----------
+document.querySelectorAll("#pestanas button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#pestanas button").forEach(x => x.classList.toggle("activa", x === b));
+  document.querySelectorAll(".pestana").forEach(x => x.classList.toggle("activa", x.id === "p-" + b.dataset.p));
+  try { localStorage.setItem("pestana", b.dataset.p); } catch (e) {}
+  if (b.dataset.p === "monitoreo") pedirDibujo();
+});
 
 // ---------- rosbridge ----------
 let ws = null, reintento = 1000;
-const suscripciones = [
-  [T.modoActual, "std_msgs/msg/String"], [T.cmdVel, "geometry_msgs/msg/Twist"],
-  [T.distancias, "std_msgs/msg/Float32MultiArray"], [T.odom, "nav_msgs/msg/Odometry"],
-  [T.aviso, "std_msgs/msg/String"], [T.libreta, "std_msgs/msg/String"],
-];
-function enviar(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
-function suscribir(topic, type) { enviar({ op: "subscribe", topic, type, throttle_rate: 0 }); }
-function publicar(topic, msg) { enviar({ op: "publish", topic, msg }); }
+function enviar(obj) { if (ws && ws.readyState === 1) { ws.send(JSON.stringify(obj)); return true; } return false; }
+function suscribir(topic) { enviar({ op: "subscribe", topic, type: TIPOS[topic] }); }
+function publicar(topic, msg) { return enviar({ op: "publish", topic, msg }); }
 
 function conectar() {
   pill("p-ws", "warn", "rosbridge: conectando…");
   ws = new WebSocket(WS_URL);
   ws.onopen = () => {
     reintento = 1000; pill("p-ws", "ok", "rosbridge");
-    aviso(`Conectado a ${WS_URL} (namespace "${NS || "ninguno"}")`, "local");
+    anotar(`Conectado a ${WS_URL} (namespace "${NS || "ninguno"}")`, "local");
     enviar({ op: "advertise", topic: T.modo, type: "std_msgs/msg/String" });
     enviar({ op: "advertise", topic: T.manual, type: "geometry_msgs/msg/Twist" });
-    for (const [t, ty] of suscripciones) suscribir(t, ty);
+    enviar({ op: "advertise", topic: T.pedido, type: "std_msgs/msg/String" });
+    enviar({ op: "advertise", topic: T.seguridad, type: "std_msgs/msg/Bool" });
+    for (const t in TIPOS) suscribir(t);
   };
   ws.onmessage = ev => {
     const m = JSON.parse(ev.data);
-    if (m.op === "publish") recibir(m.topic, m.msg);
-    else if (m.op === "status" && m.level === "error") aviso("rosbridge: " + m.msg, "local");
+    if (m.op === "publish") { ultimo[m.topic] = Date.now(); recibir(m.topic, m.msg); }
+    else if (m.op === "status" && m.level === "error") anotar("rosbridge: " + m.msg, "local");
   };
   ws.onclose = () => {
     pill("p-ws", "bad", "rosbridge: sin conexión");
@@ -214,86 +402,206 @@ function conectar() {
 }
 
 // ---------- Lo que llega ----------
-let modo = null, ultModo = 0, ultDist = 0, ultimaLibreta = null;
-let pose = null, rastro = [];
+let estado = { modo: null, freno: null, fuente: null };
+let ultimaLibreta = null, pose = null, rastro = [];
+let frenoObst = null, estadoMot = null, resumenVision = "";
+const historial = { izq: [], der: [], frente: [] };   // [hora, cm] de los ultimos 10 s
 
 function recibir(topic, msg) {
-  if (topic === T.modoActual) { ultModo = Date.now(); mostrarModo(msg.data); }
-  else if (topic === T.cmdVel) {
-    $("cmd").textContent = `avance ${msg.linear.x.toFixed(2)} m/s · giro ${msg.angular.z.toFixed(2)} rad/s`;
-  }
-  else if (topic === T.distancias) { ultDist = Date.now(); mostrarDistancias(msg.data); }
-  else if (topic === T.odom) {
-    const p = msg.pose.pose.position, o = msg.pose.pose.orientation;
-    const yaw = Math.atan2(2 * (o.w * o.z + o.x * o.y), 1 - 2 * (o.y * o.y + o.z * o.z));
-    pose = { x: p.x, y: p.y, yaw };
-    const u = rastro[rastro.length - 1];
-    if (!u || Math.hypot(u.x - p.x, u.y - p.y) > 0.02) { rastro.push({ x: p.x, y: p.y }); if (rastro.length > 3000) rastro.shift(); }
-    $("pose").textContent = `Posición (odometría): x ${p.x.toFixed(2)} m · y ${p.y.toFixed(2)} m · ${(yaw * 180 / Math.PI).toFixed(0)}°`;
-    pedirDibujo();
-  }
-  else if (topic === T.aviso) aviso(msg.data);
-  else if (topic === T.libreta) {
-    try { ultimaLibreta = JSON.parse(msg.data); pedirDibujo(); }
-    catch (e) { aviso("La libreta llegó con un formato que no entiendo: " + e.message, "local"); }
+  switch (topic) {
+    case T.estadoSel: { try { mostrarEstado(JSON.parse(msg.data)); } catch (e) {} break; }
+    case T.orden: {
+      const t = `avance ${msg.linear.x.toFixed(2)} m/s · giro ${msg.angular.z.toFixed(2)} rad/s`;
+      $("cmd").textContent = t; $("m-orden").textContent = t; break;
+    }
+    case T.distancias: mostrarDistancias(msg.data); break;
+    case T.odom: {
+      const p = msg.pose.pose.position, o = msg.pose.pose.orientation;
+      const yaw = Math.atan2(2 * (o.w * o.z + o.x * o.y), 1 - 2 * (o.y * o.y + o.z * o.z));
+      pose = { x: p.x, y: p.y, yaw };
+      const u = rastro[rastro.length - 1];
+      if (!u || Math.hypot(u.x - p.x, u.y - p.y) > 0.02) { rastro.push({ x: p.x, y: p.y }); if (rastro.length > 3000) rastro.shift(); }
+      $("pose").textContent = `Posición (odometría): x ${p.x.toFixed(2)} m · y ${p.y.toFixed(2)} m · ${(yaw * 180 / Math.PI).toFixed(0)}°`;
+      pedirDibujo(); break;
+    }
+    case T.aviso: {
+      const ayuda = /^\s*AYUDA/i.test(msg.data);
+      anotar("Aviso: " + msg.data, ayuda ? "ayuda" : "");
+      if (ayuda) { $("b-ayuda").textContent = msg.data; $("b-ayuda").style.display = "block"; }
+      break;
+    }
+    case T.libreta: {
+      try { ultimaLibreta = JSON.parse(msg.data); pedirDibujo(); }
+      catch (e) { anotar("La libreta llegó con un formato que no entiendo: " + e.message, "local"); }
+      break;
+    }
+    case T.estadoMot: {
+      if (msg.data !== estadoMot) anotar(`ESP32: ${msg.data}`, msg.data.includes("FRENO") || msg.data.includes("FAILSAFE") ? "freno" : "local");
+      estadoMot = msg.data; $("m-estado").textContent = msg.data; break;
+    }
+    case T.velocidad: $("m-vel").textContent = `avance ${msg.linear.x.toFixed(2)} m/s · giro ${msg.angular.z.toFixed(2)} rad/s`; break;
+    case T.ruedas: {
+      const d = msg.data;   // [vel_izq m/s, vel_der m/s, rpm_izq, rpm_der]
+      $("r-vi").textContent = (d[0] ?? 0).toFixed(2) + " m/s"; $("r-vd").textContent = (d[1] ?? 0).toFixed(2) + " m/s";
+      $("r-ri").textContent = (d[2] ?? 0).toFixed(0); $("r-rd").textContent = (d[3] ?? 0).toFixed(0); break;
+    }
+    case T.frenoObst: {
+      if (msg.data !== frenoObst) anotar(msg.data ? "FRENO POR OBSTÁCULO activado (ESP32)" : "Freno por obstáculo liberado", msg.data ? "freno" : "local");
+      frenoObst = msg.data;
+      $("obst").innerHTML = msg.data ? '<b style="color:var(--bad)">ACTIVO</b>' : "libre";
+      $("m-freno").textContent = msg.data ? "ACTIVO: no deja avanzar" : "libre";
+      $("b-obstaculo").style.display = msg.data ? "block" : "none"; break;
+    }
+    case T.servos: {
+      $("servos").innerHTML = "";
+      (msg.data || []).forEach((v, i) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${SERVOS[i] || "Servo " + (i + 1)}</td><td class="grande">${v.toFixed(0)}°</td>`;
+        $("servos").appendChild(tr);
+      });
+      break;
+    }
+    case T.deteccion: mostrarVision(msg.detections || []); break;
   }
 }
 
-function mostrarModo(m) {
-  if (m !== modo) {
-    aviso(`Modo: ${m.toUpperCase()}`, "local");
-    if (m === "auto") $("banner").style.display = "none";
-  }
-  modo = m;
-  $("modo").textContent = m === "auto" ? "Automático" : m === "manual" ? "Manual" : m;
-  $("modo").className = "modo " + (m === "auto" || m === "manual" ? m : "nada");
-  $("b-manual").classList.toggle("activo", m === "manual");
-  $("b-auto").classList.toggle("activo", m === "auto");
+const NOMBRE_FUENTE = { compu: "COMPU", joystick: "JOYSTICK", auto: "AUTOMÁTICO", nadie: "nadie", freno: "FRENO PUESTO" };
+function mostrarEstado(e) {
+  if (e.modo !== estado.modo && estado.modo !== null) anotar(`Modo: ${e.modo.toUpperCase()}`, "modo");
+  if (e.freno !== estado.freno && estado.freno !== null) anotar(e.freno ? "FRENO PUESTO (PARAR)" : "Freno suelto", e.freno ? "freno" : "modo");
+  if (e.fuente !== estado.fuente && estado.fuente !== null && !["nadie", "freno"].includes(e.fuente)) anotar(`Maneja: ${NOMBRE_FUENTE[e.fuente]}`, "modo");
+  estado = e;
+  $("modo").textContent = e.modo === "auto" ? "Automático" : "Manual";
+  $("modo").className = "modo " + e.modo;
+  $("fuente").textContent = NOMBRE_FUENTE[e.fuente] || e.fuente;
+  $("fuente").className = "fuente " + e.fuente;
+  $("b-manual").classList.toggle("activo", e.modo === "manual");
+  $("b-auto").classList.toggle("activo", e.modo === "auto");
+  $("b-freno").style.display = e.freno ? "block" : "none";
+  $("b-soltar").style.display = e.freno ? "inline-block" : "none";
+  $("b-parar").disabled = !!e.freno;
 }
 
 function mostrarDistancias(d) {
-  [["s-izq", d[0]], ["s-der", d[1]], ["s-frente", d[2]]].forEach(([id, cm]) => {
-    const s = $(id);
-    let texto, pct;
-    if (cm === undefined || cm < 0) { texto = "sin dato"; pct = 0; }
-    else if (cm >= DIST_LEJOS_CM) { texto = "lejos"; pct = 100; }
-    else { texto = cm.toFixed(0) + " cm"; pct = Math.min(100, cm / 100 * 100); }
+  const ahora = Date.now();
+  [["izq", d[0]], ["der", d[1]], ["frente", d[2]]].forEach(([nombre, cm]) => {
+    const h = historial[nombre];
+    if (cm !== undefined && cm >= 0 && cm < DIST_LEJOS_CM) h.push([ahora, cm]);
+    while (h.length && ahora - h[0][0] > 10000) h.shift();
+    const s = $("s-" + nombre);
+    let texto;
+    if (cm === undefined || cm < 0) texto = "sin dato";
+    else if (cm >= DIST_LEJOS_CM) texto = "lejos";
+    else texto = cm.toFixed(0) + " cm";
     s.querySelector(".valor").textContent = texto;
-    s.querySelector(".barra div").style.width = pct + "%";
+    const min = h.length ? Math.min(...h.map(x => x[1])) : null;
+    s.querySelector(".min").textContent = min === null ? "mínimo 10 s: —" : `mínimo 10 s: ${min.toFixed(0)} cm`;
     s.classList.toggle("cerca", cm >= 0 && cm < CERCA_CM);
   });
 }
 
-// Chequeo de lo que deja de llegar. Si no llegan distancias, se vuelve a suscribir:
-// rosbridge elige "best effort" solo si la ESP32 ya estaba publicando al suscribirse.
+const KIND = { cube: "Cubo", arrow: "Flecha", zone: "Zona" };
+const COLOR = { red: "rojo", green: "verde", blue: "azul" };
+const DIRECCION = { left: "izquierda", right: "derecha", up: "adelante", down: "atrás", forward: "adelante" };
+const LARGO = { close: "corta", normal: "normal", far: "larga" };
+function mostrarVision(dets) {
+  $("v-tabla").innerHTML = "";
+  for (const d of dets) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${KIND[d.kind] || d.kind}${d.partial ? " (cortada)" : ""}</td><td>${COLOR[d.color] || d.color}</td>
+      <td>${d.direction ? (DIRECCION[d.direction] || d.direction) : "—"}</td><td>${d.length_class ? (LARGO[d.length_class] || d.length_class) : "—"}</td>
+      <td>${(d.confidence * 100).toFixed(0)}%</td>`;
+    $("v-tabla").appendChild(tr);
+  }
+  const resumen = dets.map(d => `${KIND[d.kind] || d.kind} ${COLOR[d.color] || d.color}`).sort().join(", ");
+  $("v-resumen").textContent = dets.length ? `Ve: ${resumen}` : "No ve nada.";
+  if (resumen !== resumenVision) { if (resumen) anotar("Visión ve: " + resumen, "local"); resumenVision = resumen; }
+}
+
+// ---------- Salud: que deja de llegar ----------
+// Si no llegan distancias, se vuelve a suscribir: rosbridge elige "best effort" solo si
+// la ESP32 ya estaba publicando cuando el panel se suscribio.
+const avisadoCaido = {};
 setInterval(() => {
   const ahora = Date.now();
-  if (!ultModo) pill("p-selector", "bad", "selector: no responde");
-  else if (ahora - ultModo > 3000) { pill("p-selector", "bad", "selector: no responde"); $("modo").className = "modo nada"; }
-  else pill("p-selector", "ok", "selector");
-  const viejo = !ultDist || ahora - ultDist > 2000;
-  pill("p-sensores", viejo ? "bad" : "ok", viejo ? "sensores: sin datos" : "sensores");
-  document.querySelectorAll(".sensor").forEach(s => s.classList.toggle("viejo", viejo));
-  if (viejo && ws && ws.readyState === 1) {
-    enviar({ op: "unsubscribe", topic: T.distancias });
-    suscribir(T.distancias, "std_msgs/msg/Float32MultiArray");
+  const edad = t => ultimo[t] ? ahora - ultimo[t] : Infinity;
+  const vivo = (t, ms) => edad(t) < ms;
+  pill("p-selector", vivo(T.estadoSel, 3000) ? "ok" : "bad", vivo(T.estadoSel, 3000) ? "selector" : "selector: no responde");
+  if (!vivo(T.estadoSel, 3000)) { $("modo").className = "modo nada"; $("fuente").textContent = "—"; $("fuente").className = "fuente"; }
+  pill("p-esp32", vivo(T.estadoMot, 3000) ? "ok" : "bad", vivo(T.estadoMot, 3000) ? "ESP32" : "ESP32: sin datos");
+  pill("p-sensores", vivo(T.distancias, 2000) ? "ok" : "bad", vivo(T.distancias, 2000) ? "ultrasonidos" : "ultrasonidos: sin datos");
+  pill("p-vision", vivo(T.deteccion, 3000) ? "ok" : "warn", vivo(T.deteccion, 3000) ? "visión" : "visión: sin datos");
+  document.querySelectorAll(".sensor").forEach(s => s.classList.toggle("viejo", !vivo(T.distancias, 2000)));
+  const tb = $("salud"); tb.innerHTML = "";
+  for (const [nombre, topic, ms] of SALUD) {
+    const e = edad(topic);
+    const txt = e === Infinity ? "nunca" : e < 1000 ? "ahora" : `hace ${(e / 1000).toFixed(0)} s`;
+    const mal = ms && e > ms;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${nombre}</td><td><code>${topic}</code></td><td style="color:${mal ? "var(--bad)" : "inherit"}">${txt}</td>`;
+    tb.appendChild(tr);
+    if (ms && ultimo[topic]) {
+      if (mal && !avisadoCaido[topic]) { anotar(`Dejó de llegar: ${nombre}`, "freno"); avisadoCaido[topic] = true; }
+      if (!mal && avisadoCaido[topic]) { anotar(`Volvió: ${nombre}`, "local"); avisadoCaido[topic] = false; }
+    }
   }
-}, 2500);
+  for (const t of [T.distancias, T.frenoObst, T.ruedas, T.velocidad]) {
+    if (!vivo(t, 2500) && ws && ws.readyState === 1) { enviar({ op: "unsubscribe", topic: t }); suscribir(t); }
+  }
+}, 1000);
 
-// ---------- Botones y teclado ----------
-function pedirModo(texto) { publicar(T.modo, { data: texto }); aviso(`Pedido: ${texto.toUpperCase()}`, "local"); }
+// ---------- Camara ----------
+function conectarCamara() { $("cam").src = CAM_URL + "?t=" + Date.now(); }
+$("cam").onload = () => { $("cam-sin").style.display = "none"; pill("p-camara", "ok", "cámara"); };
+$("cam").onerror = () => {
+  $("cam-sin").style.display = "grid"; pill("p-camara", "bad", "cámara: sin imagen");
+  setTimeout(conectarCamara, 3000);
+};
+conectarCamara();
+
+// ---------- Botones ----------
+function pedirModo(texto) {
+  if (publicar(T.modo, { data: texto })) anotar(`Pedido: ${texto.toUpperCase()}`, "modo");
+  else anotar(`No se pudo pedir ${texto}: sin conexión`, "freno");
+}
+function pedidoOperador(texto, enAuto) {
+  publicar(T.pedido, { data: texto });
+  anotar(`Pedido al robot: ${texto}${enAuto ? " (intervención en automático)" : ""}`, "modo");
+}
 $("b-manual").onclick = () => pedirModo("manual");
 $("b-auto").onclick = () => pedirModo("auto");
 $("b-parar").onclick = () => { teclas.clear(); pedirModo("parar"); };
+$("b-soltar").onclick = () => {
+  if (estado.modo === "auto" && !confirm("Está en AUTOMÁTICO: al soltar el freno el robot arranca solo. ¿Soltar?")) return;
+  pedirModo("soltar");
+};
+function capturar(enAuto) {
+  if (enAuto && !confirm("Capturar a mano en automático: −20 pts en Cat. A. Pasa a manual. ¿Seguir?")) return;
+  pedidoOperador("capturar", enAuto);
+  if (estado.modo !== "manual") pedirModo("manual");
+  anotar("Capturando: garra a mano", "modo");
+}
+function abandonar(enAuto) {
+  if (enAuto && !confirm("Abandonar este cubo en automático: −20 pts en Cat. A. ¿Seguir?")) return;
+  pedidoOperador("abandonar", enAuto);
+}
+$("b-capturar").onclick = () => capturar(estado.modo === "auto");
+$("b-abandonar").onclick = () => abandonar(estado.modo === "auto");
+$("b-capturar-a").onclick = () => capturar(estado.modo === "auto");
+$("b-abandonar-a").onclick = () => abandonar(estado.modo === "auto");
+$("t-pedido").textContent = T.pedido;
+$("b-seg-on").onclick = () => { publicar(T.seguridad, { data: true }); $("seg-info").textContent = "Pedido: prender"; anotar("Freno por obstáculo: pedido PRENDER", "modo"); };
+$("b-seg-off").onclick = () => { publicar(T.seguridad, { data: false }); $("seg-info").textContent = "Pedido: apagar"; anotar("Freno por obstáculo: pedido APAGAR", "freno"); };
 
+// ---------- Teclado ----------
 const teclas = new Set();
 const MAPA_TECLAS = {
   ArrowUp: "up", w: "up", W: "up", ArrowDown: "down", s: "down", S: "down",
   ArrowLeft: "left", q: "left", Q: "left", ArrowRight: "right", d: "right", D: "right",
 };
 document.addEventListener("keydown", e => {
-  if (e.target.tagName === "INPUT") return;
-  if (e.code === "Space") { e.preventDefault(); $("b-parar").click(); return; }
+  if (e.target.tagName === "INPUT" || e.repeat && !MAPA_TECLAS[e.key]) return;
+  if (e.code === "Space") { e.preventDefault(); if (!estado.freno) $("b-parar").click(); return; }
   if (e.key === "m" || e.key === "M") { pedirModo("manual"); return; }
   if ((e.key === "a" || e.key === "A") && !teclas.size) { pedirModo("auto"); return; }
   const t = MAPA_TECLAS[e.key];
@@ -322,54 +630,45 @@ for (const id of ["vel", "giro"]) {
 }
 
 // ---------- Mapa ----------
-// Formato esperado en /mapeo/libreta (std_msgs/String con JSON), acordado en T3/T11:
+// Formato esperado en mapeo/libreta (std_msgs/String con JSON), acordado en T3/T11:
 // {"lugares": [{"numero": 1, "x": 1.2, "y": 0.4, "tipo": "bifurcacion",
 //               "salidas": [{"direccion": "norte", "estado": "pendiente", "lleva_a": null}]}],
 //  "actual": 1, "camino": [1, 0]}
-// Norte es hacia donde miraba el robot al arrancar (+x en /odom) y se dibuja hacia arriba.
+// Norte es hacia donde miraba el robot al arrancar (+x en odom) y se dibuja hacia arriba.
 const DIR = { norte: [1, 0], oeste: [0, 1], sur: [-1, 0], este: [0, -1] };
 const SVG = "http://www.w3.org/2000/svg";
 let dibujoPendiente = false;
 function pedirDibujo() { if (!dibujoPendiente) { dibujoPendiente = true; requestAnimationFrame(dibujar); } }
-
 function el(tag, attrs, padre) {
   const e = document.createElementNS(SVG, tag);
   for (const k in attrs) e.setAttribute(k, attrs[k]);
   padre.appendChild(e); return e;
 }
-
 function dibujar() {
   dibujoPendiente = false;
   const svg = $("mapa"); svg.innerHTML = "";
   const lugares = (ultimaLibreta && ultimaLibreta.lugares) || [];
   const porNumero = new Map(lugares.map(l => [l.numero, l]));
-
-  // Escala: que entren todos los lugares, el rastro y el robot, con margen
   const pts = lugares.map(l => [l.x, l.y]).concat(rastro.map(r => [r.x, r.y]));
   if (pose) pts.push([pose.x, pose.y]);
   if (!pts.length) pts.push([0, 0]);
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
   const minX = Math.min(...xs) - 0.4, maxX = Math.max(...xs) + 0.4;
   const minY = Math.min(...ys) - 0.4, maxY = Math.max(...ys) + 0.4;
-  const W = 600, H = 440;
+  const W = 600, H = 420;
   const esc = Math.min(W / (maxY - minY), H / (maxX - minX), 300);
   const mx = (minX + maxX) / 2, my = (minY + maxY) / 2;   // centro del dibujo, en metros
   // pantalla: x de pantalla = -y del robot, y de pantalla = -x del robot (norte arriba)
   const S = (x, y) => [W / 2 - (y - my) * esc, H / 2 - (x - mx) * esc];
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
-  // Grilla cada 0,5 m
-  const g = el("g", { stroke: css("--line"), "stroke-width": 1 }, svg);
+  const g = el("g", { stroke: css("--line"), "stroke-width": 1 }, svg);   // grilla cada 0,5 m
   for (let x = Math.floor(minX * 2) / 2; x <= maxX; x += 0.5) { const [a, b] = S(x, minY), [c, d] = S(x, maxY); el("line", { x1: a, y1: b, x2: c, y2: d }, g); }
   for (let y = Math.floor(minY * 2) / 2; y <= maxY; y += 0.5) { const [a, b] = S(minX, y), [c, d] = S(maxX, y); el("line", { x1: a, y1: b, x2: c, y2: d }, g); }
-
-  // Rastro del robot
   if (rastro.length > 1) {
     el("polyline", { points: rastro.map(r => S(r.x, r.y).join(",")).join(" "), fill: "none",
       stroke: css("--warn"), "stroke-width": 2, "stroke-opacity": .6 }, svg);
   }
-
-  // Salidas: con destino, una linea entre lugares; sin destino, un tramo corto
   const color = e => css("--" + (e === "probada" || e === "trabada" ? e : "pendiente"));
   for (const l of lugares) {
     for (const s of l.salidas || []) {
@@ -382,15 +681,11 @@ function dibujar() {
         "stroke-linecap": "round", "stroke-dasharray": s.estado === "pendiente" ? "8 6" : "none" }, svg);
     }
   }
-
-  // Camino elegido por Dijkstra
   const camino = ((ultimaLibreta && ultimaLibreta.camino) || []).map(n => porNumero.get(n)).filter(Boolean);
   if (camino.length > 1) {
     el("polyline", { points: camino.map(l => S(l.x, l.y).join(",")).join(" "), fill: "none",
       stroke: css("--camino"), "stroke-width": 9, "stroke-opacity": .55, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
   }
-
-  // Lugares
   for (const l of lugares) {
     const [a, b] = S(l.x, l.y);
     const actual = ultimaLibreta.actual === l.numero;
@@ -401,21 +696,19 @@ function dibujar() {
     const t2 = el("text", { x: a + 15, y: b - 10, "font-size": 11, fill: css("--muted") }, svg);
     t2.textContent = l.tipo || "";
   }
-
-  // Robot: triangulo que apunta hacia donde mira
   if (pose) {
     const [a, b] = S(pose.x, pose.y);
-    const ang = -pose.yaw * 180 / Math.PI;   // 0 = norte = arriba
     el("polygon", { points: "0,-14 9,10 -9,10", fill: css("--warn"), stroke: css("--text"), "stroke-width": 1.5,
-      transform: `translate(${a},${b}) rotate(${ang})` }, svg);
+      transform: `translate(${a},${b}) rotate(${-pose.yaw * 180 / Math.PI})` }, svg);
   }
-
   const n = lugares.length;
   $("mapa-info").textContent = ultimaLibreta
     ? `${n} lugar${n === 1 ? "" : "es"} en la libreta` + (camino.length > 1 ? ` · camino: ${camino.map(l => l.numero).join(" → ")}` : "")
     : "Todavía no llega la libreta (falta el nodo de Mapeo). Se dibuja el rastro del robot según la odometría.";
 }
 
+// Volver a la pestaña que estaba abierta (al final, cuando ya esta todo definido)
+try { const g = localStorage.getItem("pestana"); if (g) document.querySelector(`#pestanas button[data-p="${g}"]`)?.click(); } catch (e) {}
 pedirDibujo();
 conectar();
 </script>

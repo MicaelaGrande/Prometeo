@@ -12,12 +12,15 @@ def generate_launch_description():
 
     Robot real (firmware de navegacion_bajo, topics en /prometeo):
         ros2 launch my_robot_bringup panel.launch.py
-    Gazebo (topics sin namespace):
+    Gazebo (topics sin namespace), con gazebo.launch.py ... joystick:=false:
         ros2 launch my_robot_bringup panel.launch.py ns:=''
 
     Abrir http://localhost:8082 (o http://<ip-de-esta-compu>:8082 desde otra compu).
-    Puertos: 8082 pagina, 9092 rosbridge. No choca con test_motores (8081/9091) ni con
-    el dashboard (8080/9090).
+    Puertos: 8082 pagina, 9092 rosbridge, 8083 camara. No choca con test_motores
+    (8081/9091) ni con el dashboard (8080/9090).
+
+    Arranca tambien el joystick Xbox (joystick:=false para no) y la camara del panel
+    (camara:=false para no). Botones del joystick en config/joystick_xbox.yaml.
 
     Este rosbridge no tiene permiso sobre cmd_vel: el panel maneja por cmd_vel_manual,
     asi todo pasa por el selector. Lo que sale a la ESP32 lo ve en orden_enviada.
@@ -34,11 +37,18 @@ def generate_launch_description():
         DeclareLaunchArgument('ws_port', default_value='9092', description='puerto de rosbridge'),
         DeclareLaunchArgument('con_selector', default_value='true',
                               description='arrancar tambien el selector de modo'),
+        DeclareLaunchArgument('joystick', default_value='true',
+                              description='arrancar el joystick Xbox'),
+        DeclareLaunchArgument('camara', default_value='true',
+                              description='arrancar la camara del panel (puerto 8083)'),
     ]
 
     topics = PythonExpression([
         "'[' + ','.join(['", prefijo, "' + t for t in ['/modo', '/modo_actual', '/cmd_vel_manual',"
-        " '/orden_enviada', '/distancias', '/odom', '/navegacion/aviso', '/mapeo/libreta']]) + ']'",
+        " '/orden_enviada', '/estado_selector', '/pedido_operador', '/seguridad_habilitada',"
+        " '/distancias', '/odom', '/navegacion/aviso', '/mapeo/libreta',"
+        " '/estado_motores', '/velocidad', '/velocidad_ruedas', '/freno_emergencia',"
+        " '/servos/estado']] + ['/vision/detections']) + ']'",
     ])
 
     rosbridge = Node(
@@ -60,6 +70,27 @@ def generate_launch_description():
         namespace=ns,
         output='screen',
         condition=IfCondition(LaunchConfiguration('con_selector')),
+    )
+
+    # Joystick: game_controller_node lee el control (numeracion estandar), teleop_twist_joy
+    # lo convierte en movimiento por cmd_vel_joy (pasa por el selector) y joystick_modo
+    # mira los botones de modo y freno.
+    config_joy = PathJoinSubstitution([FindPackageShare('my_robot_bringup'), 'config',
+                                       'joystick_xbox.yaml'])
+    con_joystick = IfCondition(LaunchConfiguration('joystick'))
+    joystick = [
+        Node(package='joy', executable='game_controller_node', namespace=ns,
+             parameters=[config_joy], condition=con_joystick),
+        Node(package='teleop_twist_joy', executable='teleop_node', namespace=ns,
+             name='teleop_twist_joy_node', parameters=[config_joy],
+             remappings=[('cmd_vel', 'cmd_vel_joy')], condition=con_joystick),
+        Node(package='prometeo_navigation', executable='joystick_modo', namespace=ns,
+             parameters=[config_joy], condition=con_joystick),
+    ]
+
+    camara = Node(
+        package='my_robot_bringup', executable='camara_panel.py', name='camara_panel',
+        output='screen', condition=IfCondition(LaunchConfiguration('camara')),
     )
 
     # Servidor de la pagina. La raiz redirige al panel con el namespace y el puerto.
@@ -84,4 +115,4 @@ def generate_launch_description():
     aviso = LogInfo(msg=['Panel: http://localhost:', LaunchConfiguration('web_port'),
                          '/  (namespace "', ns, '")'])
 
-    return LaunchDescription(arguments + [rosbridge, selector, web, aviso])
+    return LaunchDescription(arguments + [rosbridge, selector, camara, web, aviso] + joystick)

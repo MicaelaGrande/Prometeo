@@ -491,6 +491,28 @@ Lo que el panel espera de los otros nodos (todavía no existen):
 lugar. **El robot real todavía no publica `odom`** (solo `velocidad`, estimada): sin eso no hay
 posición ni rastro, y Mapeo tampoco puede anotar dónde está cada lugar.
 
+**Pendiente para charlar con Ignacio y Natasha: el freno por obstáculo no funciona** en el
+firmware de `navegacion_bajo`. Desde `dc3e843` (4/11), `cmd_vel_callback` en
+`micro_ros/main/main.c` ya no llama a `seguridad_filtrar()`, así que la tarea de `seguridad.c`
+nunca se entera de la velocidad y no frena. Siguen andando el failsafe de 300 ms y el PARAR del
+selector. Arreglo propuesto, sin aplicar: pasar `linear.x` a la escala −1..1, filtrar y volver a m/s
+(`seguridad_filtrar(v / vel_max) * vel_max`). Sin peligro da la misma velocidad; con peligro da
+0; el giro y el retroceso no se tocan. Riesgos: que frene de más si el frente no mide (por eso
+el botón del panel para apagarlo con `seguridad_habilitada`) y que frene a ~4 cm a 0,15 m/s.
+Hay que compilarlo y cargarlo en la ESP32. En Cat. B, evitar choques es obligatorio (−15 si
+falta).
+
+**Actualización (5/11/2026, tarde):** el panel tiene pestañas (Monitoreo, Manual, Automático,
+Motores, Visión, Brazo, Registro con descarga), la cámara siempre visible (`camara_panel.py`,
+MJPEG en el puerto 8083, prefiere `/vision/annotated`) y el cartel de quién maneja. **PARAR es un
+freno que queda puesto y no cambia el modo**; lo suelta una persona (`soltar`). El selector recibe
+tres fuentes: `cmd_vel_auto`, `cmd_vel_manual` (compu) y `cmd_vel_joy` (joystick Xbox con
+`game_controller_node` + `teleop_twist_joy` + `joystick_modo`; botones en
+`config/joystick_xbox.yaml`). Avisa `modo_actual`, `freno_operador` y `estado_selector`. Los
+botones Capturar (pasa a manual: la garra la mueven ellos) y Abandonar (en auto, Decisión vuelve a
+un lugar conocido y toma otra flecha) publican en `pedido_operador`. Topics y código para los
+demás nodos en `ros/COMANDOS_COMPETENCIA.md`.
+
 Navegación alta deja de publicar en `/cmd_vel` y pasa a `/cmd_vel_auto`. Para la vuelta con la
 libreta partida, ver T8.
 

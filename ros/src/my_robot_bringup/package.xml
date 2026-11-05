@@ -23,6 +23,10 @@
   <exec_depend>rviz2</exec_depend>
   <exec_depend>teleop_twist_joy</exec_depend>
   <exec_depend>rosbridge_server</exec_depend>
+  <!-- Panel de navegacion (T11): joystick y camara -->
+  <exec_depend>joy</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

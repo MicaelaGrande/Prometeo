@@ -12,6 +12,7 @@ install(
 # buscan los launch
 install(
   PROGRAMS scripts/hcsr04_sim.py scripts/modelo_hcsr04.py scripts/motor_test.py
+    scripts/camara_panel.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

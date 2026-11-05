@@ -1,0 +1,45 @@
+# Joystick Xbox para el panel de navegacion (T11). Lo usa panel.launch.py.
+#
+# Se lee con game_controller_node, que numera los botones igual para cualquier joystick
+# (numeracion estandar de SDL). Si algo no responde, mirar los numeros con:
+#   ros2 topic echo /prometeo/joy
+# y cambiarlos aca.
+#
+#   Botones: A 0, B 1, X 2, Y 3, View/Back 4, Xbox 5, Menu/Start 6,
+#            stick izq 7, stick der 8, LB 9, RB 10, cruz 11-14
+#   Ejes:    stick izq horizontal 0, vertical 1, stick der 2 y 3, gatillos 4 y 5
+
+# Manejar: mantener LB apretado ("hombre muerto": si se suelta, frena) y mover el stick
+# izquierdo. Con RB apretado ademas, va mas rapido.
+# Las velocidades estan en m/s y rad/s, como el firmware de navegacion_bajo (maximo 0,7 m/s).
+/**/teleop_twist_joy_node:
+  ros__parameters:
+    require_enable_button: true
+    enable_button: 9          # LB
+    enable_turbo_button: 10   # RB
+    axis_linear:
+      x: 1                    # stick izquierdo, vertical
+    scale_linear:
+      x: 0.2
+    scale_linear_turbo:
+      x: 0.35
+    axis_angular:
+      yaw: 0                  # stick izquierdo, horizontal
+    scale_angular:
+      yaw: 0.8
+    scale_angular_turbo:
+      yaw: 1.2
+
+# Botones de modo (nodo joystick_modo)
+/**/joystick_modo:
+  ros__parameters:
+    boton_parar: 1      # B: freno puesto
+    boton_soltar: 3     # Y: mantener 1 segundo para soltar el freno
+    boton_manual: 4     # View / Back
+    boton_auto: 6       # Menu / Start
+    tiempo_soltar_s: 1.0
+
+/**/game_controller_node:
+  ros__parameters:
+    deadzone: 0.1
+    autorepeat_rate: 20.0   # repite el estado aunque no cambie, asi el selector no frena

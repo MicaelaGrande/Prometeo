@@ -3,6 +3,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
 
 def generate_launch_description():
@@ -20,6 +21,11 @@ def generate_launch_description():
             "world_name",
             default_value="square_room",
             description="world name",
+        ),
+        DeclareLaunchArgument(
+            "joystick",
+            default_value="true",
+            description="false para no arrancar el joystick (lo arranca panel.launch.py)",
         ),
         DeclareLaunchArgument(
             "rviz_config",
@@ -58,6 +64,9 @@ def generate_launch_description():
         launch_arguments={
             'joy_config': 'xbox',  # Replace with your own world file
         }.items(),
+        # Con el panel (T11) el joystick lo arranca panel.launch.py y pasa por el selector:
+        # usar joystick:=false aca para que no haya dos.
+        condition=IfCondition(LaunchConfiguration('joystick')),
     )
 
     gazebo_nodes = IncludeLaunchDescription(

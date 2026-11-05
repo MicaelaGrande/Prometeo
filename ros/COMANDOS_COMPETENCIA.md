@@ -68,21 +68,26 @@ En la misma terminal 2:
 ros2 launch my_robot_bringup panel.launch.py
 ```
 
-✔ Anduvo si aparece `Rosbridge WebSocket server started on port 9092` y
-`Selector listo en modo manual`.
+✔ Anduvo si aparece `Rosbridge WebSocket server started on port 9092`,
+`Selector listo en modo manual` y `Camara del panel en http://localhost:8083/stream`.
+Si no hay un joystick enchufado, el nodo del joystick avisa que no encuentra ninguno: es normal.
 
 ### Paso 5. Abrir el panel
 
 En el navegador de la misma compu: **http://localhost:8082**
 
-✔ Anduvo si arriba los tres indicadores están en verde: **rosbridge**, **selector** y
-**sensores**, y el modo dice **Manual**.
+✔ Anduvo si arriba están en verde **rosbridge**, **selector**, **ESP32** y **ultrasonidos**, y
+el modo dice **Manual**. **Cámara** y **visión** se ponen en verde si están corriendo la cámara y
+el nodo de visión (se arrancan aparte, con `vision_real.launch.py`).
 
 | Indicador en rojo | Qué pasa | Qué hacer |
 |---|---|---|
 | rosbridge | la página no habla con ROS | revisar que el paso 4 siga corriendo |
 | selector | el selector no arrancó | mirar los errores en la terminal 2 |
-| sensores | no llegan los ultrasonidos | revisar el agente (paso 2) y `ros2 node list` (paso 3) |
+| ESP32 / ultrasonidos | no llega nada del robot | revisar el agente (paso 2) y `ros2 node list` (paso 3) |
+| cámara | no llega imagen | revisar que esté corriendo la cámara (o visión) |
+
+En la pestaña **Monitoreo** hay una tabla "Qué está llegando" con cada dato y hace cuánto llegó.
 
 ### Paso 6. Probar con las ruedas en el aire
 
@@ -90,10 +95,13 @@ En el navegador de la misma compu: **http://localhost:8082**
 2. Hacer clic en la página (para que lea las teclas) y apretar la flecha **↑**.
 3. ✔ Anduvo si las ruedas giran hacia adelante y en "Orden que recibe la ESP32" dice
    `avance 0.15 m/s`.
-4. Probar **ESPACIO**: las ruedas tienen que frenar.
-5. Recién ahí, apoyarlo en el piso.
+4. Probar **ESPACIO**: las ruedas tienen que frenar y aparece **FRENO PUESTO** en rojo.
+5. Apretar **Soltar freno** y volver a probar la flecha.
+6. Si hay joystick: mantener **LB** y mover el stick izquierdo. El cartel "Maneja" tiene que
+   decir **JOYSTICK**. Probar **B** (freno) y **Y** mantenido 1 segundo (soltar).
+7. Recién ahí, apoyarlo en el piso.
 
-**Ojo:** con este firmware no hay freno de emergencia. Manejar despacio.
+**Ojo:** con este firmware no funciona el freno por obstáculo (frenar solo antes de chocar). Manejar despacio.
 
 ### Ver el panel desde otra compu o el celular (opcional)
 
@@ -136,7 +144,7 @@ ros2 node list
 
 | Aparece | Firmware | Qué usar |
 |---|---|---|
-| `/prometeo/body` | nuevo (`navegacion_bajo`), en m/s, **sin freno de emergencia** | los comandos de abajo tal cual |
+| `/prometeo/body` | nuevo (`navegacion_bajo`), en m/s, **sin freno por obstáculo** (pendiente) | los comandos de abajo tal cual |
 | `/nodo_motores_esp32` | viejo, valores de −1 a 1, con freno | agregar `ns:=''` al panel y sacar `/prometeo` de los topics |
 
 ## 2. Panel de navegación (manual y automático)
@@ -151,20 +159,88 @@ Abrir en el navegador: **http://localhost:8082**
 
 Desde otra compu de la misma red: `http://<ip-de-esta-compu>:8082`
 
+### Qué tiene el panel
+
+Arriba, siempre visibles: el **modo**, el cartel **"Maneja: COMPU / JOYSTICK / AUTOMÁTICO"**, el
+estado del freno por obstáculo y los botones **Manual**, **Automático**, **PARAR** y **Soltar
+freno**. A la derecha, siempre visibles: la **cámara** (con lo que detecta visión dibujado) y los
+**ultrasonidos** con su valor y el mínimo de los últimos 10 segundos.
+
+| Pestaña | Qué tiene |
+|---|---|
+| Monitoreo | mapa de la libreta, posición, últimos avisos y la tabla "Qué está llegando" |
+| Manual | manejo con teclado, guía del joystick, **Capturar** y **Abandonar**, prender/apagar el freno por obstáculo, lugar para la garra |
+| Automático | botones de rescate (**−20 pts cada uno en Cat. A**): capturar a mano y abandonar este cubo |
+| Motores | estado de la ESP32, orden enviada, velocidad estimada, encoders de las ruedas |
+| Visión | lo que detecta la cámara: flechas, cubos y zonas, con color, dirección y confianza |
+| Brazo | ángulo de cada servo (cámara, base, hombro, codo, garra) |
+| Registro | todo lo que pasó, con la hora. **Descargarlo al terminar cada ronda** (sirve para el jurado) |
+
+### PARAR es un freno de emergencia
+
+- **PARAR** (o ESPACIO, o **B** en el joystick) frena y **queda puesto**: nadie mueve el robot, ni
+  el automático, ni la compu, ni el joystick. **No cambia el modo.**
+- Para seguir hay que soltarlo a propósito: **Soltar freno** (o mantener **Y** 1 segundo). Si está
+  en automático, el panel pregunta antes, porque el robot arranca solo.
+
 ### Teclas del panel
 
 | Tecla | Qué hace |
 |---|---|
 | **M** | modo manual |
 | **A** | modo automático |
-| **ESPACIO** | **PARAR** (pánico): pasa a manual y frena, aunque ya estuviera en manual |
+| **ESPACIO** | **PARAR**: freno puesto |
 | Flechas o **W / S** | avanzar / retroceder (solo en manual) |
 | Flechas o **Q / D** | girar a la izquierda / derecha (solo en manual) |
+
+### Joystick Xbox
+
+| Botón | Qué hace |
+|---|---|
+| **LB** mantener + stick izquierdo | manejar (si se suelta LB, frena) |
+| **RB** además | más rápido |
+| **B** | PARAR (freno puesto) |
+| **Y** mantener 1 segundo | soltar el freno |
+| **View** (Back) | modo manual |
+| **Menu** (Start) | modo automático |
+
+Si un botón no responde: `ros2 topic echo /prometeo/joy`, apretarlo, ver qué número cambia y
+ponerlo en `ros/src/my_robot_bringup/config/joystick_xbox.yaml` (después compilar).
 
 El robot arranca en **manual y quieto**: no se mueve solo hasta que alguien elige automático.
 Si se corta la conexión, frena solo.
 
 **Probarlo primero con las ruedas en el aire**, con la velocidad baja (0,15 m/s).
+
+### Para los otros nodos del equipo (garra, Decisión, Navegación)
+
+**El selector es el único que decide el modo.** Los demás lo escuchan:
+
+| Topic | Tipo | Qué dice |
+|---|---|---|
+| `/prometeo/modo_actual` | `std_msgs/String` | `auto` o `manual` |
+| `/prometeo/freno_operador` | `std_msgs/Bool` | `true` si el freno PARAR está puesto: no mover nada |
+| `/prometeo/pedido_operador` | `std_msgs/String` | `capturar` o `abandonar`, desde los botones del panel |
+
+Los dos primeros se repiten una vez por segundo y se guardan para el que se conecta tarde.
+Para escucharlos en Python:
+
+```python
+from rclpy.qos import QoSProfile, DurabilityPolicy
+from std_msgs.msg import Bool, String
+
+guardado = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+self.modo = 'manual'        # hasta que llegue el primer aviso, suponer lo seguro
+self.freno = True
+self.create_subscription(String, '/prometeo/modo_actual', self.cambio_de_modo, guardado)
+self.create_subscription(Bool, '/prometeo/freno_operador', self.cambio_de_freno, guardado)
+
+def cambio_de_modo(self, msg):
+    self.modo = msg.data    # 'auto' o 'manual'
+
+def cambio_de_freno(self, msg):
+    self.freno = msg.data   # True: no mover nada
+```
 
 ## 3. Plan B si el panel no anda
 
@@ -173,7 +249,8 @@ Cambiar de modo desde una terminal:
 ```bash
 ros2 topic pub --once /prometeo/modo std_msgs/msg/String "{data: manual}"
 ros2 topic pub --once /prometeo/modo std_msgs/msg/String "{data: auto}"
-ros2 topic pub --once /prometeo/modo std_msgs/msg/String "{data: parar}"
+ros2 topic pub --once /prometeo/modo std_msgs/msg/String "{data: parar}"    # freno puesto
+ros2 topic pub --once /prometeo/modo std_msgs/msg/String "{data: soltar}"   # soltar el freno
 ```
 
 Selector solo (si no se usa el panel):
@@ -193,7 +270,7 @@ Teclas: `i` adelante, `,` atrás, `j` y `l` girar, `k` parar, `q` y `z` más o m
 ## 4. Revisar que llegan los datos
 
 ```bash
-ros2 topic echo /prometeo/modo_actual             # modo actual
+ros2 topic echo /prometeo/estado_selector         # modo, freno y quién maneja
 ros2 topic echo /prometeo/orden_enviada           # lo que se le manda a la ESP32
 ros2 topic echo /prometeo/distancias --qos-reliability best_effort   # [izq, der, frente] en cm
 ```
@@ -220,8 +297,8 @@ falta.**
 cd ~/Documentos/Robotica/Prometeo
 source /opt/ros/jazzy/setup.bash
 source ros/install/setup.bash
-ros2 launch my_robot_bringup gazebo.launch.py world_name:=laberinto           # el laberinto
-ros2 launch my_robot_bringup gazebo.launch.py world_name:=vision_testground   # con flechas y cubos
+ros2 launch my_robot_bringup gazebo.launch.py world_name:=laberinto joystick:=false           # el laberinto
+ros2 launch my_robot_bringup gazebo.launch.py world_name:=vision_testground joystick:=false   # con flechas y cubos
 ```
 
 ✔ Anduvo si se abren Gazebo y RViz con el robot.
@@ -238,9 +315,8 @@ ros2 launch my_robot_bringup panel.launch.py ns:=''
 Abrir **http://localhost:8082** y manejar con las flechas, igual que con el robot real.
 ✔ Anduvo si los tres indicadores están en verde y el robot se mueve en Gazebo.
 
-**Ojo:** el launch de Gazebo también arranca el control por joystick, que manda directo a
-`/cmd_vel` sin pasar por el selector. Si no hay un joystick conectado no molesta; si hay uno,
-puede pisar las órdenes del panel.
+`joystick:=false` apaga el joystick propio de Gazebo, que manda directo a `/cmd_vel` sin pasar por
+el selector. Con el panel, el joystick lo arranca el panel y pasa por el selector.
 
 **No correr Gazebo con el robot real conectado.** Con el firmware viejo los dos usan los mismos
 topics y se mezclan las órdenes; con el nuevo no se mezclan, pero es fácil abrir el panel
@@ -251,7 +327,7 @@ equivocado y manejar el que no es.
 `Ctrl+C` en cada terminal. Después revisar que no quedó nada corriendo:
 
 ```bash
-pgrep -af "selector_modo|rosbridge|http.server"
+pgrep -af "selector_modo|rosbridge|http.server|camara_panel|joystick_modo|game_controller|teleop"
 ```
 
 Si aparece algo, cerrarlo por su número: `kill <número>`.

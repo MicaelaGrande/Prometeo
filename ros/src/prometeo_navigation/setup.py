@@ -31,6 +31,7 @@ setup(
     entry_points={
         'console_scripts': [
             'selector_modo = prometeo_navigation.selector_modo:main',
+            'joystick_modo = prometeo_navigation.joystick_modo:main',
         ],
     },
 )
