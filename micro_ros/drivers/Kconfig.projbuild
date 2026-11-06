@@ -12,12 +12,12 @@ menu "Prometeo - Pines GPIO"
     config PROMETEO_SENSOR_IZQ_ECHO_PIN
         int "Sensor izquierdo - pin ECHO"
         range 0 39
-        default 32
+        default 34
 
     config PROMETEO_SENSOR_DER_ECHO_PIN
         int "Sensor derecho - pin ECHO"
         range 0 39
-        default 34
+        default 32
 
     config PROMETEO_SENSOR_FRENTE_ECHO_PIN
         int "Sensor frontal - pin ECHO"
@@ -142,7 +142,7 @@ menu "Prometeo - Cinematica"
     config PROMETEO_WHEEL_SEPARATION_MM
         int "Separacion entre ruedas izq/der (mm)"
         range 50 1000
-        default 161
+        default 135
         help
             Distancia entre el centro de las ruedas izquierdas y derechas
             (URDF: wheel_separation = 0.1605 m).
@@ -185,7 +185,7 @@ menu "Prometeo - Cinematica"
     config PROMETEO_TURN_MIN_DUTY_PCT
         int "Duty minimo al girar (%)"
         range 0 100
-        default 60
+        default 70
         help
             Al girar, el lado mas rapido recibe al menos este duty (el otro en proporcion, para
             conservar el radio de giro). Las 4 ruedas patinan y con un giro lento el duty
@@ -317,7 +317,7 @@ menu "Prometeo - Seguridad motores"
         int "Duty desde el cual se vigila el atasco (%)"
         depends on PROMETEO_MOTORES_STALL_ENABLE
         range 0 100
-        default 40
+        default 70
 
     config PROMETEO_MOTORES_STALL_WINDOW_MS
         int "Ventana de medicion de velocidad (ms)"
