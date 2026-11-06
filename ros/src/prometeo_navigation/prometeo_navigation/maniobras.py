@@ -160,3 +160,42 @@ class PosicionLaberinto:
         """La corrige (por ejemplo, el operador dice en que lugar lo dejo)."""
         self.x, self.y = x, y
         self.cuartos = round(orientacion / (math.pi / 2)) % 4
+
+
+def cubo_mas_cercano(detecciones, confianza_minima, color=''):
+    """De lo que ve la camara, el cubo mas cercano (Detection), o None.
+
+    La posicion del cubo viene en metros respecto del robot (base_footprint):
+    x = cuanto esta adelante, y = cuanto se corre a la izquierda.
+    color vacio = cualquier color.
+    """
+    cubos = [d for d in detecciones
+             if d.kind == 'cube' and d.confidence >= confianza_minima
+             and (not color or d.color == color)]
+    if not cubos:
+        return None
+    return min(cubos, key=lambda d: d.pose.position.x)
+
+
+def orden_para_acercarse(x, y, distancia_final, velocidad, velocidad_min, ganancia_giro,
+                         giro_max, frenar_desde):
+    """(avance m/s, giro rad/s, llego) para ir hacia un cubo que esta en (x, y) metros.
+
+    - Gira para tener el cubo derecho adelante (y en 0), proporcional al angulo.
+    - Avanza cada vez mas lento: a velocidad normal lejos, y desde frenar_desde
+      metros va bajando hasta velocidad_min al llegar. Asi no se pasa por inercia
+      ni por el retraso del WiFi, y no tira el cilindro.
+    - Si el cubo esta muy de costado (mas de 30 grados), primero gira sin avanzar.
+    - llego = True cuando el cubo esta a distancia_final o menos (lo minimo que ve
+      la camara): de ahi sigue el empujon final, a ciegas.
+    """
+    if x <= distancia_final:
+        return 0.0, 0.0, True
+    angulo = math.atan2(y, x)
+    giro = max(-giro_max, min(giro_max, ganancia_giro * angulo))
+    if abs(angulo) > math.radians(30):
+        return 0.0, giro, False
+    falta = x - distancia_final
+    avance = velocidad if falta >= frenar_desde else max(
+        velocidad_min, velocidad * falta / frenar_desde)
+    return avance, giro, False

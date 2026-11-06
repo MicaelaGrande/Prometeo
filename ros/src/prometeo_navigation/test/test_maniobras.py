@@ -7,6 +7,7 @@ from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.maniobras import (
     CON_COSTADO, CON_FRENTE, SIN_CONFIRMAR, PosicionLaberinto, angulo_objetivo, como_confirmar,
+    cubo_mas_cercano, orden_para_acercarse,
     giro_confirmado, es_puerta, frente_abierto, frente_en_el_medio_de_la_puerta,
     giro_de_salida, normalizar_angulo, velocidad_de_giro)
 
@@ -207,3 +208,63 @@ def test_poner_corrige_la_posicion():
     p = PosicionLaberinto()
     p.poner(2.0, -1.0, -math.pi / 2)
     assert (p.x, p.y) == (2.0, -1.0) and cerca(p.orientacion(), -math.pi / 2)
+
+
+# ===== Acercarse al cubo =====
+
+class Det:
+    """Una deteccion de mentira, con lo que usa cubo_mas_cercano."""
+
+    def __init__(self, kind, color, x, y=0.0, confidence=0.9):
+        self.kind, self.color, self.confidence = kind, color, confidence
+        self.pose = type('Pose', (), {})()
+        self.pose.position = type('Punto', (), {'x': x, 'y': y})()
+
+
+def acercarse(x, y):
+    return orden_para_acercarse(x, y, distancia_final=0.10, velocidad=0.08,
+                                velocidad_min=0.03, ganancia_giro=2.0, giro_max=0.6,
+                                frenar_desde=0.15)
+
+
+def test_elige_el_cubo_mas_cercano():
+    cubos = [Det('cube', 'red', 0.5), Det('cube', 'blue', 0.3), Det('arrow', 'red', 0.1)]
+    assert cubo_mas_cercano(cubos, 0.6).color == 'blue'
+
+
+def test_cubo_de_un_color():
+    cubos = [Det('cube', 'red', 0.5), Det('cube', 'blue', 0.3)]
+    assert cubo_mas_cercano(cubos, 0.6, 'red').color == 'red'
+
+
+def test_cubo_con_poca_confianza_no_cuenta():
+    assert cubo_mas_cercano([Det('cube', 'red', 0.5, confidence=0.3)], 0.6) is None
+
+
+def test_lejos_y_derecho_avanza_a_velocidad_normal():
+    avance, giro, llego = acercarse(0.6, 0.0)
+    assert (avance, giro, llego) == (0.08, 0.0, False)
+
+
+def test_cerca_va_mas_lento():
+    avance, _, _ = acercarse(0.16, 0.0)        # le faltan 6 cm
+    assert 0.03 <= avance < 0.08
+
+
+def test_nunca_mas_lento_que_el_minimo():
+    avance, _, _ = acercarse(0.101, 0.0)
+    assert avance == 0.03
+
+
+def test_cubo_a_la_izquierda_gira_a_la_izquierda():
+    _, giro, _ = acercarse(0.5, 0.05)
+    assert giro > 0
+
+
+def test_cubo_muy_de_costado_gira_sin_avanzar():
+    avance, giro, _ = acercarse(0.2, 0.2)       # 45 grados
+    assert avance == 0.0 and giro > 0
+
+
+def test_a_la_distancia_final_llego():
+    assert acercarse(0.10, 0.0) == (0.0, 0.0, True)

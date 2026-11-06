@@ -17,6 +17,8 @@
 #   ESPERANDO       el detector aviso un lugar: frena y espera una orden
 #   RETROCEDIENDO   en una puerta: vuelve hasta el medio antes de girar
 #   GIRANDO         gira hacia la salida y lo confirma con los ultrasonidos (quieto)
+#   ACERCANDO       va hacia el cubo guiandose con la camara (/vision/detections)
+#   EMPUJANDO       el ultimo tramo, a ciegas: la camara ya no ve el cubo tan cerca
 # Al terminar de girar avisa "ya sali" al detector, contesta TERMINADA y vuelve a AVANZANDO.
 #
 # El giro (las ruedas patinan mucho y los encoders no son confiables):
@@ -39,13 +41,21 @@
 # En Gazebo hace falta el selector (panel.launch.py ns:=''), que es quien pasa
 # cmd_vel_auto a cmd_vel.
 #
-# PROVISORIO: ACERCARSE (al cubo) todavia no esta hecho: contesta BLOQUEADA.
+# ACERCARSE (al cubo, que esta arriba de un cilindro: no hay que tocarlo):
+#   1. Con la camara: gira para tener el cubo derecho adelante y avanza cada vez mas
+#      lento, hasta que el cubo esta a distancia_final_m (lo minimo que ve la camara).
+#   2. Empujon: avanza empujon_cm mas, derecho y despacio, por tiempo. No usa el
+#      ultrasonido: tiene que estar justo enfrente del cilindro para medirlo.
+#   3. Frena y queda QUIETO (ESPERANDO) para que trabaje la garra. TERMINADA.
+#   Si deja de ver el cubo lejos de la distancia final, BLOQUEADA.
+#   PROVISORIO: va al cubo mas cercano de cualquier color (el pedido no trae el color).
 # Falta usar length_class para la velocidad (T2, "largo de la flecha").
 
 import math
 
 import rclpy
 from geometry_msgs.msg import Twist
+from huggin_vision_msgs.msg import DetectionArray
 from nav_msgs.msg import Odometry
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.executors import ExternalShutdownException
@@ -59,14 +69,17 @@ from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.detector_lugares import orientacion_de
 from prometeo_navigation.lugares import distancia_a_lectura
 from prometeo_navigation.maniobras import (
-    SIN_CONFIRMAR, PosicionLaberinto, como_confirmar, es_puerta, frente_en_el_medio_de_la_puerta,
-    giro_confirmado, giro_de_salida, normalizar_angulo, velocidad_de_giro)
+    SIN_CONFIRMAR, PosicionLaberinto, como_confirmar, cubo_mas_cercano, es_puerta,
+    frente_en_el_medio_de_la_puerta, giro_confirmado, giro_de_salida, normalizar_angulo,
+    orden_para_acercarse, velocidad_de_giro)
 from prometeo_navigation.modos import MANUAL
 
 AVANZANDO = 'avanzando'
 ESPERANDO = 'esperando'
 RETROCEDIENDO = 'retrocediendo'
 GIRANDO = 'girando'
+ACERCANDO = 'acercando'
+EMPUJANDO = 'empujando'
 
 
 class NodoMover(Node):
@@ -93,6 +106,22 @@ class NodoMover(Node):
             # mandar un giro de 360 y ver cuanto giro). 1 = sin patinar.
             ('factor_giro_tiempo', 1.0),
             ('edad_max_odom_s', 0.5),        # /odom mas viejo que esto = no hay
+            # Acercarse al cubo (medido con el robot: la camara ve hasta 10 cm, y la
+            # garra necesita 2 o 3 cm mas)
+            ('distancia_final_m', 0.10),     # hasta aca con la camara
+            ('empujon_cm', 2.5),             # y esto mas, a ciegas
+            ('velocidad_empujon', 0.03),     # m/s del empujon
+            ('velocidad_acercarse', 0.08),   # m/s lejos del cubo
+            ('velocidad_acercarse_min', 0.03),  # m/s al final (frena de a poco)
+            ('frenar_desde_m', 0.15),        # empieza a frenar a esta distancia del final
+            ('ganancia_centrar', 2.0),       # rad/s por radian que el cubo esta de costado
+            ('giro_max_acercarse', 0.6),
+            ('confianza_cubo', 0.6),
+            ('tiempo_sin_ver_s', 1.0),       # sin ver el cubo esto: BLOQUEADA
+            ('edad_max_cubo_s', 0.3),        # una deteccion mas vieja no se usa para manejar
+            ('margen_perdida_m', 0.05),      # si lo pierde de vista a menos de esto del
+                                             # final, es que ya llego (la camara no ve tan cerca)
+            ('tiempo_max_acercarse_s', 25.0),
             ('tiempo_max_retroceso_s', 6.0),
             ('frecuencia_hz', 20.0),
         ]}
@@ -139,6 +168,9 @@ class NodoMover(Node):
         self.pub_salida = self.create_publisher(String, '/navegacion/salida_tomada', 10)
         # El panel muestra en rojo los avisos que empiezan con AYUDA
         self.pub_aviso = self.create_publisher(String, 'navegacion/aviso', 10)
+        self.cubo = None             # el ultimo cubo visto (Detection) y cuando
+        self.hora_cubo = None
+        self.create_subscription(DetectionArray, '/vision/detections', self.al_ver, 10)
         self.posicion = PosicionLaberinto()
         self.pub_posicion = self.create_publisher(Odometry, 'odom_laberinto', 10)
         self.create_subscription(
@@ -155,6 +187,11 @@ class NodoMover(Node):
     def al_moverse(self, mensaje):
         self.orientacion = orientacion_de(mensaje.pose.pose.orientation)
         self.hora_odom = self.get_clock().now()
+
+    def al_ver(self, mensaje):
+        cubo = cubo_mas_cercano(mensaje.detections, self.p['confianza_cubo'])
+        if cubo is not None:
+            self.cubo, self.hora_cubo = cubo, self.get_clock().now()
 
     def al_poner_posicion(self, mensaje):
         pose = mensaje.pose.pose
@@ -210,8 +247,11 @@ class NodoMover(Node):
 
     def empezar(self, orden):
         self.get_logger().info(f'Orden: {orden.accion} {orden.salida} {orden.length_class}')
+        if orden.accion == Mover.Goal.ACERCARSE:
+            self.cambiar_etapa(ACERCANDO)
+            return
         if orden.accion != Mover.Goal.IR_A_SALIDA:
-            self.get_logger().warning(f'PROVISORIO: "{orden.accion}" todavia no esta hecho')
+            self.get_logger().error(f'Accion desconocida: "{orden.accion}"')
             self.terminar(Mover.Result.BLOQUEADA)
             return
         giro = giro_de_salida(orden.salida)
@@ -264,11 +304,70 @@ class NodoMover(Node):
             orden.linear.x = self.retroceder()
         elif self.etapa == GIRANDO:
             orden.angular.z = self.girar()
+        elif self.etapa == ACERCANDO:
+            orden.linear.x, orden.angular.z = self.acercarse()
+        elif self.etapa == EMPUJANDO:
+            orden.linear.x = self.empujar()
         self.pub_cmd.publish(orden)   # ESPERANDO: todo en 0
         # Posicion de laberinto: suma lo que avanzo (o retrocedio) en este paso
         if not self.frenado:
             self.posicion.avanzar(orden.linear.x / self.p['frecuencia_hz'])
         self.publicar_posicion()
+
+    def acercarse(self):
+        if self.paso_el_tiempo(self.p['tiempo_max_acercarse_s']):
+            self.avisar_y_bloquear('no llegue al cubo a tiempo')
+            return 0.0, 0.0
+        # Cuenta desde la ultima vez que vio el cubo, o desde que empezo (la primera
+        # imagen puede tardar). Un cubo visto antes de empezar no sirve.
+        visto = self.hora_cubo is not None and self.hora_cubo > self.desde
+        if self.segundos_desde(self.hora_cubo if visto else self.desde) > \
+                self.p['tiempo_sin_ver_s']:
+            self.avisar_y_bloquear('deje de ver el cubo')
+            return 0.0, 0.0
+        if not visto:
+            return 0.0, 0.0               # todavia no llego una imagen con el cubo
+        x, y = self.cubo.pose.position.x, self.cubo.pose.position.y
+        if self.segundos_desde(self.hora_cubo) > self.p['edad_max_cubo_s']:
+            # No lo ve ahora. Muy cerca del final: ya llego (de tan cerca la camara no lo
+            # ve). Si no, frena y espera a verlo otra vez (sin manejar con datos viejos).
+            if x <= self.p['distancia_final_m'] + self.p['margen_perdida_m']:
+                return self.empezar_empujon(x)
+            return 0.0, 0.0
+        avance, giro, llego = orden_para_acercarse(
+            x, y, self.p['distancia_final_m'], self.p['velocidad_acercarse'],
+            self.p['velocidad_acercarse_min'], self.p['ganancia_centrar'],
+            self.p['giro_max_acercarse'], self.p['frenar_desde_m'])
+        if llego:
+            return self.empezar_empujon(x)
+        return avance, giro
+
+    def empezar_empujon(self, x):
+        """El ultimo tramo a ciegas: lo que falta hasta la distancia final, mas el empujon."""
+        falta_cm = max(0.0, x - self.p['distancia_final_m']) * 100
+        self.distancia_empujon_cm = falta_cm + self.p['empujon_cm']
+        self.get_logger().info(f'Cubo a {x * 100:.1f} cm: empujon de '
+                               f'{self.distancia_empujon_cm:.1f} cm')
+        self.cambiar_etapa(EMPUJANDO)
+        return 0.0, 0.0
+
+    def empujar(self):
+        duracion = self.distancia_empujon_cm / 100 / self.p['velocidad_empujon']
+        if self.paso_el_tiempo(duracion):
+            self.get_logger().info('Llegue al cubo: quieto para la garra')
+            self.cambiar_etapa(ESPERANDO)
+            self.terminar(Mover.Result.TERMINADA)
+            return 0.0
+        return self.p['velocidad_empujon']
+
+    def avisar_y_bloquear(self, motivo):
+        texto = f'AYUDA: {motivo}. Acercalo a mano'
+        self.get_logger().error(texto)
+        self.pub_aviso.publish(String(data=texto))
+        self.terminar(Mover.Result.BLOQUEADA)
+
+    def segundos_desde(self, hora):
+        return (self.get_clock().now() - hora).nanoseconds / 1e9
 
     def retroceder(self):
         if self.paso_el_tiempo(self.p['tiempo_max_retroceso_s']):
