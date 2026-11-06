@@ -24,6 +24,11 @@
 # Si /volver llega estando en manual (por ejemplo, mientras agarran el cubo con la
 # garra), espera a que vuelvan a automatico para arrancar.
 #
+# Retomar (/decision/retomar, cuando abandonan el color): no vuelve a la largada. Cancela
+# la vuelta si habia, da media vuelta en el pasillo y vuelve al ultimo lugar. Ahi
+# Decision decide de nuevo con el proximo color: su flecha, o Exploracion (una salida sin
+# probar, o retroceder al lugar con opciones mas cercano). En manual, espera a automatico.
+#
 # Manual SIN MOVERSE es una pausa (la garra se mueve a mano): mira orden_enviada (lo que
 # el selector manda a las ruedas). Si el robot no se movio, al volver a automatico la
 # libreta sigue igual. Si se movio, recien ahi el tramo queda como manejado a mano.
@@ -95,6 +100,7 @@ class NodoMapeo(Node):
         self.en_largada = False   # llego y paso a manual para dejar el cubo
         self.se_movio_en_manual = False
         self.volver_pendiente = False  # llego /volver en manual: arranca al volver a auto
+        self.retomar_pendiente = False  # lo mismo con retomar
         # Durante la media vuelta en el pasillo del cubo no se anotan lugares: el cilindro
         # esta cerca y el detector podria creer que es un callejon.
         self.ignorar_lugares = False
@@ -105,6 +111,7 @@ class NodoMapeo(Node):
         self.create_subscription(String, 'modo_actual', self.al_cambiar_modo, guardado)
         self.create_subscription(Empty, '/decision/explorar', self.al_pedir_explorar, 10)
         self.create_subscription(Twist, 'orden_enviada', self.al_salir_orden, 10)
+        self.create_subscription(Empty, '/decision/retomar', self.al_retomar, 10)
         self.pub_libreta = self.create_publisher(String, 'mapeo/libreta', guardado)
         self.mover = ActionClient(self, Mover, '/mover')
         self.pub_modo = self.create_publisher(String, 'modo', 10)
@@ -176,6 +183,9 @@ class NodoMapeo(Node):
         if not en_manual and self.volver_pendiente:
             self.volver_pendiente = False
             self.arrancar_volver()
+        if not en_manual and self.retomar_pendiente:
+            self.retomar_pendiente = False
+            self.retomar()
 
     def al_salir_orden(self, orden):
         if self.en_manual and (abs(orden.linear.x) > 1e-3 or abs(orden.angular.z) > 1e-3):
@@ -210,9 +220,11 @@ class NodoMapeo(Node):
         self.publicar()
         if resultado == Volver.Result.TERMINADA:
             pedido.succeed()
-        elif resultado == Volver.Result.CANCELADA:
-            pedido.canceled()
+        elif resultado == Volver.Result.CANCELADA and pedido.is_cancel_requested:
+            pedido.canceled()     # la cancelo Decision
         else:
+            # Bloqueada, o cortada desde adentro (retomar): abortada. El resultado
+            # igual dice cual fue (CANCELADA en el caso de retomar).
             pedido.abort()
         return Volver.Result(resultado=resultado)
 
@@ -231,6 +243,30 @@ class NodoMapeo(Node):
         elif self.libreta.actual is not None and self.orientacion is not None:
             self.dar_paso(self.libreta.actual, self.orientacion)
         # Si no: espera a que el detector avise un lugar (por ejemplo, volvio de manual)
+
+    def al_retomar(self, _mensaje):
+        """Abandonaron el color: deja de volver y regresa al ultimo lugar."""
+        self.get_logger().info('Retomar: abandonaron el color, vuelvo al ultimo lugar')
+        self.volver_pendiente = False
+        if self.fin_volver is not None and not self.fin_volver.done():
+            self.fin_volver.set_result(Volver.Result.CANCELADA)
+        if self.en_manual:
+            self.retomar_pendiente = True
+            return
+        self.retomar()
+
+    def retomar(self):
+        if self.libreta.saliendo_por is not None:
+            # En el pasillo (el del cubo): media vuelta hasta el lugar de donde salio.
+            # Esa salida queda probada y sin lleva_a: Exploracion no vuelve a entrar.
+            self.libreta.saliendo_por = None
+            self.ignorar_salida = True
+            self.ignorar_lugares = True
+            self.pedir_mover(Mover.Goal.VUELTA, ultimo=False, siempre=True,
+                             al_final=lambda: setattr(self, 'ignorar_lugares', False))
+        elif self.libreta.actual is not None:
+            # Ya esta en un lugar: que Exploracion elija otro camino
+            self.al_pedir_explorar(None)
 
     def al_cancelar_volver(self, _pedido):
         if self.fin_volver is not None and not self.fin_volver.done():
@@ -257,7 +293,9 @@ class NodoMapeo(Node):
             f'Vuelta: {" -> ".join(map(str, self.camino))} -> largada. Salgo al {direccion}')
         self.pedir_mover(salida_hacia(orientacion, direccion), ultimo)
 
-    def pedir_mover(self, salida, ultimo, al_final=None, intentos=6):
+    def pedir_mover(self, salida, ultimo, al_final=None, intentos=6, siempre=False):
+        """Le pide una salida a /mover. Reintenta si la rechaza (siempre=True: aunque no
+        se este volviendo, por ejemplo al retomar)."""
         def al_terminar(futuro):
             resultado = futuro.result().result.resultado
             if al_final is not None:
@@ -268,8 +306,8 @@ class NodoMapeo(Node):
 
         def reintentar():
             temporizador.cancel()
-            if self.volviendo is not None and not self.en_manual:
-                self.pedir_mover(salida, ultimo, al_final, intentos - 1)
+            if (siempre or self.volviendo is not None) and not self.en_manual:
+                self.pedir_mover(salida, ultimo, al_final, intentos - 1, siempre)
 
         def al_aceptar(futuro):
             nonlocal temporizador
