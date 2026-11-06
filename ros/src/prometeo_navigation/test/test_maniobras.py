@@ -6,7 +6,8 @@ import math
 from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.maniobras import (
-    angulo_objetivo, es_puerta, frente_abierto, frente_en_el_medio_de_la_puerta,
+    CON_COSTADO, CON_FRENTE, SIN_CONFIRMAR, angulo_objetivo, como_confirmar,
+    giro_confirmado, es_puerta, frente_abierto, frente_en_el_medio_de_la_puerta,
     giro_de_salida, normalizar_angulo, velocidad_de_giro)
 
 
@@ -105,3 +106,57 @@ def test_frente_con_pared_no_es_pasillo():
 
 def test_frente_sin_dato_no_se_sabe():
     assert frente_abierto(None, 40) is None
+
+
+# ===== Como se confirma el giro (con el robot quieto) =====
+
+def test_esquina_se_confirma_con_el_costado():
+    assert como_confirmar(Lugar.IZQUIERDA, 20.0, 40) == CON_COSTADO
+
+
+def test_puerta_no_se_puede_confirmar():
+    assert como_confirmar(Lugar.IZQUIERDA, 150.0, 40) == SIN_CONFIRMAR
+    assert como_confirmar(Lugar.DERECHA, math.inf, 40) == SIN_CONFIRMAR
+    assert como_confirmar(Lugar.DERECHA, None, 40) == SIN_CONFIRMAR
+
+
+def test_media_vuelta_se_confirma_con_el_frente():
+    assert como_confirmar(Mover.Goal.VUELTA, 15.0, 40) == CON_FRENTE
+
+
+def test_doblo_a_la_izquierda_la_pared_queda_a_la_derecha():
+    # Antes: pared adelante a 20. Despues: el sensor derecho mide 22
+    assert giro_confirmado(CON_COSTADO, Lugar.IZQUIERDA, 60.0, 22.0, 150.0, 20.0, 8, 40)
+
+
+def test_doblo_a_la_derecha_la_pared_queda_a_la_izquierda():
+    assert giro_confirmado(CON_COSTADO, Lugar.DERECHA, 18.0, 60.0, 150.0, 20.0, 8, 40)
+
+
+def test_torcido_el_costado_no_coincide():
+    # Quedo torcido: el sensor ve la pared en diagonal (mas lejos, o sin eco)
+    assert not giro_confirmado(CON_COSTADO, Lugar.IZQUIERDA, 60.0, 35.0, 150.0, 20.0, 8, 40)
+    assert not giro_confirmado(CON_COSTADO, Lugar.IZQUIERDA, 60.0, math.inf, 150.0, 20.0, 8, 40)
+
+
+def test_costado_sin_dato_no_se_sabe():
+    assert giro_confirmado(CON_COSTADO, Lugar.IZQUIERDA, 60.0, None, 150.0, 20.0, 8, 40) is None
+
+
+def test_media_vuelta_confirma_con_el_pasillo_adelante():
+    assert giro_confirmado(CON_FRENTE, Mover.Goal.VUELTA, 12.0, 12.0, 150.0, 15.0, 8, 40)
+    assert not giro_confirmado(CON_FRENTE, Mover.Goal.VUELTA, 12.0, 12.0, 20.0, 15.0, 8, 40)
+
+
+def test_sin_confirmar_siempre_da_bien():
+    assert giro_confirmado(SIN_CONFIRMAR, Lugar.IZQUIERDA, None, None, None, None, 8, 40)
+
+
+def test_si_no_giro_el_frente_sigue_igual_y_no_confirma():
+    # No giro: el sensor derecho ve la pared del pasillo (12, parecida a 20) y
+    # adelante sigue la misma pared a 20
+    assert not giro_confirmado(CON_COSTADO, Lugar.IZQUIERDA, 400.0, 12.0, 20.0, 20.0, 8, 40)
+
+
+def test_esquina_con_el_frente_sin_dato_no_se_sabe():
+    assert giro_confirmado(CON_COSTADO, Lugar.IZQUIERDA, 60.0, 22.0, None, 20.0, 8, 40) is None

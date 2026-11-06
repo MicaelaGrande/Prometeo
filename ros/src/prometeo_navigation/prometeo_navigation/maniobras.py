@@ -34,6 +34,48 @@ def frente_abierto(frente_cm, umbral_cm):
     return frente_cm >= umbral_cm
 
 
+# Como se confirma un giro (siempre con el robot QUIETO: girando, una pared en
+# diagonal no devuelve bien el eco y el sensor marca cualquier cosa).
+CON_COSTADO = 'con_costado'      # esquina: la pared de adelante pasa a estar al costado
+CON_FRENTE = 'con_frente'        # media vuelta: adelante tiene que quedar el pasillo
+SIN_CONFIRMAR = 'sin_confirmar'  # puerta: antes no habia pared adelante, no hay con que
+
+
+def como_confirmar(salida, frente_antes_cm, umbral_cm):
+    """Elige como confirmar el giro, segun la salida y lo que media el frente antes."""
+    if salida == Mover.Goal.VUELTA:
+        return CON_FRENTE
+    if salida in (Lugar.IZQUIERDA, Lugar.DERECHA) and frente_abierto(
+            frente_antes_cm, umbral_cm) is False:
+        return CON_COSTADO
+    return SIN_CONFIRMAR
+
+
+def giro_confirmado(como, salida, izquierda_cm, derecha_cm, frente_cm,
+                    frente_antes_cm, tolerancia_cm, umbral_cm):
+    """True si esta lectura (con el robot quieto) dice que el giro quedo bien.
+
+    CON_COSTADO, dos cosas a la vez:
+      - la pared que estaba adelante tiene que medir lo mismo desde el costado
+        contrario al giro (doblo a la izquierda: queda a la derecha). El sensor solo
+        da esa medida si mira la pared de frente, o sea si el robot quedo derecho;
+      - y el frente tiene que haber cambiado: si sigue midiendo lo mismo que antes,
+        no giro (la pared del pasillo de al lado puede medir parecido).
+    CON_FRENTE: adelante tiene que estar el pasillo.
+    None si falta el dato. SIN_CONFIRMAR siempre es True.
+    """
+    if como == SIN_CONFIRMAR:
+        return True
+    if como == CON_FRENTE:
+        return frente_abierto(frente_cm, umbral_cm)
+    costado = derecha_cm if salida == Lugar.IZQUIERDA else izquierda_cm
+    if costado is None or frente_cm is None:
+        return None
+    pared_al_costado = abs(costado - frente_antes_cm) <= tolerancia_cm
+    frente_cambio = abs(frente_cm - frente_antes_cm) > tolerancia_cm   # inf tambien cambia
+    return pared_al_costado and frente_cambio
+
+
 def normalizar_angulo(angulo):
     """Lleva un angulo al rango -pi a pi.
 
