@@ -443,10 +443,13 @@ void motores_twist_a_ruedas(float v_mps, float w_rads, float v_rueda_mps[CANT_MO
     float v_izq = v_mps - w_rads * ANCHO_EFECT_M / 2.0f;
     float v_der = v_mps + w_rads * ANCHO_EFECT_M / 2.0f;
 
-    // Al girar las 4 ruedas patinan: con poco duty no se mueven. Se sube el lado mas rapido
-    // hasta PROMETEO_TURN_MIN_DUTY_PCT (y el otro en proporcion: se conserva el radio de giro).
+    // Al girar EN EL LUGAR las 4 ruedas patinan: con poco duty no se mueven. Se sube el lado
+    // mas rapido hasta PROMETEO_TURN_MIN_DUTY_PCT (y el otro en proporcion: se conserva el
+    // radio de giro). Solo si los lados van en sentido contrario: si el robot avanza y gira
+    // un poco (por ejemplo una correccion de centrado) no se toca, o saldria disparado.
     float mayor = fmaxf(fabsf(v_izq), fabsf(v_der)) / VEL_MAX_MPS;
-    if (girando && mayor > 0.0f && mayor < GIRO_DUTY_MIN) {
+    bool en_el_lugar = girando && (v_izq * v_der <= 0.0f);
+    if (en_el_lugar && mayor > 0.0f && mayor < GIRO_DUTY_MIN) {
         v_izq *= GIRO_DUTY_MIN / mayor;
         v_der *= GIRO_DUTY_MIN / mayor;
         mayor = GIRO_DUTY_MIN;

@@ -3,7 +3,7 @@
 if(CONFIG_PROMETEO_BUILD_MOTOR_TEST)
     set(main_srcs "main_test_motores.c")
 else()
-    set(main_srcs "main.c" "sensores.c" "seguridad.c")
+    set(main_srcs "main.c" "sensores.c" "seguridad.c" "centrado.c")
 endif()
 
 idf_component_register(SRCS ${main_srcs}

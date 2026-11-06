@@ -248,6 +248,76 @@ menu "Prometeo - Cinematica"
 
 endmenu
 
+menu "Prometeo - Centrado en el pasillo"
+
+    config PROMETEO_CENTRADO
+        bool "Centrar el robot en el pasillo (PID con los ultrasonidos laterales)"
+        default y
+        help
+            Al avanzar por /cmd_vel sin que nadie pida girar, suma una velocidad angular que
+            mantiene al robot en el medio del pasillo (izquierda = derecha). Si un costado no
+            ve pared (una salida) o no hay dato, no corrige. Si la compu tambien centra
+            (panel.launch.py asistencia:=true), apagar uno de los dos: se pisarian.
+
+    config PROMETEO_PASILLO_ANCHO_MM
+        int "Ancho del pasillo (mm)"
+        depends on PROMETEO_CENTRADO
+        range 200 1000
+        default 400
+        help
+            Se usa para normalizar el error: media distancia entre paredes = error 1.
+
+    config PROMETEO_CENTRADO_PARED_MAX_MM
+        int "Distancia maxima a una pared lateral (mm)"
+        depends on PROMETEO_CENTRADO
+        range 200 1000
+        default 500
+        help
+            Un costado que mide mas que esto (o no ve nada) es una salida: no se corrige.
+
+    config PROMETEO_CENTRADO_VEL_MIN_MM_S
+        int "Avance minimo para centrar (mm/s)"
+        depends on PROMETEO_CENTRADO
+        range 10 500
+        default 50
+        help
+            Con menos avance (parado, girando en el lugar) el centrado no actua.
+
+    config PROMETEO_CENTRADO_KP_X100
+        int "Ganancia proporcional (x100)"
+        depends on PROMETEO_CENTRADO
+        range 0 1000
+        default 100
+        help
+            100 = 1,0 rad/s con el robot pegado a una pared (error 1). Subir si tarda en
+            centrarse; si zigzaguea, bajar.
+
+    config PROMETEO_CENTRADO_KI_X100
+        int "Ganancia integral (x100)"
+        depends on PROMETEO_CENTRADO
+        range 0 1000
+        default 0
+        help
+            Corrige un desvio constante (un lado del robot que tira mas). 0 = sin I.
+
+    config PROMETEO_CENTRADO_KD_X100
+        int "Ganancia derivativa (x100)"
+        depends on PROMETEO_CENTRADO
+        range 0 1000
+        default 150
+        help
+            Amortigua el zigzag: sin D el robot oscila alrededor del medio. Si vibra, bajar.
+
+    config PROMETEO_CENTRADO_W_MAX_X100
+        int "Correccion maxima de giro (rad/s x100)"
+        depends on PROMETEO_CENTRADO
+        range 5 200
+        default 40
+        help
+            Tope de la velocidad angular que suma el centrado (40 = 0,4 rad/s).
+
+endmenu
+
 menu "Prometeo - Test de motores"
 
     config PROMETEO_BUILD_MOTOR_TEST

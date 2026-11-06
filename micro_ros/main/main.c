@@ -11,6 +11,7 @@
 #include "motores.h"
 #include "sensores.h"
 #include "seguridad.h"
+#include "centrado.h"
 #include "mg90s.h"
 #include "encoder.h"
 
@@ -139,12 +140,15 @@ static void cmd_vel_callback(const void *msgin)
     if (lineal > 0.0f && avance_norm <= 0.0f) {
         lineal = 0.0f;
     }
+    // Centrado en el pasillo: si avanza y nadie pide girar, suma el giro que lo deja en el medio
+    float angular = (float)m->angular.z;
+    angular += centrado_corregir(lineal, angular);
     // Cada rueda recibe su propia velocidad (m/s). Siempre las 4 ruedas; al girar
     // el giro va reforzado (PROMETEO_TURN_BOOST_PCT). El PID de encoders de motores.c
     // ajusta el duty de cada motor por separado hasta que cada rueda gire a su velocidad pedida.
     // motores_set_ruedas() también alimenta el failsafe.
     float v_rueda[CANT_MOTORES];
-    motores_twist_a_ruedas(lineal, (float)m->angular.z, v_rueda);
+    motores_twist_a_ruedas(lineal, angular, v_rueda);
     motores_set_ruedas(v_rueda);
     estado_actual = "MOVIENDO";
 }
