@@ -8,7 +8,8 @@ import math
 
 from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.lugares import (
-    AVISADO, EN_PASILLO, MIDIENDO_LUGAR, Confirmador, DetectorDeLugares, Promedio,
+    AVISADO, EN_PASILLO, MIDIENDO_LUGAR, MIRANDO_ALREDEDOR, Confirmador, DetectorDeLugares,
+    Promedio,
     armar_lugar, costado_abierto, distancia_a_lectura, entro_al_pasillo, frente_muy_cerca,
     lectura_vigente)
 
@@ -500,3 +501,82 @@ def test_distancia_nan_no_se_sabe():
 def test_400_o_mas_es_sin_eco():
     assert distancia_a_lectura(400.0) == math.inf
     assert distancia_a_lectura(650.0) == math.inf
+
+
+# ===== MIRANDO_ALREDEDOR: al arrancar o al volver de manual (ancho de pasillo 40 cm) =====
+
+def mirando():
+    detector = nuevo_detector()
+    detector.mirar_alrededor()
+    return detector
+
+
+def test_mirar_alrededor_pasa_a_esa_etapa():
+    assert mirando().etapa == MIRANDO_ALREDEDOR
+
+
+def test_arranca_en_un_pasillo_pasa_a_en_pasillo_sin_avisar():
+    detector = mirando()
+    avisos = [detector.actualizar(12, 12, 100) for _ in range(3)]
+    assert avisos == [None, None, None]
+    assert detector.etapa == EN_PASILLO
+
+
+def test_arranca_en_una_esquina_avisa_curva():
+    detector = mirando()
+    avisos = [detector.actualizar(math.inf, 12, 10) for _ in range(3)]
+    assert avisos == [None, None, (Lugar.CURVA, [Lugar.IZQUIERDA])]
+    assert detector.etapa == AVISADO
+
+
+def test_arranca_en_una_puerta_avisa_bifurcacion_con_adelante():
+    detector = mirando()
+    for _ in range(2):
+        assert detector.actualizar(12, 60, 150) is None
+    assert detector.actualizar(12, 60, 150) == (
+        Lugar.BIFURCACION, [Lugar.ADELANTE, Lugar.DERECHA])
+
+
+def test_alrededor_una_lectura_mala_no_inventa_una_salida():
+    detector = mirando()
+    detector.actualizar(12, 12, 100)
+    detector.actualizar(80, 12, 100)   # lectura mala a la izquierda: corta la cuenta
+    detector.actualizar(12, 12, 100)
+    assert detector.etapa == MIRANDO_ALREDEDOR
+    detector.actualizar(12, 12, 100)
+    detector.actualizar(12, 12, 100)
+    assert detector.etapa == EN_PASILLO
+
+
+def test_alrededor_sin_dato_espera():
+    detector = mirando()
+    for _ in range(5):
+        assert detector.actualizar(None, 12, 100) is None
+    assert detector.etapa == MIRANDO_ALREDEDOR
+
+
+def test_alrededor_con_salida_espera_a_saber_el_frente():
+    detector = mirando()
+    for _ in range(3):
+        assert detector.actualizar(math.inf, 12, None) is None
+    assert detector.etapa == MIRANDO_ALREDEDOR
+    detector.actualizar(math.inf, 12, 10)
+    detector.actualizar(math.inf, 12, 10)
+    assert detector.actualizar(math.inf, 12, 10) == (Lugar.CURVA, [Lugar.IZQUIERDA])
+
+
+def test_despues_de_mirar_alrededor_el_pasillo_detecta_normal():
+    detector = mirando()
+    for _ in range(3):
+        detector.actualizar(12, 12, 100)
+    llevar_a_midiendo(detector)
+    assert detector.etapa == MIDIENDO_LUGAR
+
+
+def test_mirar_alrededor_olvida_lo_de_antes():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector)
+    detector.mirar_alrededor()
+    assert detector.etapa == MIRANDO_ALREDEDOR
+    assert detector.frente_inicial_cm is None
+    assert detector.promedio_izquierda.valor() is None

@@ -9,7 +9,7 @@
 #       (termino de girar o de pasar de largo). Lo va a mandar quien atienda /mover;
 #       mientras tanto se puede mandar a mano para probar.
 #   modo_actual (String, del selector): en "manual" no avisa nada, porque los giros a
-#       mano darian saltos falsos (T2, "En manual"). Al volver a "auto" se reinicia.
+#       mano darian saltos falsos (T2, "En manual"). Al volver a "auto" mira alrededor.
 #       Si nadie publica el modo (Gazebo sin selector), funciona como en automatico.
 #
 # Lee /distancias y no los tres /ultrasonido/*: ahi llegan los tres sensores JUNTOS
@@ -53,9 +53,13 @@ class NodoDetectorLugares(Node):
             ('salto_cm', 15.0),             # cuanto tiene que saltar un costado para abrirse
             ('lecturas_necesarias', 3),     # lecturas seguidas para confirmar
             ('distancia_frente_cm', 15.0),  # frente "muy cerca" (callejon, confirmar ya)
+            ('ancho_pasillo_cm', 40.0),     # al arrancar: un costado mas lejos = salida
         ]}
         self.detector = DetectorDeLugares(
-            p['salto_cm'], p['lecturas_necesarias'], p['distancia_frente_cm'])
+            p['salto_cm'], p['lecturas_necesarias'], p['distancia_frente_cm'],
+            p['ancho_pasillo_cm'])
+        # Al arrancar no hay historia: puede estar parado en el medio de un lugar
+        self.detector.mirar_alrededor()
         self.en_manual = False
         self.odom = None   # la ultima posicion (None = todavia no llego /odom)
         self.etapa_avisada = None
@@ -81,9 +85,9 @@ class NodoDetectorLugares(Node):
             return
         self.en_manual = en_manual
         if not en_manual:
-            # Volvio a automatico: lo que sabia de antes ya no sirve (lo movieron a mano).
-            # PROVISORIO: el ticket pide MIRANDO_ALREDEDOR para esto; por ahora reinicia.
-            self.detector.reiniciar()
+            # Volvio a automatico: lo que sabia de antes ya no sirve (lo movieron a mano),
+            # y puede haber quedado en el medio de un lugar.
+            self.detector.mirar_alrededor()
         self.get_logger().info('Modo manual: no aviso lugares' if en_manual
                                else 'Modo automatico: vuelvo a buscar lugares')
 

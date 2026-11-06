@@ -158,6 +158,7 @@ def armar_lugar(izquierda_abierta, adelante_abierto, derecha_abierta):
 EN_PASILLO = 'en_pasillo'          # mirando los costados, cada uno con su promedio
 MIDIENDO_LUGAR = 'midiendo_lugar'  # vio un costado abierto, decide que lugar es
 AVISADO = 'avisado'                # ya aviso, espera a Decision (el timbre ya se toco)
+MIRANDO_ALREDEDOR = 'mirando_alrededor'  # sin historia: mira si arranco en un lugar
 
 
 class DetectorDeLugares:
@@ -170,11 +171,28 @@ class DetectorDeLugares:
       venia se arregla solo cuando aparece la pared.
     """
 
-    def __init__(self, salto_cm, lecturas_necesarias, distancia_frente_cm):
+    def __init__(self, salto_cm, lecturas_necesarias, distancia_frente_cm,
+                 ancho_pasillo_cm=40.0):
         self.salto_cm = salto_cm
         self.lecturas_necesarias = lecturas_necesarias
         self.distancia_frente_cm = distancia_frente_cm
+        self.ancho_pasillo_cm = ancho_pasillo_cm  # solo para MIRANDO_ALREDEDOR
         self.reiniciar()
+
+    def mirar_alrededor(self):
+        """Se olvida de todo y pasa a MIRANDO_ALREDEDOR.
+
+        Lo llama el nodo cuando no hay historia de los costados: al arrancar y al
+        volver de manual. El robot puede estar parado en el medio de un lugar, y ahi
+        el salto no sirve: no hay promedio contra el cual comparar. Despues de un giro
+        automatico no hace falta (se usa reiniciar(), y lo arregla el bajon).
+        """
+        self.reiniciar()
+        self.etapa = MIRANDO_ALREDEDOR
+        n = self.lecturas_necesarias
+        # Cada lado tiene dos cuentas: lecturas "abierto" seguidas y "cerrado" seguidas
+        self.alrededor = {lado: (Confirmador(n), Confirmador(n))
+                          for lado in (Lugar.IZQUIERDA, Lugar.ADELANTE, Lugar.DERECHA)}
 
     def reiniciar(self):
         """Vuelve a EN_PASILLO y se olvida de todo, como recien creado.
@@ -208,6 +226,8 @@ class DetectorDeLugares:
         Devuelve (tipo, salidas) la UNICA vez que avisa un lugar (como lo arma
         armar_lugar). El resto del tiempo devuelve None.
         """
+        if self.etapa == MIRANDO_ALREDEDOR:
+            return self._mirar_alrededor(izquierda_cm, derecha_cm, frente_cm)
         if self.etapa == MIDIENDO_LUGAR:
             return self._medir_lugar(izquierda_cm, derecha_cm, frente_cm)
         if self.etapa == EN_PASILLO:
@@ -276,6 +296,42 @@ class DetectorDeLugares:
         if frente_cm is not None and frente_cm <= self.frente_inicial_cm / 2:
             self.etapa = AVISADO
             return armar_lugar(self.izquierda_abierta, False, self.derecha_abierta)
+        return None
+
+    def _mirar_alrededor(self, izquierda_cm, derecha_cm, frente_cm):
+        """MIRANDO_ALREDEDOR: sin promedio, compara cada lado contra el ancho del pasillo.
+
+        Si los dos costados estan cerrados, arranco en un pasillo: pasa a EN_PASILLO
+        (el callejon lo ve EN_PASILLO). Si alguno esta abierto, arranco en un lugar:
+        espera a saber tambien el frente, avisa una vez y pasa a AVISADO.
+        Mientras algun lado no este confirmado (N lecturas seguidas), sigue mirando.
+        """
+        izquierda = self._lado_alrededor(izquierda_cm, *self.alrededor[Lugar.IZQUIERDA])
+        derecha = self._lado_alrededor(derecha_cm, *self.alrededor[Lugar.DERECHA])
+        adelante = self._lado_alrededor(frente_cm, *self.alrededor[Lugar.ADELANTE])
+        if izquierda is None or derecha is None:
+            return None                         # todavia no se sabe
+        if not (izquierda or derecha):
+            self.etapa = EN_PASILLO             # arranco en un pasillo
+            return None
+        if adelante is None:
+            return None                         # hay salida al costado: falta el frente
+        self.etapa = AVISADO
+        return armar_lugar(izquierda, adelante, derecha)
+
+    def _lado_alrededor(self, medida_cm, abierto, cerrado):
+        """True/False si este lado quedo confirmado abierto/cerrado; None si no se sabe.
+
+        Abierto = mide el ancho del pasillo o mas (inf, sin eco, tambien cuenta).
+        Sin dato (None) deja las dos cuentas igual.
+        """
+        if medida_cm is None:
+            return None
+        es_abierto = medida_cm >= self.ancho_pasillo_cm
+        if abierto.agregar(es_abierto):
+            return True
+        if cerrado.agregar(not es_abierto):
+            return False
         return None
 
     def _se_cerro(self, medida_cm, promedio, cierre):
