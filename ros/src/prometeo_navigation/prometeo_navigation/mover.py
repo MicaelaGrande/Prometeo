@@ -38,6 +38,9 @@
 #
 # Publica en cmd_vel_auto: el selector solo lo deja pasar en automatico. En manual no
 # publica, y si habia una orden en curso la cancela.
+# Manual SIN MOVERSE es una pausa (por ejemplo, para mover la garra a mano): mira
+# orden_enviada (lo que el selector manda a las ruedas) y, si nunca se movio, al volver a
+# automatico sigue como estaba (quieto si estaba quieto). Si se movio, vuelve a avanzar.
 # En Gazebo hace falta el selector (panel.launch.py ns:=''), que es quien pasa
 # cmd_vel_auto a cmd_vel.
 #
@@ -46,7 +49,9 @@
 #      lento, hasta que el cubo esta a distancia_final_m (lo minimo que ve la camara).
 #   2. Empujon: avanza empujon_cm mas, derecho y despacio, por tiempo. No usa el
 #      ultrasonido: tiene que estar justo enfrente del cilindro para medirlo.
-#   3. Frena y queda QUIETO (ESPERANDO) para que trabaje la garra. TERMINADA.
+#   3. Frena, queda QUIETO (ESPERANDO) y pide modo MANUAL (topic modo): la garra se
+#      mueve a mano. Contesta TERMINADA. El operador agarra el cubo SIN mover el robot y
+#      vuelve a automatico: como no se movio, es una pausa y arranca la vuelta (/volver).
 #   Si deja de ver el cubo lejos de la distancia final, BLOQUEADA.
 #   PROVISORIO: va al cubo mas cercano de cualquier color (el pedido no trae el color).
 # Falta usar length_class para la velocidad (T2, "largo de la flecha").
@@ -160,6 +165,11 @@ class NodoMover(Node):
         self.frenado = False
         self.create_subscription(Bool, 'freno_operador',
                                  lambda m: setattr(self, 'frenado', m.data), guardado)
+        # Manual sin moverse = pausa (ver arriba)
+        self.se_movio_en_manual = False
+        self.etapa_antes_de_manual = AVANZANDO
+        self.create_subscription(Twist, 'orden_enviada', self.al_salir_orden, 10)
+        self.pub_modo = self.create_publisher(String, 'modo', 10)
         self.create_subscription(Lugar, '/navegacion/lugar', self.al_llegar_a_lugar, 10)
 
         self.pub_cmd = self.create_publisher(Twist, 'cmd_vel_auto', 10)
@@ -206,16 +216,31 @@ class NodoMover(Node):
             if self.etapa == GIRANDO and self.mirando:
                 self.mirar_lectura()
 
+    def al_salir_orden(self, orden):
+        if self.en_manual and (abs(orden.linear.x) > 1e-3 or abs(orden.angular.z) > 1e-3):
+            self.se_movio_en_manual = True
+
     def al_cambiar_modo(self, mensaje):
         en_manual = mensaje.data == MANUAL
         if en_manual == self.en_manual:
             return
         self.en_manual = en_manual
-        if en_manual and self.pedido is not None:
-            self.terminar(Mover.Result.CANCELADA)
-        # Al volver a automatico avanza; si quedo en un lugar, el detector (mirando
-        # alrededor) lo avisa y frena.
-        self.cambiar_etapa(AVANZANDO)
+        if en_manual:
+            self.se_movio_en_manual = False
+            self.etapa_antes_de_manual = self.etapa
+            if self.pedido is not None:
+                self.terminar(Mover.Result.CANCELADA)
+            return
+        if self.se_movio_en_manual:
+            # Lo manejaron a mano: avanza; si quedo en un lugar, el detector (mirando
+            # alrededor) lo avisa y frena.
+            self.cambiar_etapa(AVANZANDO)
+        else:
+            # Pausa: sigue como estaba. Si estaba haciendo algo (girando...), se cancelo:
+            # queda quieto esperando una orden nueva.
+            antes = self.etapa_antes_de_manual
+            self.cambiar_etapa(AVANZANDO if antes == AVANZANDO else ESPERANDO)
+            self.get_logger().info('Manual sin moverse: sigo como estaba')
 
     def al_llegar_a_lugar(self, lugar):
         self.ultimo_lugar = lugar
@@ -354,8 +379,12 @@ class NodoMover(Node):
     def empujar(self):
         duracion = self.distancia_empujon_cm / 100 / self.p['velocidad_empujon']
         if self.paso_el_tiempo(duracion):
-            self.get_logger().info('Llegue al cubo: quieto para la garra')
+            texto = ('Llegue al cubo: agarralo con la garra SIN mover el robot y volve a '
+                     'automatico')
+            self.get_logger().info(texto)
             self.cambiar_etapa(ESPERANDO)
+            self.pub_modo.publish(String(data=MANUAL))      # la garra se mueve a mano
+            self.pub_aviso.publish(String(data=texto))
             self.terminar(Mover.Result.TERMINADA)
             return 0.0
         return self.p['velocidad_empujon']

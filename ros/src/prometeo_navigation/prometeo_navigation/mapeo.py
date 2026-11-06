@@ -21,6 +21,12 @@
 #      arranco la ronda.
 # Si en el medio pasan a manual, la vuelta queda en pausa: sigue en el proximo lugar
 # que reconozca. Si no hay camino (la libreta quedo partida), pide AYUDA.
+# Si /volver llega estando en manual (por ejemplo, mientras agarran el cubo con la
+# garra), espera a que vuelvan a automatico para arrancar.
+#
+# Manual SIN MOVERSE es una pausa (la garra se mueve a mano): mira orden_enviada (lo que
+# el selector manda a las ruedas). Si el robot no se movio, al volver a automatico la
+# libreta sigue igual. Si se movio, recien ahi el tramo queda como manejado a mano.
 #
 #   /navegacion/lugar (detector)        ──► Libreta.anotar()        ──┐
 #   /navegacion/salida_tomada (/mover)  ──► Libreta.tomar_salida()  ──┼──► mapeo/libreta (JSON)
@@ -38,7 +44,7 @@ import json
 from dataclasses import asdict
 
 import rclpy
-from geometry_msgs.msg import Quaternion
+from geometry_msgs.msg import Quaternion, Twist
 from nav_msgs.msg import Odometry
 from rclpy.action import ActionClient, ActionServer, CancelResponse
 from rclpy.executors import ExternalShutdownException
@@ -87,12 +93,18 @@ class NodoMapeo(Node):
         self.segundos_final = None    # cuanto avanzar desde el primer lugar hasta la largada
         self.temporizador = None
         self.en_largada = False   # llego y paso a manual para dejar el cubo
+        self.se_movio_en_manual = False
+        self.volver_pendiente = False  # llego /volver en manual: arranca al volver a auto
+        # Durante la media vuelta en el pasillo del cubo no se anotan lugares: el cilindro
+        # esta cerca y el detector podria creer que es un callejon.
+        self.ignorar_lugares = False
 
         guardado = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(AvisoLugar, '/navegacion/lugar', self.al_llegar, 10)
         self.create_subscription(String, '/navegacion/salida_tomada', self.al_salir, 10)
         self.create_subscription(String, 'modo_actual', self.al_cambiar_modo, guardado)
         self.create_subscription(Empty, '/decision/explorar', self.al_pedir_explorar, 10)
+        self.create_subscription(Twist, 'orden_enviada', self.al_salir_orden, 10)
         self.pub_libreta = self.create_publisher(String, 'mapeo/libreta', guardado)
         self.mover = ActionClient(self, Mover, '/mover')
         self.pub_modo = self.create_publisher(String, 'modo', 10)
@@ -105,6 +117,9 @@ class NodoMapeo(Node):
 
     def al_llegar(self, aviso):
         if self.en_manual:
+            return
+        if self.ignorar_lugares:
+            self.get_logger().info(f'Ignoro el aviso ({aviso.tipo}): doy media vuelta')
             return
         self.orientacion = aviso.orientacion
         primero = not self.libreta.lugares
@@ -140,10 +155,16 @@ class NodoMapeo(Node):
     def al_cambiar_modo(self, mensaje):
         en_manual = mensaje.data == MANUAL
         if en_manual and not self.en_manual:
-            self.libreta.pasar_a_manual()
-            self.get_logger().info('Manual: no anoto el tramo a mano' +
+            self.se_movio_en_manual = False
+            self.get_logger().info('Manual: no anoto lugares' +
                                    (' (la vuelta queda en pausa)' if self.volviendo else ''))
-            self.publicar()
+        if not en_manual and self.en_manual:
+            if self.se_movio_en_manual:
+                # Lo manejaron a mano: el tramo no se anota y la salida queda trabada
+                self.libreta.pasar_a_manual()
+                self.publicar()
+            else:
+                self.get_logger().info('Manual sin moverse: la libreta sigue igual')
         if not en_manual:
             if self.hora_inicio is None:
                 self.hora_inicio = self.ahora()
@@ -152,6 +173,13 @@ class NodoMapeo(Node):
                 self.en_largada = False
                 self.poner_posicion_en_la_largada()
         self.en_manual = en_manual
+        if not en_manual and self.volver_pendiente:
+            self.volver_pendiente = False
+            self.arrancar_volver()
+
+    def al_salir_orden(self, orden):
+        if self.en_manual and (abs(orden.linear.x) > 1e-3 or abs(orden.angular.z) > 1e-3):
+            self.se_movio_en_manual = True
 
     def al_pedir_explorar(self, _mensaje):
         if self.en_manual or self.orientacion is None:
@@ -171,18 +199,11 @@ class NodoMapeo(Node):
         self.volviendo = pedido
         self.fin_volver = Future()
         self.get_logger().info(f'Volver a la largada (cubo: "{pedido.request.color}")')
-        if self.libreta.saliendo_por is not None or not self.libreta.lugares:
-            # 1. Esta en un pasillo: media vuelta y vuelve al lugar de donde salio.
-            #    No se une nada: va a llegar otra vez al mismo lugar.
-            self.libreta.saliendo_por = None
-            self.ignorar_salida = True
-            if not self.libreta.lugares:
-                # Todavia no paso por ningun lugar: vuelve lo que avanzo desde el inicio
-                self.segundos_final = self.ahora() - (self.hora_inicio or self.ahora())
-            self.pedir_mover(Mover.Goal.VUELTA, ultimo=not self.libreta.lugares)
-        elif self.libreta.actual is not None and self.orientacion is not None:
-            self.dar_paso(self.libreta.actual, self.orientacion)
-        # Si no: espera a que el detector avise un lugar (por ejemplo, volvio de manual)
+        if self.en_manual:
+            self.volver_pendiente = True
+            self.get_logger().info('Estoy en manual: arranco la vuelta al volver a automatico')
+        else:
+            self.arrancar_volver()
         resultado = await self.fin_volver
         self.volviendo = None
         self.camino = []
@@ -194,6 +215,22 @@ class NodoMapeo(Node):
         else:
             pedido.abort()
         return Volver.Result(resultado=resultado)
+
+    def arrancar_volver(self):
+        if self.libreta.saliendo_por is not None or not self.libreta.lugares:
+            # 1. Esta en un pasillo: media vuelta y vuelve al lugar de donde salio.
+            #    No se une nada: va a llegar otra vez al mismo lugar.
+            self.libreta.saliendo_por = None
+            self.ignorar_salida = True
+            self.ignorar_lugares = True
+            if not self.libreta.lugares:
+                # Todavia no paso por ningun lugar: vuelve lo que avanzo desde el inicio
+                self.segundos_final = self.ahora() - (self.hora_inicio or self.ahora())
+            self.pedir_mover(Mover.Goal.VUELTA, ultimo=not self.libreta.lugares,
+                             al_final=lambda: setattr(self, 'ignorar_lugares', False))
+        elif self.libreta.actual is not None and self.orientacion is not None:
+            self.dar_paso(self.libreta.actual, self.orientacion)
+        # Si no: espera a que el detector avise un lugar (por ejemplo, volvio de manual)
 
     def al_cancelar_volver(self, _pedido):
         if self.fin_volver is not None and not self.fin_volver.done():
@@ -220,18 +257,31 @@ class NodoMapeo(Node):
             f'Vuelta: {" -> ".join(map(str, self.camino))} -> largada. Salgo al {direccion}')
         self.pedir_mover(salida_hacia(orientacion, direccion), ultimo)
 
-    def pedir_mover(self, salida, ultimo):
+    def pedir_mover(self, salida, ultimo, al_final=None, intentos=6):
         def al_terminar(futuro):
             resultado = futuro.result().result.resultado
+            if al_final is not None:
+                al_final()
             if resultado == Mover.Result.TERMINADA and ultimo:
                 self.esperar_la_largada()
             # BLOQUEADA: /mover ya pidio AYUDA; sigue cuando el operador lo destrabe
 
+        def reintentar():
+            temporizador.cancel()
+            if self.volviendo is not None and not self.en_manual:
+                self.pedir_mover(salida, ultimo, al_final, intentos - 1)
+
         def al_aceptar(futuro):
+            nonlocal temporizador
             if futuro.result().accepted:
                 futuro.result().get_result_async().add_done_callback(al_terminar)
+            elif intentos > 0:
+                # Puede ser que /mover todavia no se entero de que volvio a automatico
+                temporizador = self.create_timer(0.5, reintentar)
             else:
-                self.get_logger().warning('/mover rechazo el pedido de la vuelta')
+                self.avisar('AYUDA: /mover no acepta la vuelta')
+
+        temporizador = None
 
         self.mover.send_goal_async(
             Mover.Goal(accion=Mover.Goal.IR_A_SALIDA, salida=salida)
