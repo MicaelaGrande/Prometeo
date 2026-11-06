@@ -222,6 +222,17 @@ Cuidados:
    de a uno. No pasarlo a `MultiThreadedExecutor` sin revisar los contadores, porque dos
    lecturas podrían sumar a la vez (condición de carrera).
 
+**Giro de `/mover` (6/11/2026):** las ruedas patinan y los encoders no son confiables, así que
+el giro se confirma con los ultrasonidos, **con el robot quieto**: girando, una pared en
+diagonal no devuelve bien el eco. En una esquina, la pared que estaba adelante tiene que quedar
+al costado a la misma distancia, y el frente tiene que cambiar. Si no confirma, gira de a 10°;
+si después de 45° de más sigue sin confirmar, contesta `bloqueada` y pide AYUDA en el panel.
+Probado con un robot de mentira (`maniobras.py`, `mover.py`).
+
+- [ ] **Pendiente, en el robot real:** ver cuánto queda torcido. En la prueba quedó en 73° en
+  vez de 90°, porque confirma apenas el sensor del costado devuelve eco. Ver si el centrado lo
+  endereza, y ajustar `tolerancia_costado_cm`, `paso_grados` y `factor_giro_tiempo`.
+
 **Aviso de lugar (acordado el 4/11/2026):** cada vez que T2 encuentra una curva, una
 bifurcación o un callejón, publica en el topic `/navegacion/lugar`. Lo escuchan Mapeo (T3) y
 Decisión (T7). Lleva:
