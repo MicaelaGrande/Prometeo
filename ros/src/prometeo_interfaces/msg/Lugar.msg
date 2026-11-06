@@ -20,3 +20,9 @@ float64 x              # donde estaba el robot, en metros, segun /odom
 float64 y
 float64 orientacion    # hacia donde miraba, en radianes, segun /odom
 string[] salidas       # IZQUIERDA, ADELANTE o DERECHA, sin contar por donde vino
+
+# Lo que media el frente (cm) al detectar el lugar. -1 = no hay.
+# Los usa /mover en una puerta: el detector la ve recien cuando la paso, asi que
+# retrocede hasta el medio, donde el frente mide (frente_inicial + frente_final) / 2.
+float64 frente_inicial   # F0: cuando se abrio el costado
+float64 frente_final     # F1: cuando se volvio a cerrar (solo en una puerta)

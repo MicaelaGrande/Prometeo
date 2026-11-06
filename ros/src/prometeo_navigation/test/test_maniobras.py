@@ -1,0 +1,88 @@
+# Pruebas de las cuentas de /mover (maniobras.py). Sin robot y sin simulador.
+# Correr con: source install/setup.bash && python3 -m pytest src/prometeo_navigation/test
+
+import math
+
+from prometeo_interfaces.action import Mover
+from prometeo_interfaces.msg import Lugar
+from prometeo_navigation.maniobras import (
+    angulo_objetivo, es_puerta, frente_en_el_medio_de_la_puerta, normalizar_angulo,
+    velocidad_de_giro)
+
+
+def cerca(a, b):
+    return abs(a - b) < 1e-9
+
+
+def test_normalizar_deja_igual_un_angulo_chico():
+    assert cerca(normalizar_angulo(1.0), 1.0)
+
+
+def test_normalizar_da_la_vuelta_pasando_pi():
+    assert cerca(normalizar_angulo(math.pi + 0.1), -math.pi + 0.1)
+
+
+def test_izquierda_suma_90_grados():
+    assert cerca(angulo_objetivo(0.0, Lugar.IZQUIERDA), math.pi / 2)
+
+
+def test_derecha_resta_90_grados():
+    assert cerca(angulo_objetivo(0.0, Lugar.DERECHA), -math.pi / 2)
+
+
+def test_adelante_no_gira():
+    assert cerca(angulo_objetivo(1.0, Lugar.ADELANTE), 1.0)
+
+
+def test_vuelta_es_media_vuelta():
+    assert cerca(abs(angulo_objetivo(0.0, Mover.Goal.VUELTA)), math.pi)
+
+
+def test_izquierda_mirando_casi_atras_pasa_al_otro_lado():
+    # Mirando a 170 grados, la izquierda queda en 260 = -100 grados
+    objetivo = angulo_objetivo(math.radians(170), Lugar.IZQUIERDA)
+    assert cerca(objetivo, math.radians(-100))
+
+
+def test_salida_mal_escrita_es_none():
+    assert angulo_objetivo(0.0, 'izqierda') is None
+
+
+def test_ya_llego_no_gira():
+    assert velocidad_de_giro(0.01, 2.0, 0.35, 0.9, 0.05) == 0.0
+
+
+def test_falta_mucho_gira_al_maximo_hacia_la_izquierda():
+    assert velocidad_de_giro(1.5, 2.0, 0.35, 0.9, 0.05) == 0.9
+
+
+def test_falta_mucho_a_la_derecha_gira_negativo():
+    assert velocidad_de_giro(-1.5, 2.0, 0.35, 0.9, 0.05) == -0.9
+
+
+def test_falta_poco_gira_despacio_pero_no_menos_que_el_minimo():
+    assert velocidad_de_giro(0.1, 2.0, 0.35, 0.9, 0.05) == 0.35
+
+
+def test_en_el_medio_es_proporcional():
+    assert cerca(velocidad_de_giro(0.3, 2.0, 0.35, 0.9, 0.05), 0.6)
+
+
+def test_medio_de_la_puerta():
+    assert frente_en_el_medio_de_la_puerta(190, 150) == 170
+
+
+def test_medio_de_la_puerta_sin_dato_es_none():
+    assert frente_en_el_medio_de_la_puerta(190, -1) is None
+
+
+def test_es_puerta_si_tiene_f1():
+    assert es_puerta(Lugar(frente_inicial=190.0, frente_final=150.0))
+
+
+def test_esquina_no_es_puerta():
+    assert not es_puerta(Lugar(frente_inicial=80.0, frente_final=-1.0))
+
+
+def test_sin_lugar_no_es_puerta():
+    assert not es_puerta(None)

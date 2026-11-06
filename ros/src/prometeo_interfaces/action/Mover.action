@@ -3,7 +3,9 @@
 string IR_A_SALIDA="ir_a_salida"
 string ACERCARSE="acercarse"
 string accion          # IR_A_SALIDA o ACERCARSE
-string salida          # Lugar.IZQUIERDA, Lugar.ADELANTE o Lugar.DERECHA (solo para IR_A_SALIDA)
+# Salida especial, ademas de las de Lugar: dar media vuelta (callejon)
+string VUELTA="vuelta"
+string salida          # Lugar.IZQUIERDA, Lugar.ADELANTE, Lugar.DERECHA o VUELTA (solo IR_A_SALIDA)
 string length_class    # largo de la flecha (close, normal o far), si hay
 ---
 # Lo que contesta Navegacion cuando termina (Mover.Result.TERMINADA, etc.)

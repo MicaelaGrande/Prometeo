@@ -114,6 +114,8 @@ class NodoDetectorLugares(Node):
 
     def avisar(self, tipo, salidas):
         aviso = Lugar(tipo=tipo, salidas=salidas)
+        aviso.frente_inicial = numero_o_menos_uno(self.detector.frente_inicial_cm)
+        aviso.frente_final = numero_o_menos_uno(self.detector.frente_final_cm)
         if self.odom is not None:
             aviso.x = self.odom.position.x
             aviso.y = self.odom.position.y
@@ -124,6 +126,11 @@ class NodoDetectorLugares(Node):
         self.get_logger().info(
             f'LUGAR: {tipo} {salidas} en ({aviso.x:.2f}, {aviso.y:.2f}) '
             f'F0={self.detector.frente_inicial_cm} F1={self.detector.frente_final_cm}')
+
+
+def numero_o_menos_uno(cm):
+    """F0 y F1 van en el aviso como numero; -1 si no hay (por ejemplo, F1 en una esquina)."""
+    return float(cm) if cm is not None and math.isfinite(cm) else -1.0
 
 
 def main():

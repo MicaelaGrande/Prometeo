@@ -33,6 +33,7 @@ setup(
             'selector_modo = prometeo_navigation.selector_modo:main',
             'joystick_modo = prometeo_navigation.joystick_modo:main',
             'detector_lugares = prometeo_navigation.detector_lugares:main',
+            'mover = prometeo_navigation.mover:main',
         ],
     },
 )
