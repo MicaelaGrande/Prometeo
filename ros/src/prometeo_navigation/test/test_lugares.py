@@ -369,6 +369,84 @@ def test_t_con_un_lado_que_se_cierra_avisa_un_cruce():
         Lugar.BIFURCACION, [Lugar.IZQUIERDA, Lugar.ADELANTE, Lugar.DERECHA])
 
 
+# --- Callejon ------------------------------------------------------------------
+
+def test_callejon_frente_muy_cerca_sin_costados_abiertos():
+    detector = nuevo_detector()                      # distancia_frente_cm = 15
+    detector.actualizar(20, 20, frente_cm=40)
+    assert detector.actualizar(20, 20, frente_cm=14) is None     # 1
+    assert detector.actualizar(20, 20, frente_cm=13) is None     # 2
+    lugar = detector.actualizar(20, 20, frente_cm=12)            # 3: confirmado
+
+    assert lugar == (Lugar.CALLEJON, [])
+    assert detector.etapa == AVISADO
+
+
+def test_una_lectura_cerca_suelta_no_es_callejon():
+    detector = nuevo_detector()
+    for frente in (40, 12, 40, 12, 40, 12):          # el sensor tiembla
+        assert detector.actualizar(20, 20, frente_cm=frente) is None
+
+    assert detector.etapa == EN_PASILLO
+
+
+def test_frente_sin_dato_no_corta_la_cuenta_del_callejon():
+    detector = nuevo_detector()
+    detector.actualizar(20, 20, frente_cm=40)
+    detector.actualizar(20, 20, frente_cm=12)
+    detector.actualizar(20, 20, frente_cm=None)      # no se sabe: la cuenta queda
+    detector.actualizar(20, 20, frente_cm=12)
+
+    assert detector.actualizar(20, 20, frente_cm=12) == (Lugar.CALLEJON, [])
+
+
+def test_frente_cerca_con_un_costado_abierto_no_es_callejon():
+    detector = nuevo_detector()
+    detector.actualizar(20, 20, frente_cm=30)
+    detector.actualizar(45, 20, frente_cm=12)        # costado abierto con frente cerca
+
+    assert detector.etapa == MIDIENDO_LUGAR          # es un lugar con salida, no callejon
+
+
+# --- Despues de avisar: reiniciar -------------------------------------------------
+
+def test_reiniciar_vuelve_al_pasillo_y_olvida_todo():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, f0=80)
+    detector.actualizar(45, 20, frente_cm=40)        # avisa la esquina
+    detector.reiniciar()
+
+    assert detector.etapa == EN_PASILLO
+    assert detector.promedio_izquierda.valor() is None
+    assert detector.promedio_derecha.valor() is None
+    assert detector.frente_inicial_cm is None
+    assert detector.frente_final_cm is None
+    assert not detector.izquierda_abierta and not detector.derecha_abierta
+    assert not detector.puerta_confirmada
+
+
+def test_despues_de_reiniciar_detecta_el_lugar_siguiente():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, izquierda=45, f0=80)
+    assert detector.actualizar(45, 20, frente_cm=40) == (Lugar.CURVA, [Lugar.IZQUIERDA])
+    detector.reiniciar()                             # termino de girar
+
+    llevar_a_midiendo(detector, izquierda=20, derecha=45, f0=90)
+    assert detector.actualizar(20, 45, frente_cm=45) == (Lugar.CURVA, [Lugar.DERECHA])
+
+
+def test_despues_de_girar_el_lado_que_mira_atras_no_inventa_una_salida():
+    # Giro a la izquierda: ahora la izquierda mira al pasillo de donde vino (60 cm).
+    detector = nuevo_detector()
+    detector.reiniciar()
+    for _ in range(4):
+        assert detector.actualizar(60, 20, frente_cm=100) is None
+    assert detector.etapa == EN_PASILLO              # 60 es su primera "pared"
+
+    detector.actualizar(20, 20, frente_cm=95)        # aparece la pared: bajon
+    assert detector.promedio_izquierda.valor() == 20
+
+
 # --- armar_lugar: el traductor para Decision (una prueba por fila de la tabla) ---
 # armar_lugar(izquierda_abierta, adelante_abierto, derecha_abierta)
 

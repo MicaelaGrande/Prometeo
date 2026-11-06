@@ -153,15 +153,29 @@ class DetectorDeLugares:
 
     def __init__(self, salto_cm, lecturas_necesarias, distancia_frente_cm):
         self.salto_cm = salto_cm
+        self.lecturas_necesarias = lecturas_necesarias
         self.distancia_frente_cm = distancia_frente_cm
+        self.reiniciar()
+
+    def reiniciar(self):
+        """Vuelve a EN_PASILLO y se olvida de todo, como recien creado.
+
+        Lo llama el nodo cuando el robot termino de salir del lugar (termino de
+        girar o de pasar de largo), para buscar el siguiente.
+        Tambien borra los promedios: despues de girar, los costados miran paredes
+        nuevas. El lado que mira al pasillo de donde vino arranca su promedio con
+        esa medida, y se arregla solo con el bajon cuando aparece la pared.
+        """
         self.etapa = EN_PASILLO
         self.promedio_izquierda = Promedio()
         self.promedio_derecha = Promedio()
-        self.confirmador_izquierda = Confirmador(lecturas_necesarias)
-        self.confirmador_derecha = Confirmador(lecturas_necesarias)
+        self.confirmador_izquierda = Confirmador(self.lecturas_necesarias)
+        self.confirmador_derecha = Confirmador(self.lecturas_necesarias)
+        # Para el callejon: cuenta las lecturas con el frente muy cerca
+        self.confirmador_frente = Confirmador(self.lecturas_necesarias)
         # Para la puerta: cuentan las lecturas "cerrado" de un costado que estaba abierto
-        self.cierre_izquierda = Confirmador(lecturas_necesarias)
-        self.cierre_derecha = Confirmador(lecturas_necesarias)
+        self.cierre_izquierda = Confirmador(self.lecturas_necesarias)
+        self.cierre_derecha = Confirmador(self.lecturas_necesarias)
         self.puerta_confirmada = False
         self.frente_inicial_cm = None  # F0: el frente cuando se confirmo el costado abierto
         self.frente_final_cm = None    # F1: el frente cuando se confirmo la puerta
@@ -191,6 +205,17 @@ class DetectorDeLugares:
                 self.izquierda_abierta = izquierda
                 self.derecha_abierta = derecha
                 self.etapa = MIDIENDO_LUGAR
+                return None
+
+            # Callejon: ningun costado abierto y el frente muy cerca, N lecturas
+            # seguidas (una lectura mala no lo inventa). Si hay un cubo adelante, el
+            # frente es su cilindro: igual avisa, y Decision, que esta acercandose
+            # al cubo, no le hace caso.
+            if not (izquierda or derecha):
+                cerca = frente_muy_cerca(frente_cm, self.distancia_frente_cm)
+                if self.confirmador_frente.agregar(cerca):
+                    self.etapa = AVISADO
+                    return armar_lugar(False, False, False)
         return None
 
     def _medir_lugar(self, izquierda_cm, derecha_cm, frente_cm):
