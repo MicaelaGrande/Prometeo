@@ -6,7 +6,7 @@ import math
 from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.maniobras import (
-    CON_COSTADO, CON_FRENTE, SIN_CONFIRMAR, angulo_objetivo, como_confirmar,
+    CON_COSTADO, CON_FRENTE, SIN_CONFIRMAR, PosicionLaberinto, angulo_objetivo, como_confirmar,
     giro_confirmado, es_puerta, frente_abierto, frente_en_el_medio_de_la_puerta,
     giro_de_salida, normalizar_angulo, velocidad_de_giro)
 
@@ -160,3 +160,50 @@ def test_si_no_giro_el_frente_sigue_igual_y_no_confirma():
 
 def test_esquina_con_el_frente_sin_dato_no_se_sabe():
     assert giro_confirmado(CON_COSTADO, Lugar.IZQUIERDA, 60.0, 22.0, None, 20.0, 8, 40) is None
+
+
+# ===== Posicion de laberinto =====
+
+def test_posicion_arranca_en_cero_mirando_al_norte():
+    p = PosicionLaberinto()
+    assert (p.x, p.y, p.orientacion()) == (0.0, 0.0, 0.0)
+
+
+def test_avanzar_al_norte_suma_en_x():
+    p = PosicionLaberinto()
+    p.avanzar(0.5)
+    assert cerca(p.x, 0.5) and cerca(p.y, 0.0)
+
+
+def test_girar_a_la_izquierda_y_avanzar_suma_en_y():
+    p = PosicionLaberinto()
+    p.girar(math.pi / 2)
+    p.avanzar(1.0)
+    assert cerca(p.x, 0.0) and cerca(p.y, 1.0)
+
+
+def test_el_giro_se_redondea_a_cuartos_de_vuelta():
+    p = PosicionLaberinto()
+    p.girar(math.radians(73))     # confirmado aunque quedo torcido
+    assert cerca(p.orientacion(), math.pi / 2)
+
+
+def test_media_vuelta_y_retroceder():
+    p = PosicionLaberinto()
+    p.avanzar(1.0)
+    p.girar(math.pi)
+    p.avanzar(0.4)
+    assert cerca(p.x, 0.6)
+
+
+def test_cuatro_giros_a_la_derecha_vuelven_al_norte():
+    p = PosicionLaberinto()
+    for _ in range(4):
+        p.girar(-math.pi / 2)
+    assert p.cuartos == 0
+
+
+def test_poner_corrige_la_posicion():
+    p = PosicionLaberinto()
+    p.poner(2.0, -1.0, -math.pi / 2)
+    assert (p.x, p.y) == (2.0, -1.0) and cerca(p.orientacion(), -math.pi / 2)

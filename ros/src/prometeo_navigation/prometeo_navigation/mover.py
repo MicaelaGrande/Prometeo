@@ -6,6 +6,11 @@
 #      ▲                                                                   │
 #      └──────────── /navegacion/reiniciar_detector ("ya sali") ──────────┘
 #   /navegacion/salida_tomada (String): por que salida se fue, para Mapeo.
+#   odom_laberinto (Odometry): la posicion de laberinto (maniobras.PosicionLaberinto),
+#       con los giros confirmados y el tiempo avanzando. El detector la usa en vez de
+#       /odom (autonomia.launch.py lo remapea), porque las ruedas patinan.
+#   /navegacion/poner_posicion (Odometry): la corrige (Mapeo, cuando el operador dice
+#       en que lugar dejo el robot despues de manejarlo a mano).
 #
 # Etapas:
 #   AVANZANDO       va derecho por el pasillo (el centrado lo hace la asistencia / Bajo nivel)
@@ -47,14 +52,14 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from rclpy.task import Future
-from std_msgs.msg import Empty, Float32MultiArray, String
+from std_msgs.msg import Bool, Empty, Float32MultiArray, String
 
 from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.detector_lugares import orientacion_de
 from prometeo_navigation.lugares import distancia_a_lectura
 from prometeo_navigation.maniobras import (
-    SIN_CONFIRMAR, como_confirmar, es_puerta, frente_en_el_medio_de_la_puerta,
+    SIN_CONFIRMAR, PosicionLaberinto, como_confirmar, es_puerta, frente_en_el_medio_de_la_puerta,
     giro_confirmado, giro_de_salida, normalizar_angulo, velocidad_de_giro)
 from prometeo_navigation.modos import MANUAL
 
@@ -122,6 +127,10 @@ class NodoMover(Node):
             Float32MultiArray, 'distancias', self.al_medir, qos_profile_sensor_data)
         guardado = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(String, 'modo_actual', self.al_cambiar_modo, guardado)
+        # Con PARAR puesto el selector no deja pasar nada: no sumar lo que "avanzaria"
+        self.frenado = False
+        self.create_subscription(Bool, 'freno_operador',
+                                 lambda m: setattr(self, 'frenado', m.data), guardado)
         self.create_subscription(Lugar, '/navegacion/lugar', self.al_llegar_a_lugar, 10)
 
         self.pub_cmd = self.create_publisher(Twist, 'cmd_vel_auto', 10)
@@ -130,6 +139,10 @@ class NodoMover(Node):
         self.pub_salida = self.create_publisher(String, '/navegacion/salida_tomada', 10)
         # El panel muestra en rojo los avisos que empiezan con AYUDA
         self.pub_aviso = self.create_publisher(String, 'navegacion/aviso', 10)
+        self.posicion = PosicionLaberinto()
+        self.pub_posicion = self.create_publisher(Odometry, 'odom_laberinto', 10)
+        self.create_subscription(
+            Odometry, '/navegacion/poner_posicion', self.al_poner_posicion, 10)
 
         ActionServer(self, Mover, '/mover', self.ejecutar,
                      goal_callback=self.al_recibir_pedido,
@@ -142,6 +155,12 @@ class NodoMover(Node):
     def al_moverse(self, mensaje):
         self.orientacion = orientacion_de(mensaje.pose.pose.orientation)
         self.hora_odom = self.get_clock().now()
+
+    def al_poner_posicion(self, mensaje):
+        pose = mensaje.pose.pose
+        self.posicion.poner(pose.position.x, pose.position.y, orientacion_de(pose.orientation))
+        self.get_logger().info(f'Posicion corregida: ({pose.position.x:.2f}, '
+                               f'{pose.position.y:.2f})')
 
     def al_medir(self, mensaje):
         if len(mensaje.data) == 3:
@@ -246,6 +265,10 @@ class NodoMover(Node):
         elif self.etapa == GIRANDO:
             orden.angular.z = self.girar()
         self.pub_cmd.publish(orden)   # ESPERANDO: todo en 0
+        # Posicion de laberinto: suma lo que avanzo (o retrocedio) en este paso
+        if not self.frenado:
+            self.posicion.avanzar(orden.linear.x / self.p['frecuencia_hz'])
+        self.publicar_posicion()
 
     def retroceder(self):
         if self.paso_el_tiempo(self.p['tiempo_max_retroceso_s']):
@@ -286,7 +309,7 @@ class NodoMover(Node):
         if velocidad != 0.0:
             return self.mandar_giro(velocidad)
         if self.como == SIN_CONFIRMAR:
-            self.terminar_giro()
+            self.terminar_giro()   # puerta: confia en lo estimado
             return self.mandar_giro(0.0)
         # 2. Frenar y mirar
         self.mirando = True
@@ -321,11 +344,23 @@ class NodoMover(Node):
             math.radians(self.p['paso_grados']), self.giro_pedido)
         self.mirando = False
 
+    def publicar_posicion(self):
+        mensaje = Odometry()
+        mensaje.header.stamp = self.get_clock().now().to_msg()
+        mensaje.header.frame_id = 'odom'
+        mensaje.pose.pose.position.x = self.posicion.x
+        mensaje.pose.pose.position.y = self.posicion.y
+        angulo = self.posicion.orientacion()
+        mensaje.pose.pose.orientation.z = math.sin(angulo / 2)
+        mensaje.pose.pose.orientation.w = math.cos(angulo / 2)
+        self.pub_posicion.publish(mensaje)
+
     def terminar_giro(self):
         self.get_logger().info(
             f'Giro confirmado ({self.como}): {math.degrees(self.girado):.0f} grados, '
             f'izq {self.izquierda_cm}, der {self.derecha_cm}, frente {self.frente_cm} cm')
         self.mirando = False
+        self.posicion.girar(self.giro_pedido)   # un giro confirmado: cuartos de vuelta justos
         self.salir_del_lugar()
 
     def giro_desde_el_paso_anterior(self):

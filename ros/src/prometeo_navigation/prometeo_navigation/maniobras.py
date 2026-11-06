@@ -125,3 +125,38 @@ def frente_en_el_medio_de_la_puerta(frente_inicial, frente_final):
 def es_puerta(lugar):
     """True si el lugar fue una puerta: tiene F1 (el costado se volvio a cerrar)."""
     return lugar is not None and lugar.frente_final >= 0
+
+
+class PosicionLaberinto:
+    """Donde esta el robot, sin encoders ni /odom: la "posicion de laberinto".
+
+    Las ruedas patinan, asi que no se usa lo que dicen. En cambio:
+    - la direccion sale de los giros que /mover CONFIRMO con los ultrasonidos: cada
+      uno es un cuarto de vuelta justo (en el laberinto todo va a 90 grados);
+    - la distancia sale del tiempo avanzando por la velocidad que se mando.
+    No es exacta, pero alcanza para que Mapeo no mezcle lugares distintos.
+    Orientacion 0 = hacia donde miraba al arrancar (el "norte" de la libreta).
+    """
+
+    def __init__(self):
+        self.x = 0.0
+        self.y = 0.0
+        self.cuartos = 0   # cuartos de vuelta a la izquierda desde el arranque (0 a 3)
+
+    def orientacion(self):
+        """En radianes, de -pi a pi, como /odom."""
+        return normalizar_angulo(self.cuartos * math.pi / 2)
+
+    def avanzar(self, metros):
+        """Suma lo avanzado en la direccion en que mira (negativo = retrocede)."""
+        self.x += metros * math.cos(self.orientacion())
+        self.y += metros * math.sin(self.orientacion())
+
+    def girar(self, giro_rad):
+        """Suma un giro confirmado, redondeado a cuartos de vuelta."""
+        self.cuartos = (self.cuartos + round(giro_rad / (math.pi / 2))) % 4
+
+    def poner(self, x, y, orientacion):
+        """La corrige (por ejemplo, el operador dice en que lugar lo dejo)."""
+        self.x, self.y = x, y
+        self.cuartos = round(orientacion / (math.pi / 2)) % 4

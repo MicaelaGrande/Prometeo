@@ -41,8 +41,10 @@ def generate_launch_description():
     ]
 
     nodos = [
+        # El detector anota los lugares con la posicion de laberinto de /mover, no con
+        # /odom: las ruedas patinan (y el robot real no publica /odom).
         Node(package='prometeo_navigation', executable='detector_lugares', namespace=ns,
-             parameters=[reloj], output='screen'),
+             parameters=[reloj], remappings=[('odom', 'odom_laberinto')], output='screen'),
         Node(package='prometeo_navigation', executable='mover', namespace=ns,
              parameters=[reloj], output='screen'),
         Node(package='prometeo_navigation', executable='mapeo', namespace=ns,
