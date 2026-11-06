@@ -171,3 +171,68 @@ def test_si_hay_dos_parecidos_elige_el_mas_cercano():
     libreta.lugares.append(Lugar(2, 0.4, 0.0, 'curva', list(lejos.salidas)))  # otro igual
     hoja, _ = libreta.anotar('curva', 0.35, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
     assert hoja.numero == 2
+
+
+# ===== Tomar una salida y unir los lugares =====
+
+def test_tomar_salida_la_marca_probada():
+    libreta = Libreta()
+    hoja, _ = libreta.anotar('bifurcacion', 0.0, 0.0, 0.0,
+                             [AvisoLugar.IZQUIERDA, AvisoLugar.DERECHA])
+    camino = libreta.tomar_salida(0.0, AvisoLugar.IZQUIERDA)
+    assert camino.direccion == OESTE
+    assert camino.estado == PROBADA
+    este = [s for s in hoja.salidas if s.direccion == ESTE][0]
+    assert este.estado == PENDIENTE   # la otra sigue sin probar
+
+
+def test_al_llegar_al_siguiente_quedan_unidos_en_los_dos_sentidos():
+    libreta = Libreta()
+    a, _ = libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    libreta.tomar_salida(0.0, AvisoLugar.IZQUIERDA)        # sale hacia el oeste
+    # Ahora mira al oeste (pi/2) y llega a B, una curva a la derecha
+    b, _ = libreta.anotar('curva', -1.0, 0.0, math.pi / 2, [AvisoLugar.DERECHA])
+    oeste_de_a = [s for s in a.salidas if s.direccion == OESTE][0]
+    este_de_b = [s for s in b.salidas if s.direccion == ESTE][0]   # por donde llego
+    assert oeste_de_a.lleva_a == b.numero
+    assert este_de_b.lleva_a == a.numero
+    assert este_de_b.estado == PROBADA
+
+
+def test_el_primer_lugar_no_sabe_de_donde_vino():
+    hoja, _ = Libreta().anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    sur = [s for s in hoja.salidas if s.direccion == SUR][0]
+    assert sur.lleva_a is None   # vino de la largada
+
+
+def test_tomar_salida_sin_lugar_actual_no_hace_nada():
+    assert Libreta().tomar_salida(0.0, AvisoLugar.IZQUIERDA) is None
+
+
+def test_tomar_una_salida_que_no_existe_no_hace_nada():
+    libreta = Libreta()
+    libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    assert libreta.tomar_salida(0.0, AvisoLugar.DERECHA) is None
+
+
+def test_rodear_una_isla_marca_probado_el_camino_de_vuelta():
+    # A tiene salidas al norte y al oeste. Sale por el norte, rodea la isla y
+    # vuelve a A por el oeste: esa salida tiene que quedar probada (no repetir la vuelta).
+    libreta = Libreta()
+    a, _ = libreta.anotar('bifurcacion', 0.0, 0.0, 0.0,
+                          [AvisoLugar.ADELANTE, AvisoLugar.IZQUIERDA])
+    libreta.tomar_salida(0.0, AvisoLugar.ADELANTE)                      # norte
+    libreta.anotar('curva', 0.0, 1.0, 0.0, [AvisoLugar.IZQUIERDA])      # B
+    libreta.tomar_salida(0.0, AvisoLugar.IZQUIERDA)                     # oeste
+    libreta.anotar('curva', -1.0, 1.0, math.pi / 2, [AvisoLugar.IZQUIERDA])  # C
+    libreta.tomar_salida(math.pi / 2, AvisoLugar.IZQUIERDA)             # sur
+    libreta.anotar('curva', -1.0, 0.0, math.pi, [AvisoLugar.IZQUIERDA])  # D
+    libreta.tomar_salida(math.pi, AvisoLugar.IZQUIERDA)                 # este
+    # Llega a A desde el oeste, mirando al este: ve izquierda = norte, derecha = sur
+    # y atras = oeste. Son las mismas salidas de A: es A otra vez.
+    otra_vez, es_nuevo = libreta.anotar('bifurcacion', 0.05, 0.0, -math.pi / 2,
+                                        [AvisoLugar.IZQUIERDA, AvisoLugar.DERECHA])
+    assert not es_nuevo and otra_vez is a
+    assert all(s.estado == PROBADA for s in a.salidas)
+    oeste = [s for s in a.salidas if s.direccion == OESTE][0]
+    assert oeste.lleva_a == 4   # D

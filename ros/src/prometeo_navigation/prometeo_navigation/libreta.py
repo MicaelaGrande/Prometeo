@@ -124,6 +124,8 @@ class Libreta:
     anotar() recibe cada aviso del detector y hace una de dos cosas:
     - si el robot ya estuvo ahi, devuelve esa misma hoja (no la repite);
     - si no, agrega una hoja nueva.
+    tomar_salida() anota por donde sale el robot. En el anotar() siguiente, esa
+    salida y la del lugar al que llego quedan unidas (lleva_a), en los dos sentidos.
     """
 
     def __init__(self, margen_m=0.30):
@@ -131,6 +133,8 @@ class Libreta:
         # mismo lugar. Se ajusta probando (el robot real patina al girar).
         self.margen_m = margen_m
         self.lugares = []
+        self.actual = None          # la hoja del lugar donde esta el robot
+        self.saliendo_por = None    # la Salida que tomo y todavia no llego a otro lugar
 
     def anotar(self, tipo, x, y, orientacion, salidas):
         """Recibe un aviso del detector. Devuelve (hoja, es_nuevo).
@@ -142,14 +146,48 @@ class Libreta:
         direcciones = [direccion_de_salida(orientacion, s) for s in salidas]
         de_donde_vino = direccion_de_salida(orientacion, Mover.Goal.VUELTA)
 
-        repetido = self.buscar(x, y, set(direcciones) | {de_donde_vino})
-        if repetido is not None:
-            return repetido, False
+        hoja = self.buscar(x, y, set(direcciones) | {de_donde_vino})
+        es_nuevo = hoja is None
+        if es_nuevo:
+            hoja = Lugar(len(self.lugares) + 1, x, y, tipo,
+                         [Salida(d) for d in direcciones] + [Salida(de_donde_vino, PROBADA)])
+            self.lugares.append(hoja)
+        self._unir(hoja, de_donde_vino)
+        self.actual = hoja
+        return hoja, es_nuevo
 
-        hoja = Lugar(len(self.lugares) + 1, x, y, tipo,
-                     [Salida(d) for d in direcciones] + [Salida(de_donde_vino, PROBADA)])
-        self.lugares.append(hoja)
-        return hoja, True
+    def tomar_salida(self, orientacion, salida):
+        """El robot sale del lugar actual por esa salida (izquierda, adelante...).
+
+        La marca PROBADA y se acuerda de ella hasta llegar al lugar siguiente.
+        Devuelve esa Salida, o None si no hay lugar actual o no tiene esa salida.
+        """
+        if self.actual is None:
+            return None
+        direccion = direccion_de_salida(orientacion, salida)
+        for camino in self.actual.salidas:
+            if camino.direccion == direccion:
+                camino.estado = PROBADA
+                self.saliendo_por = camino
+                return camino
+        return None
+
+    def _unir(self, hoja, de_donde_vino):
+        """Une la salida que tomo en el lugar anterior con la de este lugar por donde llego.
+
+        Las dos quedan PROBADAS y cada una dice a que lugar lleva. Si llego a un lugar
+        repetido (por ejemplo, despues de rodear una isla), asi se marca probado el
+        camino por el que volvio, y Exploracion no lo repite.
+        """
+        if self.saliendo_por is None or self.actual is None:
+            return
+        anterior = self.actual
+        self.saliendo_por.lleva_a = hoja.numero
+        for camino in hoja.salidas:
+            if camino.direccion == de_donde_vino:
+                camino.estado = PROBADA
+                camino.lleva_a = anterior.numero
+        self.saliendo_por = None
 
     def buscar(self, x, y, direcciones):
         """La hoja de un lugar ya anotado que coincide, o None.
