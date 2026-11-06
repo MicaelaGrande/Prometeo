@@ -160,9 +160,18 @@ class DetectorDeLugares:
         self.confirmador_izquierda = Confirmador(lecturas_necesarias)
         self.confirmador_derecha = Confirmador(lecturas_necesarias)
         self.frente_inicial_cm = None  # F0: el frente cuando se confirmo el costado abierto
+        # Que costados quedaron abiertos en este lugar (se anotan al pasar a MIDIENDO_LUGAR)
+        self.izquierda_abierta = False
+        self.derecha_abierta = False
 
     def actualizar(self, izquierda_cm, derecha_cm, frente_cm):
-        """Recibe las lecturas de los tres ultrasonidos y cambia de etapa si corresponde."""
+        """Recibe las lecturas de los tres ultrasonidos y cambia de etapa si corresponde.
+
+        Devuelve (tipo, salidas) la UNICA vez que avisa un lugar (como lo arma
+        armar_lugar). El resto del tiempo devuelve None.
+        """
+        if self.etapa == MIDIENDO_LUGAR:
+            return self._medir_lugar(izquierda_cm, derecha_cm, frente_cm)
         if self.etapa == EN_PASILLO:
             izquierda = self._mirar_costado(izquierda_cm, self.promedio_izquierda,
                                             self.confirmador_izquierda, frente_cm)
@@ -174,7 +183,32 @@ class DetectorDeLugares:
             frente_sirve = frente_cm is not None and math.isfinite(frente_cm)
             if (izquierda or derecha) and frente_sirve:
                 self.frente_inicial_cm = frente_cm
+                self.izquierda_abierta = izquierda
+                self.derecha_abierta = derecha
                 self.etapa = MIDIENDO_LUGAR
+        return None
+
+    def _medir_lugar(self, izquierda_cm, derecha_cm, frente_cm):
+        """MIDIENDO_LUGAR: sigue avanzando hasta saber que lugar es.
+
+        Esquina: el frente llega a F0 / 2. Adelante hay pared, y el robot quedo en
+        el medio de la salida, listo para girar.
+        Falta (proximo paso): la puerta, cuando el costado se vuelve a cerrar.
+        """
+        # Si el otro costado se abre recien ahora, tambien cuenta: es una T.
+        if not self.izquierda_abierta:
+            self.izquierda_abierta = self._mirar_costado(
+                izquierda_cm, self.promedio_izquierda, self.confirmador_izquierda, frente_cm)
+        if not self.derecha_abierta:
+            self.derecha_abierta = self._mirar_costado(
+                derecha_cm, self.promedio_derecha, self.confirmador_derecha, frente_cm)
+
+        # Esquina: el frente llego a la mitad de F0. Sin dato (None) espera, y sin
+        # eco (inf) nunca es menor: adelante esta libre, no es una esquina.
+        if frente_cm is not None and frente_cm <= self.frente_inicial_cm / 2:
+            self.etapa = AVISADO
+            return armar_lugar(self.izquierda_abierta, False, self.derecha_abierta)
+        return None
 
     def _mirar_costado(self, medida_cm, promedio, confirmador, frente_cm):
         """True si este costado quedo confirmado como abierto."""

@@ -8,7 +8,7 @@ import math
 
 from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.lugares import (
-    EN_PASILLO, MIDIENDO_LUGAR, Confirmador, DetectorDeLugares, Promedio,
+    AVISADO, EN_PASILLO, MIDIENDO_LUGAR, Confirmador, DetectorDeLugares, Promedio,
     armar_lugar, costado_abierto, entro_al_pasillo, frente_muy_cerca, lectura_vigente)
 
 
@@ -229,6 +229,85 @@ def test_no_anota_f0_sin_un_frente_que_sirva():
     detector.actualizar(45, 20, frente_cm=90)  # ahora si hay un numero
     assert detector.etapa == MIDIENDO_LUGAR
     assert detector.frente_inicial_cm == 90
+
+
+# --- MIDIENDO_LUGAR: la esquina ---------------------------------------------
+
+def llevar_a_midiendo(detector, izquierda=45, derecha=20, f0=80):
+    """Pasillo de 20 cm de cada lado y despues 3 lecturas con la salida abierta.
+
+    Termina en MIDIENDO_LUGAR con F0 = f0.
+    """
+    detector.actualizar(20, 20, frente_cm=f0 + 10)
+    detector.actualizar(20, 20, frente_cm=f0 + 8)
+    detector.actualizar(izquierda, derecha, frente_cm=f0 + 4)
+    detector.actualizar(izquierda, derecha, frente_cm=f0 + 2)
+    detector.actualizar(izquierda, derecha, frente_cm=f0)
+    assert detector.etapa == MIDIENDO_LUGAR
+    assert detector.frente_inicial_cm == f0
+
+
+def test_esquina_avisa_curva_al_llegar_a_la_mitad_de_f0():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, izquierda=45, f0=80)
+
+    assert detector.actualizar(45, 20, frente_cm=60) is None   # todavia no llego
+    assert detector.actualizar(45, 20, frente_cm=41) is None
+    lugar = detector.actualizar(45, 20, frente_cm=40)           # 80 / 2
+
+    assert lugar == (Lugar.CURVA, [Lugar.IZQUIERDA])
+    assert detector.etapa == AVISADO
+
+
+def test_esquina_a_la_derecha():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, izquierda=20, derecha=45, f0=80)
+
+    assert detector.actualizar(20, 45, frente_cm=38) == (Lugar.CURVA, [Lugar.DERECHA])
+
+
+def test_t_con_los_dos_costados_abiertos_es_bifurcacion():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, izquierda=45, derecha=45, f0=80)
+
+    assert detector.actualizar(45, 45, frente_cm=40) == (
+        Lugar.BIFURCACION, [Lugar.IZQUIERDA, Lugar.DERECHA])
+
+
+def test_t_con_el_segundo_costado_abriendose_mas_tarde():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, izquierda=45, derecha=20, f0=80)
+    for frente in (70, 65, 60):                     # la derecha se abre recien ahora
+        assert detector.actualizar(45, 45, frente_cm=frente) is None
+
+    assert detector.actualizar(45, 45, frente_cm=40) == (
+        Lugar.BIFURCACION, [Lugar.IZQUIERDA, Lugar.DERECHA])
+
+
+def test_frente_sin_dato_o_sin_eco_sigue_midiendo():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, f0=80)
+
+    assert detector.actualizar(45, 20, frente_cm=None) is None
+    assert detector.actualizar(45, 20, frente_cm=math.inf) is None
+    assert detector.etapa == MIDIENDO_LUGAR
+    assert detector.actualizar(45, 20, frente_cm=40) == (Lugar.CURVA, [Lugar.IZQUIERDA])
+
+
+def test_despues_de_avisar_no_vuelve_a_avisar():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, f0=80)
+    assert detector.actualizar(45, 20, frente_cm=40) is not None
+
+    for frente in (35, 30, 20, 10):                 # el timbre ya se toco
+        assert detector.actualizar(45, 20, frente_cm=frente) is None
+    assert detector.etapa == AVISADO
+
+
+def test_en_el_pasillo_actualizar_no_avisa_nada():
+    detector = nuevo_detector()
+    for _ in range(5):
+        assert detector.actualizar(20, 20, frente_cm=100) is None
 
 
 # --- armar_lugar: el traductor para Decision (una prueba por fila de la tabla) ---
