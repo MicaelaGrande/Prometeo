@@ -76,7 +76,7 @@ fi
 cd "$CARPETA_ROS"
 if [ "$COMPILAR" = 1 ] || [ ! -f install/setup.bash ]; then
   echo ">> Compilando..."
-  colcon build --symlink-install
+  colcon build   # igual que en COMANDOS_COMPETENCIA.md (mezclar con --symlink-install rompe)
 fi
 source install/setup.bash
 
