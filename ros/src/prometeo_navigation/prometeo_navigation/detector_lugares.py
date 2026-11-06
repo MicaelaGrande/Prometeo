@@ -11,6 +11,10 @@
 #   modo_actual (String, del selector): en "manual" no avisa nada, porque los giros a
 #       mano darian saltos falsos (T2, "En manual"). Al volver a "auto" mira alrededor.
 #       Si nadie publica el modo (Gazebo sin selector), funciona como en automatico.
+#       Con el parametro modo_testeo:=true SI detecta en manual (para grabar un rosbag
+#       manejando a mano, o reproducirlo despues): avisa los lugares igual, y como nadie
+#       atiende /mover para mandar el reinicio, se reinicia solo (mirar_alrededor)
+#       reinicio_testeo_s segundos despues de cada aviso.
 #
 # Lee /distancias y no los tres /ultrasonido/*: ahi llegan los tres sensores JUNTOS
 # en un solo mensaje, asi que cada mensaje es una lectura nueva de los tres. Con
@@ -54,10 +58,22 @@ class NodoDetectorLugares(Node):
             ('lecturas_necesarias', 3),     # lecturas seguidas para confirmar
             ('distancia_frente_cm', 15.0),  # frente "muy cerca" (callejon, confirmar ya)
             ('ancho_pasillo_cm', 40.0),     # al arrancar: un costado mas lejos = salida
+            # Esquina = el frente llega a F0 * esto. 0.5 era F0 / 2, pero el robot, ya con
+            # mas velocidad al avanzar, no alcanzaba a frenar y chocaba. Subirlo reconoce la
+            # esquina antes; bajarlo la reconoce mas cerca de la pared.
+            ('fraccion_esquina', 0.65),
+            # Testeo: detectar tambien en manual (manejando a mano o con un rosbag)
+            ('modo_testeo', False),
+            # Solo en testeo y manual: segundos entre un aviso y el reinicio automatico
+            # (a 0.12 m/s, 2 s son ~24 cm: tiene que salir del lugar antes de buscar otro)
+            ('reinicio_testeo_s', 2.0),
         ]}
         self.detector = DetectorDeLugares(
             p['salto_cm'], p['lecturas_necesarias'], p['distancia_frente_cm'],
-            p['ancho_pasillo_cm'])
+            p['ancho_pasillo_cm'], p['fraccion_esquina'])
+        self.modo_testeo = p['modo_testeo']
+        self.reinicio_testeo_s = p['reinicio_testeo_s']
+        self.timer_reinicio = None
         # Al arrancar no hay historia: puede estar parado en el medio de un lugar
         self.detector.mirar_alrededor()
         self.en_manual = False
@@ -74,7 +90,8 @@ class NodoDetectorLugares(Node):
         self.pub_lugar = self.create_publisher(Lugar, '/navegacion/lugar', 10)
         self.get_logger().info(
             f'Detector de lugares listo (salto {p["salto_cm"]} cm, '
-            f'{p["lecturas_necesarias"]} lecturas, frente {p["distancia_frente_cm"]} cm)')
+            f'{p["lecturas_necesarias"]} lecturas, frente {p["distancia_frente_cm"]} cm'
+            f'{", MODO TESTEO: detecta tambien en manual" if self.modo_testeo else ""})')
 
     def al_moverse(self, mensaje):
         self.odom = mensaje.pose.pose
@@ -88,15 +105,26 @@ class NodoDetectorLugares(Node):
             # Volvio a automatico: lo que sabia de antes ya no sirve (lo movieron a mano),
             # y puede haber quedado en el medio de un lugar.
             self.detector.mirar_alrededor()
-        self.get_logger().info('Modo manual: no aviso lugares' if en_manual
-                               else 'Modo automatico: vuelvo a buscar lugares')
+        if en_manual and self.modo_testeo:
+            self.get_logger().info('Modo manual (testeo): sigo avisando lugares')
+        else:
+            self.get_logger().info('Modo manual: no aviso lugares' if en_manual
+                                   else 'Modo automatico: vuelvo a buscar lugares')
 
     def al_reiniciar(self, _mensaje):
         self.detector.reiniciar()
         self.get_logger().info('Reiniciado: busco el lugar siguiente')
 
+    def reiniciar_por_testeo(self):
+        """Testeo en manual: pasado el tiempo, busca el lugar siguiente (como /mover)."""
+        self.timer_reinicio.cancel()
+        self.destroy_timer(self.timer_reinicio)
+        self.timer_reinicio = None
+        self.detector.mirar_alrededor()
+        self.get_logger().info('Testeo: busco el lugar siguiente')
+
     def al_medir(self, mensaje):
-        if self.en_manual:
+        if self.en_manual and not self.modo_testeo:
             return
         if len(mensaje.data) != 3:
             self.get_logger().warning(
@@ -123,6 +151,9 @@ class NodoDetectorLugares(Node):
         else:
             self.get_logger().warning('Sin /odom: aviso el lugar con posicion 0, 0')
         self.pub_lugar.publish(aviso)
+        if self.modo_testeo and self.en_manual and self.timer_reinicio is None:
+            self.timer_reinicio = self.create_timer(self.reinicio_testeo_s,
+                                                    self.reiniciar_por_testeo)
         self.get_logger().info(
             f'LUGAR: {tipo} {salidas} en ({aviso.x:.2f}, {aviso.y:.2f}) '
             f'F0={self.detector.frente_inicial_cm} F1={self.detector.frente_final_cm}')

@@ -109,7 +109,8 @@ class NodoMover(Node):
             ('giro_extra_max_grados', 45.0),  # el maximo de pasos de mas
             # Sin /odom: cuanto gira de verdad por cada rad/s que se manda (calibrar:
             # mandar un giro de 360 y ver cuanto giro). 1 = sin patinar.
-            ('factor_giro_tiempo', 1.0),
+            # 2.0: con el firmware actual (duty minimo al girar) pedido 90 gira 180.
+            ('factor_giro_tiempo', 2.0),
             ('edad_max_odom_s', 0.5),        # /odom mas viejo que esto = no hay
             # Acercarse al cubo (medido con el robot: la camara ve hasta 10 cm, y la
             # garra necesita 2 o 3 cm mas)

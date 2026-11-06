@@ -162,8 +162,11 @@ class DetectorDeLugares:
     """
 
     def __init__(self, salto_cm, lecturas_necesarias, distancia_frente_cm,
-                 ancho_pasillo_cm=40.0):
+                 ancho_pasillo_cm=40.0, fraccion_esquina=0.5):
         self.salto_cm = salto_cm
+        # Esquina: el frente llego a F0 * fraccion_esquina. Mas cerca de 1 = la
+        # reconoce antes (el robot frena con mas distancia a la pared).
+        self.fraccion_esquina = fraccion_esquina
         self.lecturas_necesarias = lecturas_necesarias
         self.distancia_frente_cm = distancia_frente_cm
         self.ancho_pasillo_cm = ancho_pasillo_cm  # solo para MIRANDO_ALREDEDOR
@@ -252,7 +255,7 @@ class DetectorDeLugares:
 
         Puerta: un costado que se habia abierto se vuelve a cerrar antes de la
         esquina. El pasillo sigue derecho: adelante abierto. Se anota F1.
-        Esquina: el frente llega a F0 / 2. Adelante hay pared, y el robot quedo en
+        Esquina: el frente llega a F0 * fraccion_esquina (0.5 = F0 / 2). Adelante hay pared, y el robot quedo en
         el medio de la salida, listo para girar.
         Primero se mira la puerta: si el costado se cerro, ya no es una esquina.
         """
@@ -281,9 +284,9 @@ class DetectorDeLugares:
                 return armar_lugar(self.izquierda_abierta, True, self.derecha_abierta)
             return None
 
-        # Esquina: el frente llego a la mitad de F0. Sin dato (None) espera, y sin
+        # Esquina: el frente llego a F0 * fraccion_esquina. Sin dato (None) espera, y sin
         # eco (inf) nunca es menor: adelante esta libre, no es una esquina.
-        if frente_cm is not None and frente_cm <= self.frente_inicial_cm / 2:
+        if frente_cm is not None and frente_cm <= self.frente_inicial_cm * self.fraccion_esquina:
             self.etapa = AVISADO
             return armar_lugar(self.izquierda_abierta, False, self.derecha_abierta)
         return None
