@@ -12,13 +12,7 @@ firmware/esp32_cam/sdkconfig
 firmware/esp32_cam/sdkconfig.old
 firmware/esp32_cam/.vscode/
 
-# ROS 2
-build/
-install/
-log/
-
 # Python
-__pycache__/
 *.pyc
 
 # Archivos locales de pruebas de camara

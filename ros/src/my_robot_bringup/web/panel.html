@@ -235,8 +235,17 @@
           <span class="info" id="seg-info">Sin cambios desde el panel.</span>
         </div>
         <div class="nota">No es el freno de emergencia (ese es PARAR). Este frena solo si hay algo adelante: solo bloquea <b>avanzar</b>, retroceder y girar siempre pasan.<br>Prende y apaga los dos frenos por obstáculo: el de la <b>compu</b> (asistencia, si el panel se arrancó con
-          <code>asistencia:=true</code>) y el de la ESP32 (en <code>navegacion_bajo</code> está desconectado, pendiente en T11).
+          <code>asistencia:=true</code>) y el de la ESP32 (prendido desde el firmware de <code>l9110s</code>, 6/11).
           Apagarlo sirve para acercarse a un objeto, por ejemplo para agarrar el cubo. El centrado sigue funcionando.</div>
+
+        <h3>Motores frenados por protección</h3>
+        <div class="fila">
+          <button id="b-liberar">Liberar motores</button>
+          <span class="info" id="liberar-info">—</span>
+        </div>
+        <div class="nota">La ESP32 frena los 4 motores y los deja frenados si un puente H se esfuerza de más (se calienta), o si una
+          rueda no gira (atasco, apagado por ahora). Las órdenes no los sueltan: hay que apretar esto. Si el puente sigue caliente,
+          no suelta: esperar unos segundos y reintentar. También suelta el freno por obstáculo, pero solo si adelante está libre.</div>
       </div>
 
       <!-- AUTOMATICO -->
@@ -371,6 +380,7 @@ const CAM_URL = `http://${HOST}:${q.get("cam") || 8083}/stream`;
 const T = {
   modo: P + "/modo", estadoSel: P + "/estado_selector", manual: P + "/cmd_vel_manual",
   orden: P + "/orden_enviada", pedido: P + "/pedido_operador", seguridad: P + "/seguridad_habilitada",
+  liberar: P + "/motores/liberar",
   distancias: P + "/distancias", odom: P + "/odom", aviso: P + "/navegacion/aviso", libreta: P + "/mapeo/libreta",
   estadoMot: P + "/estado_motores", velocidad: P + "/velocidad", ruedas: P + "/velocidad_ruedas",
   frenoObst: P + "/freno_emergencia", servos: P + "/servos/estado", deteccion: "/vision/detections",
@@ -446,6 +456,7 @@ function conectar() {
     enviar({ op: "advertise", topic: T.manual, type: "geometry_msgs/msg/Twist" });
     enviar({ op: "advertise", topic: T.pedido, type: "std_msgs/msg/String" });
     enviar({ op: "advertise", topic: T.seguridad, type: "std_msgs/msg/Bool" });
+    enviar({ op: "advertise", topic: T.liberar, type: "std_msgs/msg/Empty" });
     enviar({ op: "advertise", topic: T.brazo, type: "std_msgs/msg/Float32MultiArray" });
     for (const t in TIPOS) suscribir(t);
   };
@@ -664,6 +675,7 @@ $("b-abandonar").onclick = () => abandonar(estado.modo === "auto");
 $("b-capturar-a").onclick = () => capturar(estado.modo === "auto");
 $("b-abandonar-a").onclick = () => abandonar(estado.modo === "auto");
 $("t-pedido").textContent = T.pedido;
+$("b-liberar").onclick = () => { publicar(T.liberar, {}); $("liberar-info").textContent = "Pedido enviado " + new Date().toLocaleTimeString(); anotar("Liberar motores: pedido", "modo"); };
 $("b-seg-on").onclick = () => { publicar(T.seguridad, { data: true }); $("seg-info").textContent = "Pedido: prender"; anotar("Freno por obstáculo: pedido PRENDER", "modo"); };
 $("b-seg-off").onclick = () => { publicar(T.seguridad, { data: false }); $("seg-info").textContent = "Pedido: apagar"; anotar("Freno por obstáculo: pedido APAGAR", "freno"); };
 

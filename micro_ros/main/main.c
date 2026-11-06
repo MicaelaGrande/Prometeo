@@ -23,6 +23,7 @@
 #include <rmw_microros/rmw_microros.h>
 #include <std_msgs/msg/string.h>
 #include <std_msgs/msg/bool.h>
+#include <std_msgs/msg/empty.h>
 #include <std_msgs/msg/float32.h>
 #include <std_msgs/msg/float32_multi_array.h>
 #include <geometry_msgs/msg/twist.h>
@@ -75,6 +76,7 @@ static rcl_publisher_t pub_vel;
 static rcl_publisher_t pub_servos;
 static rcl_subscription_t sub_cmd_vel;
 static rcl_subscription_t sub_seguridad;
+static rcl_subscription_t sub_liberar;
 static rcl_subscription_t sub_camara;
 static rcl_subscription_t sub_brazo;
 static rcl_timer_t timer;
@@ -89,6 +91,7 @@ static std_msgs__msg__Float32MultiArray msg_servos;      // ángulos actuales, e
 static float buf_servos[CANT_SERVOS];
 static int freno_publicado = -1;       // último valor publicado en /freno_emergencia (-1 = ninguno)
 static std_msgs__msg__Bool msg_seguridad;
+static std_msgs__msg__Empty msg_liberar;
 static geometry_msgs__msg__Twist msg_cmd_vel;
 static std_msgs__msg__Float32 msg_camara;
 static std_msgs__msg__Float32MultiArray msg_brazo;
@@ -129,10 +132,15 @@ static void cmd_vel_callback(const void *msgin)
     }
 
     // linear.x en m/s (+ adelante), angular.z en rad/s (+ izquierda): igual que Gazebo.
-    // El freno de emergencia usa el avance normalizado (-1..1):
-    // float avance_norm = seguridad_filtrar(m->linear.x / (CONFIG_PROMETEO_VEL_MAX_MM_S / 1000.0f));   // desactivado por ahora
+    // El freno de emergencia usa el avance normalizado (-1..1) y devuelve 0 si avanzar es peligroso.
+    // Solo bloquea el avance: girar y retroceder pasan siempre.
+    float lineal = (float)m->linear.x;
+    float avance_norm = seguridad_filtrar(lineal / (CONFIG_PROMETEO_VEL_MAX_MM_S / 1000.0f));
+    if (lineal > 0.0f && avance_norm <= 0.0f) {
+        lineal = 0.0f;
+    }
     // La cinemática de 4 ruedas, el escalado y el failsafe están en motores_set_twist()
-    motores_set_twist((float)m->linear.x, (float)m->angular.z);
+    motores_set_twist(lineal, (float)m->angular.z);
     estado_actual = "MOVIENDO";
 }
 
@@ -143,6 +151,22 @@ static void seguridad_callback(const void *msgin)
 {
     const std_msgs__msg__Bool *m = (const std_msgs__msg__Bool *)msgin;
     seguridad_habilitar(m->data);
+}
+
+// =========================================================
+// LLEGA /motores/liberar: suelta lo que dejó frenados a los motores
+//  - fallas latcheadas (atasco / sobreesfuerzo del puente), con motores_liberar_fallas()
+//  - freno de emergencia por pared, con seguridad_liberar(): NO lo suelta mientras el
+//    frente siga demasiado cerca; retroceder y girar siempre se pueden
+// =========================================================
+static void liberar_callback(const void *msgin)
+{
+    (void) msgin;
+    bool fallas_ok = motores_liberar_fallas();
+    bool freno_ok  = seguridad_liberar();
+    ESP_LOGW(TAG, "Liberar: fallas %s, freno de pared %s",
+             fallas_ok ? "liberadas" : "puente todavia caliente",
+             freno_ok  ? "libre"     : "SIGUE (frente muy cerca)");
 }
 
 // =========================================================
@@ -329,6 +353,8 @@ static bool crear_entidades(void)
 
     RCRET(rclc_subscription_init_default(&sub_seguridad, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "seguridad_habilitada"));
+    RCRET(rclc_subscription_init_default(&sub_liberar, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Empty), "motores/liberar"));
     RCRET(rclc_subscription_init_default(&sub_camara, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "camara/cmd"));
 
@@ -339,13 +365,15 @@ static bool crear_entidades(void)
     RCRET(rclc_timer_init_default(&timer_ruedas, &support, RCL_MS_TO_NS(PERIOD_MS), timer_ruedas_callback));
 
     executor = rclc_executor_get_zero_initialized_executor();
-    RCRET(rclc_executor_init(&executor, &support.context, 6, &allocator));  // 2 timers + 4 suscripciones
+    RCRET(rclc_executor_init(&executor, &support.context, 7, &allocator));  // 2 timers + 5 suscripciones
     RCRET(rclc_executor_add_timer(&executor, &timer));
     RCRET(rclc_executor_add_timer(&executor, &timer_ruedas));
     RCRET(rclc_executor_add_subscription(&executor, &sub_cmd_vel, &msg_cmd_vel,
           &cmd_vel_callback, ON_NEW_DATA));
     RCRET(rclc_executor_add_subscription(&executor, &sub_seguridad, &msg_seguridad,
           &seguridad_callback, ON_NEW_DATA));
+    RCRET(rclc_executor_add_subscription(&executor, &sub_liberar, &msg_liberar,
+          &liberar_callback, ON_NEW_DATA));
     RCRET(rclc_executor_add_subscription(&executor, &sub_camara, &msg_camara,
           &camara_callback, ON_NEW_DATA));
     RCRET(rclc_executor_add_subscription(&executor, &sub_brazo, &msg_brazo,
@@ -363,6 +391,7 @@ static void destruir_entidades(void)
 
     (void) rcl_subscription_fini(&sub_cmd_vel, &node);
     (void) rcl_subscription_fini(&sub_seguridad, &node);
+    (void) rcl_subscription_fini(&sub_liberar, &node);
     (void) rcl_subscription_fini(&sub_camara, &node);
     (void) rcl_subscription_fini(&sub_brazo, &node);
     (void) rcl_publisher_fini(&publisher, &node);
@@ -473,11 +502,13 @@ static void micro_ros_task(void * arg)
 
 void app_main(void)
 {
-    // 1. Iniciar la librería de motores (arranca frenado)
-    motores_init();
-
-    // 1a. Iniciar los encoders (cuentan pulsos por interrupción aunque no haya agente)
+    // 1. Iniciar los encoders (cuentan pulsos por interrupción aunque no haya agente).
+    //    Van ANTES que los motores: la protección de atasco de motores.c lee los encoders
+    //    desde que arranca la tarea de rampa (ver motores.h, "SEGURIDAD").
     encoders_init();
+
+    // 1a. Iniciar la librería de motores (arranca frenado)
+    motores_init();
 
     // 1b. Iniciar los servos (van a su posición home sin saltos)
     servos_init();

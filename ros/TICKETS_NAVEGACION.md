@@ -527,16 +527,24 @@ Lo que el panel espera de los otros nodos (todavía no existen):
 lugar. **El robot real todavía no publica `odom`** (solo `velocidad`, estimada): sin eso no hay
 posición ni rastro, y Mapeo tampoco puede anotar dónde está cada lugar.
 
-**Pendiente para charlar con Ignacio y Natasha: el freno por obstáculo no funciona** en el
-firmware de `navegacion_bajo`. Desde `dc3e843` (4/11), `cmd_vel_callback` en
-`micro_ros/main/main.c` ya no llama a `seguridad_filtrar()`, así que la tarea de `seguridad.c`
-nunca se entera de la velocidad y no frena. Siguen andando el failsafe de 300 ms y el PARAR del
-selector. Arreglo propuesto, sin aplicar: pasar `linear.x` a la escala −1..1, filtrar y volver a m/s
-(`seguridad_filtrar(v / vel_max) * vel_max`). Sin peligro da la misma velocidad; con peligro da
-0; el giro y el retroceso no se tocan. Riesgos: que frene de más si el frente no mide (por eso
-el botón del panel para apagarlo con `seguridad_habilitada`) y que frene a ~4 cm a 0,15 m/s.
-Hay que compilarlo y cargarlo en la ESP32. En Cat. B, evitar choques es obligatorio (−15 si
-falta).
+**Firmware (decidido con el equipo el 6/11/2026):** va el de `navegacion_bajo` con lo nuevo de
+`refactor/microros/l9110s` (Ignacio), unido en `feature/ros/navegacion-alta`:
+
+- **Freno por obstáculo prendido** otra vez en `cmd_vel_callback` (`main.c`): pasa `linear.x` a la
+  escala −1..1 para `seguridad_filtrar()` y, si hay peligro, no deja avanzar. Girar y retroceder
+  pasan siempre. Decisión lo apaga para acercarse al cubo. Si el frente no mide, no deja avanzar:
+  se apaga desde el panel.
+- **Protección térmica de los puentes H** prendida: estima el esfuerzo de cada puente (duty² de
+  sus dos motores, promedio de 10 s) y, si pasa el 150 %, frena los 4 motores y quedan frenados.
+- **Protección de atasco APAGADA por defecto** (`PROMETEO_MOTORES_STALL_ENABLE`): con encoders
+  poco confiables, un encoder que no cuenta parece una rueda trabada y frenaría todo en plena ronda.
+- **`/motores/liberar`** suelta esos frenos (y el de pared, solo si el frente está libre). En el
+  panel: pestaña Automático, **Liberar motores**.
+- `encoders_init()` pasó antes que `motores_init()`, como pide la protección de atasco.
+- Se conservan `/velocidad` y `/servos/estado` (la pestaña Brazo necesita `/servos/estado`).
+  Quedan 6 de 6 publicadores y 5 de 6 suscripciones de micro-ROS (`app-colcon.meta`).
+- Compilado con ESP-IDF 5.5.5 el 6/11. **Falta que Ignacio lo cargue y lo pruebe con las ruedas
+  en el aire.**
 
 **Actualización (5/11/2026, tarde):** el panel tiene pestañas (Monitoreo, Manual, Automático,
 Motores, Visión, Brazo, Registro con descarga), la cámara siempre visible (`camara_panel.py`,
