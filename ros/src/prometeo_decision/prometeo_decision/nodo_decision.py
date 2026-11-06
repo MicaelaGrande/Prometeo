@@ -13,6 +13,8 @@
 #   /brazo/agarrado      el brazo agarro (true) o no     -> logica.cubo_agarrado() / cubo_no_agarrado()
 #   /prometeo/modo_actual     'auto' o 'manual', del selector del panel
 #   /prometeo/freno_operador  true si apretaron PARAR
+#   /prometeo/pedido_operador 'abandonar' (boton del panel) -> logica.abandonar_color()
+#                             vale tambien en manual
 #
 # Solo decide en modo 'auto' y sin PARAR. Mientras tanto ignora la camara y los
 # lugares, porque el robot lo esta manejando una persona.
@@ -22,6 +24,7 @@
 #   /volver              accion: volver al inicio (con o sin cubo)
 #   /decision/explorar   timbre para que Exploracion elija por donde ir
 #   /decision/agarrar    timbre para que el brazo agarre el cubo
+#   /decision/retomar    timbre: abandono el color, Navegacion vuelve al ultimo lugar
 #   /prometeo/seguridad_habilitada  false = modo recoger (sin freno) para acercarse al cubo
 #   /decision/estado     en que anda Decision, para mirar desde la terminal
 
@@ -37,7 +40,7 @@ from prometeo_interfaces.action import Mover, Volver
 from prometeo_interfaces.msg import Lugar
 
 from prometeo_decision.logica import (
-    ACERCARSE, AGARRAR, Decision, EXPLORAR, IR_A_SALIDA, VOLVER, VOLVIENDO,
+    ACERCARSE, AGARRAR, Decision, EXPLORAR, IR_A_SALIDA, RETOMAR, VOLVER, VOLVIENDO,
 )
 
 
@@ -76,9 +79,14 @@ class NodoDecision(Node):
         guardado = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(String, '/prometeo/modo_actual', self.cambio_de_modo, guardado)
         self.create_subscription(Bool, '/prometeo/freno_operador', self.cambio_de_freno, guardado)
+        # Botones del panel (Capturar / Abandonar). Abandonar vale tambien en manual:
+        # se aprieta con el robot frente al cubo, mientras prueban la garra a mano.
+        self.create_subscription(String, '/prometeo/pedido_operador', self.al_pedir_operador, 10)
 
         # Lo que manda
         self.pub_explorar = self.create_publisher(Empty, '/decision/explorar', 10)
+        # Abandono el color: Navegacion vuelve al ultimo lugar y se decide de nuevo
+        self.pub_retomar = self.create_publisher(Empty, '/decision/retomar', 10)
         self.pub_agarrar = self.create_publisher(Empty, '/decision/agarrar', 10)
         self.pub_seguridad = self.create_publisher(Bool, topic_seguridad, 10)
         self.pub_estado = self.create_publisher(String, '/decision/estado', 10)
@@ -138,6 +146,11 @@ class NodoDecision(Node):
         self.get_logger().info(f'Lugar: {msg.tipo} con salidas {list(msg.salidas)}')
         self.hacer(self.logica.llegar_a_lugar(msg.tipo, list(msg.salidas)))
 
+    def al_pedir_operador(self, msg):
+        if msg.data == 'abandonar':
+            self.get_logger().info('El operador abandona el color')
+            self.hacer(self.logica.abandonar_color())
+
     def al_responder_el_brazo(self, msg):
         if not self.puede_decidir():
             return
@@ -175,6 +188,10 @@ class NodoDecision(Node):
         elif orden.accion == VOLVER:
             self.pub_seguridad.publish(Bool(data=True))  # vuelve el freno
             self.pedir_volver()
+
+        elif orden.accion == RETOMAR:
+            self.pub_seguridad.publish(Bool(data=True))  # vuelve el freno
+            self.pub_retomar.publish(Empty())
 
         self.publicar_estado()
 

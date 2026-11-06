@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from prometeo_decision.logica import (
     ACERCANDO, ACERCARSE, AGARRAR, BIFURCACION, BUSCANDO_COLOR, CALLEJON, CURVA,
     DERECHA, Decision, EXPLORAR, IR_A_SALIDA, IZQUIERDA, ADELANTE,
-    MAXIMO_DE_INTENTOS, SIGUIENDO, TERMINADO, VOLVER, VOLVIENDO,
+    MAXIMO_DE_INTENTOS, RETOMAR, SIGUIENDO, TERMINADO, VOLVER, VOLVIENDO,
     VOLVIENDO_SIN_CUBO,
 )
 
@@ -352,18 +352,17 @@ def test_falla_3_veces_y_abandona_el_color():
     assert d.cubo_no_agarrado().accion == AGARRAR  # intento 3
     orden = d.cubo_no_agarrado()                   # fallo el 3: abandona
 
-    assert orden.accion == VOLVER
-    assert d.estado == VOLVIENDO_SIN_CUBO
+    # No vuelve a la largada: retoma desde el ultimo lugar con el proximo color
+    assert orden.accion == RETOMAR
+    assert d.estado == BUSCANDO_COLOR
     assert d.color_actual is None
     assert d.cubos_faltantes == {'green', 'blue'}  # el rojo quedo descartado
 
 
-def test_al_llegar_al_inicio_sigue_con_el_verde():
+def test_despues_de_abandonar_sigue_con_el_verde():
     d = llegar_al_cubo_rojo()
     for _ in range(MAXIMO_DE_INTENTOS):
         d.cubo_no_agarrado()
-    d.llegue_al_inicio()
-    assert d.estado == BUSCANDO_COLOR
 
     ver_varias(d, [flecha('red'), flecha('blue'), flecha('green')])
     assert d.color_actual == 'green'  # el rojo ya no cuenta
@@ -373,12 +372,52 @@ def test_con_el_color_nuevo_los_intentos_empiezan_de_cero():
     d = llegar_al_cubo_rojo()
     for _ in range(MAXIMO_DE_INTENTOS):
         d.cubo_no_agarrado()
-    d.llegue_al_inicio()
     ver_varias(d, [flecha('green')])
     ver_varias(d, [cubo('green')])
     d.llegue_al_cubo()
 
     assert d.cubo_no_agarrado().accion == AGARRAR  # no abandona el verde enseguida
+
+
+# --- Boton Abandonar del panel -----------------------------------------------
+
+def test_abandonar_frente_al_cubo_retoma_con_el_proximo_color():
+    d = llegar_al_cubo_rojo()
+    orden = d.abandonar_color()
+    assert orden.accion == RETOMAR
+    assert d.estado == BUSCANDO_COLOR
+    assert d.cubos_faltantes == {'green', 'blue'}
+
+
+def test_abandonar_despues_de_pedir_volver_tambien_vale():
+    # Con la garra a mano (sin_brazo), Decision ya paso a VOLVIENDO
+    d = llegar_al_cubo_rojo()
+    d.cubo_agarrado()
+    assert d.estado == VOLVIENDO
+    assert d.abandonar_color().accion == RETOMAR
+    assert d.estado == BUSCANDO_COLOR
+
+
+def test_abandonar_mientras_sigue_las_flechas():
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    assert d.estado == SIGUIENDO
+    assert d.abandonar_color().accion == RETOMAR
+    assert 'red' not in d.cubos_faltantes
+
+
+def test_abandonar_sin_color_no_hace_nada():
+    d = Decision()
+    assert d.abandonar_color() is None
+    assert d.cubos_faltantes == {'red', 'green', 'blue'}
+
+
+def test_abandonar_el_ultimo_color_vuelve_al_inicio():
+    d = Decision()
+    d.cubos_faltantes = {'red'}
+    ver_varias(d, [flecha('red')])
+    assert d.abandonar_color().accion == VOLVER
+    assert d.estado == VOLVIENDO_SIN_CUBO
 
 
 def test_llegar_al_inicio_sin_haber_abandonado_no_hace_nada():

@@ -88,6 +88,7 @@ EXPLORAR = 'explorar'        # que Exploracion elija por donde seguir
 ACERCARSE = Mover.Goal.ACERCARSE      # acercarse al cubo que tiene adelante
 AGARRAR = 'agarrar'          # pedirle al brazo que agarre el cubo
 VOLVER = 'volver'            # ya tiene el cubo: volver al deposito (T8)
+RETOMAR = 'retomar'          # abandono el color: volver al ultimo lugar y seguir desde ahi
 
 
 @dataclass
@@ -307,14 +308,34 @@ class Decision:
             self.intentos += 1
             return Orden(AGARRAR)
 
-        # Fallo todas las veces: abandona este color para siempre.
+        # Fallo todas las veces: abandona este color, igual que el boton Abandonar.
+        return self.abandonar_color()
+
+    def abandonar_color(self):
+        """Abandona el color actual: el operador aprieta Abandonar, o fallo el agarre.
+
+        Lo descarta para siempre y sigue buscando el proximo color DESDE DONDE ESTA:
+        no vuelve a la largada, para no perder tiempo. Devuelve Orden(RETOMAR):
+        Navegacion da media vuelta y vuelve al ultimo lugar, y ahi se decide de nuevo
+        (la flecha del color nuevo, o Exploracion prueba otro camino, o retrocede al
+        lugar con opciones mas cercano).
+        Si ya no queda ningun color, vuelve al inicio (Orden VOLVER).
+        Devuelve None si no hay un color que abandonar.
+        """
+        # VOLVIENDO tambien: con la garra a mano (sin_brazo) Decision ya pidio volver
+        # cuando se dan cuenta de que no lo pueden agarrar.
+        if self.color_actual is None or self.estado not in (SIGUIENDO, ACERCANDO, VOLVIENDO):
+            return None
         self.cubos_faltantes.discard(self.color_actual)
         self.color_actual = None
         self.flecha_pendiente = None
         self.ultimas.clear()
         self.intentos = 0
-        self.estado = VOLVIENDO_SIN_CUBO
-        return Orden(VOLVER)
+        if not self.cubos_faltantes:
+            self.estado = VOLVIENDO_SIN_CUBO
+            return Orden(VOLVER)
+        self.estado = BUSCANDO_COLOR
+        return Orden(RETOMAR)
 
     def cubo_depositado(self):
         """Avisan que el cubo quedo en su deposito. Libera el color."""
