@@ -18,6 +18,22 @@ GIRO_DE_SALIDA = {
 }
 
 
+def giro_de_salida(salida):
+    """Cuanto girar (radianes, + izquierda) para tomar esa salida. None si no existe."""
+    return GIRO_DE_SALIDA.get(salida)
+
+
+def frente_abierto(frente_cm, umbral_cm):
+    """True si adelante hay un pasillo (mide umbral_cm o mas, o sin eco). None sin dato.
+
+    Sirve para confirmar el giro: despues de doblar, adelante tiene que estar el
+    pasillo nuevo. Si sigue la pared, el robot giro de menos (las ruedas patinaron).
+    """
+    if frente_cm is None:
+        return None
+    return frente_cm >= umbral_cm
+
+
 def normalizar_angulo(angulo):
     """Lleva un angulo al rango -pi a pi.
 

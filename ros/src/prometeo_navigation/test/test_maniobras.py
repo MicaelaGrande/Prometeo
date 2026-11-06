@@ -6,8 +6,8 @@ import math
 from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.maniobras import (
-    angulo_objetivo, es_puerta, frente_en_el_medio_de_la_puerta, normalizar_angulo,
-    velocidad_de_giro)
+    angulo_objetivo, es_puerta, frente_abierto, frente_en_el_medio_de_la_puerta,
+    giro_de_salida, normalizar_angulo, velocidad_de_giro)
 
 
 def cerca(a, b):
@@ -86,3 +86,22 @@ def test_esquina_no_es_puerta():
 
 def test_sin_lugar_no_es_puerta():
     assert not es_puerta(None)
+
+
+def test_giro_de_salida():
+    assert cerca(giro_de_salida(Lugar.IZQUIERDA), math.pi / 2)
+    assert cerca(giro_de_salida(Lugar.DERECHA), -math.pi / 2)
+    assert giro_de_salida('cualquiera') is None
+
+
+def test_frente_abierto_es_pasillo():
+    assert frente_abierto(120, 40) is True
+    assert frente_abierto(math.inf, 40) is True
+
+
+def test_frente_con_pared_no_es_pasillo():
+    assert frente_abierto(20, 40) is False
+
+
+def test_frente_sin_dato_no_se_sabe():
+    assert frente_abierto(None, 40) is None

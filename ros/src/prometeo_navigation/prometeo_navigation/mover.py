@@ -11,8 +11,17 @@
 #   AVANZANDO       va derecho por el pasillo (el centrado lo hace la asistencia / Bajo nivel)
 #   ESPERANDO       el detector aviso un lugar: frena y espera una orden
 #   RETROCEDIENDO   en una puerta: vuelve hasta el medio antes de girar
-#   GIRANDO         gira hasta la orientacion de la salida, mirando /odom
+#   GIRANDO         gira hacia la salida y lo confirma con el ultrasonido de adelante
 # Al terminar de girar avisa "ya sali" al detector, contesta TERMINADA y vuelve a AVANZANDO.
+#
+# El giro (las ruedas patinan mucho y los encoders no son confiables):
+#   1. Gira lo que cree que es el angulo pedido. Cuanto giro lo saca de /odom si llega;
+#      si no, de la velocidad que mando por el tiempo (por factor_giro_tiempo).
+#   2. Confirma con el frente: si ve el pasillo abierto (frente_abierto_cm), termino.
+#   3. Si sigue viendo pared (giro de menos), sigue despacio, hasta giro_extra_max_grados.
+#   4. Si tampoco, el robot no esta girando: BLOQUEADA y pide AYUDA en el panel
+#      (navegacion/aviso). En una puerta el frente ya esta abierto: no se puede
+#      confirmar, confia en el paso 1.
 #
 # Publica en cmd_vel_auto: el selector solo lo deja pasar en automatico. En manual no
 # publica, y si habia una orden en curso la cancela.
@@ -39,8 +48,8 @@ from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.detector_lugares import orientacion_de
 from prometeo_navigation.lugares import distancia_a_lectura
 from prometeo_navigation.maniobras import (
-    angulo_objetivo, es_puerta, frente_en_el_medio_de_la_puerta, normalizar_angulo,
-    velocidad_de_giro)
+    es_puerta, frente_abierto, frente_en_el_medio_de_la_puerta, giro_de_salida,
+    normalizar_angulo, velocidad_de_giro)
 from prometeo_navigation.modos import MANUAL
 
 AVANZANDO = 'avanzando'
@@ -62,6 +71,13 @@ class NodoMover(Node):
             ('giro_max', 0.9),               # rad/s
             ('tolerancia_giro_grados', 3.0),
             ('tiempo_max_giro_s', 10.0),     # si no llega, BLOQUEADA
+            # Giro confirmado con el ultrasonido de adelante
+            ('frente_abierto_cm', 40.0),     # adelante mide esto o mas = pasillo
+            ('giro_extra_max_grados', 45.0),  # lo que sigue girando si todavia ve pared
+            # Sin /odom: cuanto gira de verdad por cada rad/s que se manda (calibrar:
+            # mandar un giro de 360 y ver cuanto giro). 1 = sin patinar.
+            ('factor_giro_tiempo', 1.0),
+            ('edad_max_odom_s', 0.5),        # /odom mas viejo que esto = no hay
             ('tiempo_max_retroceso_s', 6.0),
             ('frecuencia_hz', 20.0),
         ]}
@@ -71,9 +87,15 @@ class NodoMover(Node):
         self.etapa = AVANZANDO
         self.en_manual = False
         self.orientacion = None      # de /odom (None = todavia no llego)
+        self.hora_odom = None        # cuando llego el ultimo /odom
         self.frente_cm = None        # de /distancias
         self.ultimo_lugar = None     # el ultimo aviso del detector
-        self.objetivo = None         # GIRANDO: hacia donde tiene que quedar mirando
+        self.giro_pedido = 0.0       # GIRANDO: cuanto tiene que girar (rad, + izquierda)
+        self.girado = 0.0            # cuanto lleva girado
+        self.confirmando = False     # ya giro lo pedido: busca el pasillo con el frente
+        self.girado_al_confirmar = 0.0
+        self.ultima_orientacion = None  # para sumar lo girado con /odom
+        self.ultimo_giro = 0.0       # el ultimo rad/s mandado (para sumar sin /odom)
         self.frente_objetivo = None  # RETROCEDIENDO: lo que mide el frente en el medio
         self.desde = None            # cuando empezo a girar o retroceder (para el limite)
         self.pedido = None           # la orden en curso (goal handle), o None
@@ -90,6 +112,8 @@ class NodoMover(Node):
         self.pub_reiniciar = self.create_publisher(Empty, '/navegacion/reiniciar_detector', 10)
         # Para Mapeo: por que salida se fue del lugar (la anota PROBADA en la libreta)
         self.pub_salida = self.create_publisher(String, '/navegacion/salida_tomada', 10)
+        # El panel muestra en rojo los avisos que empiezan con AYUDA
+        self.pub_aviso = self.create_publisher(String, 'navegacion/aviso', 10)
 
         ActionServer(self, Mover, '/mover', self.ejecutar,
                      goal_callback=self.al_recibir_pedido,
@@ -101,6 +125,7 @@ class NodoMover(Node):
 
     def al_moverse(self, mensaje):
         self.orientacion = orientacion_de(mensaje.pose.pose.orientation)
+        self.hora_odom = self.get_clock().now()
 
     def al_medir(self, mensaje):
         if len(mensaje.data) == 3:
@@ -151,12 +176,8 @@ class NodoMover(Node):
             self.get_logger().warning(f'PROVISORIO: "{orden.accion}" todavia no esta hecho')
             self.terminar(Mover.Result.BLOQUEADA)
             return
-        if self.orientacion is None:
-            self.get_logger().error('Sin /odom: no puedo girar')
-            self.terminar(Mover.Result.BLOQUEADA)
-            return
-        objetivo = angulo_objetivo(self.orientacion, orden.salida)
-        if objetivo is None:
+        giro = giro_de_salida(orden.salida)
+        if giro is None:
             self.get_logger().error(f'Salida desconocida: "{orden.salida}"')
             self.terminar(Mover.Result.BLOQUEADA)
             return
@@ -164,7 +185,7 @@ class NodoMover(Node):
         if orden.salida == Lugar.ADELANTE:
             self.salir_del_lugar()       # no hay que girar
             return
-        self.objetivo = objetivo
+        self.giro_pedido = giro
         medio = frente_en_el_medio_de_la_puerta(
             self.ultimo_lugar.frente_inicial, self.ultimo_lugar.frente_final
         ) if es_puerta(self.ultimo_lugar) else None
@@ -218,17 +239,76 @@ class NodoMover(Node):
             return 0.0
         return -self.p['velocidad_retroceso']
 
+    def empezar_a_girar(self):
+        self.girado = 0.0
+        self.confirmando = False
+        self.ultimo_giro = 0.0
+        self.ultima_orientacion = self.orientacion if self.hay_odom() else None
+        self.get_logger().info('Giro con ' + ('/odom' if self.hay_odom() else
+                                              'el tiempo (no hay /odom)'))
+
     def girar(self):
         if self.paso_el_tiempo(self.p['tiempo_max_giro_s']):
-            self.get_logger().error('El giro no termino a tiempo')
-            self.terminar(Mover.Result.BLOQUEADA)
+            self.pedir_ayuda('el giro no termino a tiempo')
             return 0.0
-        error = normalizar_angulo(self.objetivo - self.orientacion)
-        velocidad = velocidad_de_giro(error, self.p['ganancia_giro'], self.p['giro_min'],
-                                      self.p['giro_max'], self.tolerancia)
-        if velocidad == 0.0:
+        self.girado += self.giro_desde_el_paso_anterior()
+
+        # 1. Girar lo pedido
+        if not self.confirmando:
+            velocidad = velocidad_de_giro(
+                self.giro_pedido - self.girado, self.p['ganancia_giro'],
+                self.p['giro_min'], self.p['giro_max'], self.tolerancia)
+            if velocidad != 0.0:
+                return self.mandar_giro(velocidad)
+            self.confirmando = True
+            self.girado_al_confirmar = self.girado
+
+        # 2. Confirmar con el frente
+        abierto = frente_abierto(self.frente_cm, self.p['frente_abierto_cm'])
+        if abierto:
+            self.get_logger().info(
+                f'Giro confirmado: {math.degrees(self.girado):.0f} grados, '
+                f'frente {self.frente_cm} cm')
             self.salir_del_lugar()
+            return self.mandar_giro(0.0)
+        if abierto is None:
+            return self.mandar_giro(0.0)          # sin dato: espera quieto
+
+        # 3. Sigue viendo pared: giro de menos. Sigue despacio, con un limite
+        extra = abs(self.girado - self.girado_al_confirmar)
+        if extra > math.radians(self.p['giro_extra_max_grados']):
+            # 4. No aparece el pasillo: el robot no esta girando (o no hay salida)
+            self.pedir_ayuda(f'giro {math.degrees(self.girado):.0f} grados y '
+                             f'sigo viendo pared a {self.frente_cm} cm')
+            return self.mandar_giro(0.0)
+        return self.mandar_giro(math.copysign(self.p['giro_min'], self.giro_pedido))
+
+    def giro_desde_el_paso_anterior(self):
+        """Cuanto giro desde el paso anterior (rad): con /odom si hay, si no por el tiempo."""
+        if self.hay_odom():
+            anterior = self.ultima_orientacion
+            self.ultima_orientacion = self.orientacion
+            if anterior is None:
+                return 0.0
+            return normalizar_angulo(self.orientacion - anterior)
+        self.ultima_orientacion = None
+        return self.ultimo_giro * self.p['factor_giro_tiempo'] / self.p['frecuencia_hz']
+
+    def mandar_giro(self, velocidad):
+        self.ultimo_giro = velocidad
         return velocidad
+
+    def pedir_ayuda(self, motivo):
+        texto = f'AYUDA: no pude girar ({motivo}). Pasa a manual y giralo a mano'
+        self.get_logger().error(texto)
+        self.pub_aviso.publish(String(data=texto))
+        self.terminar(Mover.Result.BLOQUEADA)
+
+    def hay_odom(self):
+        if self.hora_odom is None:
+            return False
+        edad = (self.get_clock().now() - self.hora_odom).nanoseconds / 1e9
+        return edad <= self.p['edad_max_odom_s']
 
     # ------------------------------- Ayudas -------------------------------
 
@@ -237,6 +317,8 @@ class NodoMover(Node):
             self.get_logger().info(f'Etapa: {etapa}')
         self.etapa = etapa
         self.desde = self.get_clock().now()
+        if etapa == GIRANDO:
+            self.empezar_a_girar()
 
     def paso_el_tiempo(self, segundos):
         return (self.get_clock().now() - self.desde).nanoseconds / 1e9 > segundos
