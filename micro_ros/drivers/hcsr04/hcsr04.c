@@ -58,19 +58,23 @@ esp_err_t hcsr04_new(const hcsr04_config_t *config, hcsr04_handle_t *out_handle)
     h->rx_queue = xQueueCreate(1, sizeof(rmt_rx_done_event_data_t));
     ESP_GOTO_ON_FALSE(h->rx_queue, ESP_ERR_NO_MEM, err, TAG, "no se pudo crear la cola");
 
-    /* ---- Canal TX -> TRIG ---- */
-    rmt_tx_channel_config_t tx_cfg = {
-        .clk_src = RMT_CLK_SRC_DEFAULT,     // selecciona el reloj, que utilizan varios canales
-        .gpio_num = config->trig_gpio,      // a que pin se conecta en la esp32
-        .mem_block_symbols = 64,            // el minimo de memoria si dma no esta activado
-        .resolution_hz = RMT_RESOLUTION_HZ, // resolucion de contador de icks interno
-        .trans_queue_depth = 1,             // cuantas transacciones pueden esperar en la cola
-        .intr_priority = 0,                  // configura la prioridad
-        .flags.allow_pd = false};           // el periferico no se apaga en light sleep solo importa si usas ese modo
-    ESP_GOTO_ON_ERROR(rmt_new_tx_channel(&tx_cfg, &h->tx_chan), err, TAG, "fallo canal TX");
+    /* ---- Canal TX -> TRIG (solo si este sensor es dueño del pin) ----
+     * Con TRIG compartido, un solo sensor crea el TX; los demas usan trig_gpio = GPIO_NUM_NC.
+     * Dos canales TX en el mismo pin se pisan en la matriz de GPIO: solo el ultimo dispararia. */
+    if (config->trig_gpio != GPIO_NUM_NC) {
+        rmt_tx_channel_config_t tx_cfg = {
+            .clk_src = RMT_CLK_SRC_DEFAULT,     // selecciona el reloj, que utilizan varios canales
+            .gpio_num = config->trig_gpio,      // a que pin se conecta en la esp32
+            .mem_block_symbols = 64,            // el minimo de memoria si dma no esta activado
+            .resolution_hz = RMT_RESOLUTION_HZ, // resolucion de contador de ticks interno
+            .trans_queue_depth = 1,             // cuantas transacciones pueden esperar en la cola
+            .intr_priority = 0,                 // configura la prioridad
+            .flags.allow_pd = false};           // el periferico no se apaga en light sleep
+        ESP_GOTO_ON_ERROR(rmt_new_tx_channel(&tx_cfg, &h->tx_chan), err, TAG, "fallo canal TX");
 
-    rmt_copy_encoder_config_t copy_cfg = {};
-    ESP_GOTO_ON_ERROR(rmt_new_copy_encoder(&copy_cfg, &h->copy_encoder), err, TAG, "fallo encoder");
+        rmt_copy_encoder_config_t copy_cfg = {};
+        ESP_GOTO_ON_ERROR(rmt_new_copy_encoder(&copy_cfg, &h->copy_encoder), err, TAG, "fallo encoder");
+    }
 
     /* ---- Canal RX <- ECHO (mismo clk_src que el TX) ---- */
     rmt_rx_channel_config_t rx_cfg = {
@@ -90,7 +94,9 @@ esp_err_t hcsr04_new(const hcsr04_config_t *config, hcsr04_handle_t *out_handle)
     h->rx_config.signal_range_min_ns = ECHO_FILTER_NS;
     h->rx_config.signal_range_max_ns = ECHO_IDLE_MAX_NS;
 
-    ESP_GOTO_ON_ERROR(rmt_enable(h->tx_chan), err, TAG, "fallo enable TX");
+    if (h->tx_chan) {   // sin TX cuando el TRIG es compartido (trig_gpio = GPIO_NUM_NC)
+        ESP_GOTO_ON_ERROR(rmt_enable(h->tx_chan), err, TAG, "fallo enable TX");
+    }
     ESP_GOTO_ON_ERROR(rmt_enable(h->rx_chan), err, TAG, "fallo enable RX");
 
     *out_handle = h;
@@ -105,15 +111,19 @@ err:
  * todos los sensores, para que los rebotes de un pulso no lleguen al siguiente. */
 static int64_t s_last_trigger_us = INT64_MIN / 2;
 
-/* Arma el receptor y manda el pulso de TRIG. No espera el eco. */
-static esp_err_t start(hcsr04_handle_t h)
+/* Arma el receptor (ANTES de disparar: el eco llega pocos cientos de us despues) */
+static esp_err_t arm(hcsr04_handle_t h)
 {
-    /* Armar el receptor ANTES de disparar (el eco llega pocos cientos de us despues) */
     xQueueReset(h->rx_queue);
-    ESP_RETURN_ON_ERROR(rmt_receive(h->rx_chan, h->rx_buffer, sizeof(h->rx_buffer), &h->rx_config),
-                        TAG, "fallo rmt_receive");
+    return rmt_receive(h->rx_chan, h->rx_buffer, sizeof(h->rx_buffer), &h->rx_config);
+}
 
-    /* Pulso de trigger: 10 us en alto y luego bajo */
+/* Manda el pulso de TRIG de 10 us (si este sensor tiene TX). No espera el eco. */
+static esp_err_t fire(hcsr04_handle_t h)
+{
+    if (!h->tx_chan) {
+        return ESP_OK;
+    }
     static const rmt_symbol_word_t trigger_symbol = {
         .level0 = 1,
         .duration0 = TRIGGER_TICKS,
@@ -121,16 +131,15 @@ static esp_err_t start(hcsr04_handle_t h)
         .duration1 = 1,
     };
     const rmt_transmit_config_t tx_cfg = {.loop_count = 0};
-    ESP_RETURN_ON_ERROR(rmt_transmit(h->tx_chan, h->copy_encoder, &trigger_symbol,
-                                     sizeof(trigger_symbol), &tx_cfg),
-                        TAG, "fallo rmt_transmit");
-    return ESP_OK;
+    return rmt_transmit(h->tx_chan, h->copy_encoder, &trigger_symbol, sizeof(trigger_symbol), &tx_cfg);
 }
 
 /* Espera el eco de un sensor ya disparado y lo convierte a cm. */
 static esp_err_t finish(hcsr04_handle_t h, float *distance_cm)
 {
-    ESP_RETURN_ON_ERROR(rmt_tx_wait_all_done(h->tx_chan, 100), TAG, "TX no termino");
+    if (h->tx_chan) {
+        ESP_RETURN_ON_ERROR(rmt_tx_wait_all_done(h->tx_chan, 100), TAG, "TX no termino");
+    }
 
     /* Esperar el resultado del RX (eco hasta ~23 ms + 25 ms de silencio de cierre) */
     rmt_rx_done_event_data_t evt;
@@ -182,11 +191,19 @@ esp_err_t hcsr04_measure_group_cm(const hcsr04_handle_t *hs, size_t n,
         vTaskDelay(pdMS_TO_TICKS(wait_ms) + 1);
     }
 
-    /* 2) Disparar todos los sensores del grupo casi a la vez (unos pocos us de diferencia) */
+    /* 2) Armar TODOS los receptores y despues disparar. Con TRIG compartido un solo pulso
+     *    dispara a todos los sensores; si cada uno tiene su TRIG, se disparan casi a la vez. */
     s_last_trigger_us = esp_timer_get_time();
     for (size_t i = 0; i < n; i++)
     {
-        errs[i] = hs[i] ? start(hs[i]) : ESP_ERR_INVALID_ARG;
+        errs[i] = hs[i] ? arm(hs[i]) : ESP_ERR_INVALID_ARG;
+    }
+    for (size_t i = 0; i < n; i++)
+    {
+        if (errs[i] == ESP_OK)
+        {
+            errs[i] = fire(hs[i]);
+        }
     }
 
     /* 3) Recoger el eco de cada uno */

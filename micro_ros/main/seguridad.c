@@ -15,7 +15,7 @@ static const char *TAG_SEG = "seguridad";
 
 /* ================== Umbral de freno (cm). Cambiar aca. ================== */
 
-/* Tiempo hasta darse cuenta: ciclo de sensores (120 ms) + esta tarea (20 ms).
+/* Tiempo hasta darse cuenta: ciclo de sensores (60-85 ms) + esta tarea (20 ms).
  * Con mediana seria 0.26 (un ciclo mas de atraso). */
 #define T_REACCION_S   0.14f
 
@@ -36,7 +36,7 @@ static const char *TAG_SEG = "seguridad";
 /* Libera recien a umbral + esto, para no frenar/soltar en el borde */
 #define HISTERESIS_CM  2.0f
 
-/* Mediciones seguidas con el frente libre para soltar el freno (~120 ms c/u).
+/* Mediciones seguidas con el frente libre para soltar el freno (~60-85 ms c/u).
  * Frena con 1 lectura (rapido) pero suelta con varias (lento): de cerca el
  * HC-SR04 da lecturas falsas y una sola no tiene que soltarlo */
 #define CICLOS_PARA_LIBERAR 3
@@ -101,7 +101,7 @@ static void seguridad_task(void *arg)
         uint32_t n;
         float frente = frente_cm(&n);
         float avance = avance_pedido;
-        /* La tarea gira cada 20 ms pero el sensor mide cada ~120 ms:
+        /* La tarea gira cada 20 ms pero el sensor mide cada ~60-85 ms:
          * para soltar se cuentan mediciones nuevas, no vueltas */
         bool medicion_nueva = (n != ultima_medicion);
         ultima_medicion = n;

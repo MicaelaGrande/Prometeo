@@ -11,7 +11,7 @@
 #define SENSORES_TASK_STACK  4096
 #define SENSORES_TASK_PRIO   4     // debajo de micro-ROS: nunca le gana a /cmd_vel
 
-#define LOG_CADA_CICLOS 8      // log de sensores cada ~1 s (cada ciclo dura ~120 ms)
+#define LOG_CADA_CICLOS 8      // log de sensores cada ~1 s (cada ciclo dura ~60 ms)
 
 static const char *TAG_SENS = "sensores";
 
@@ -115,10 +115,8 @@ static void sensores_task(void *arg)
     int ciclo = 0;
 
     while (1) {
-        /* Turno 1: los laterales juntos (apuntan en direcciones opuestas, no se interfieren) */
-        hcsr04_measure_group_cm(&sensors[SENSOR_IZQ], 2, &cm[SENSOR_IZQ], &errs[SENSOR_IZQ]);
-        /* Turno 2: el frente solo, 60 ms despues para que se apaguen los rebotes */
-        hcsr04_measure_group_cm(&sensors[SENSOR_FRENTE], 1, &cm[SENSOR_FRENTE], &errs[SENSOR_FRENTE]);
+        /* TRIG compartido: un solo pulso dispara los 3 sensores, asi que se miden juntos */
+        hcsr04_measure_group_cm(sensors, NUM_SENSORS, cm, errs);
 
         char txt[NUM_SENSORS][40];
         float nuevas[NUM_SENSORS];
@@ -165,11 +163,11 @@ static void sensores_task(void *arg)
 
 esp_err_t sensores_init(void)
 {
-    /* Un config por sensor: TRIG y ECHO propios */
+    /* TRIG compartido: lo crea IZQ (sensors[0]); DER y FRENTE solo reciben su ECHO */
     hcsr04_config_t cfg[NUM_SENSORS] = {
         [SENSOR_IZQ]    = { .trig_gpio = CONFIG_PROMETEO_SENSOR_TRIG_PIN, .echo_gpio = CONFIG_PROMETEO_SENSOR_IZQ_ECHO_PIN },
-        [SENSOR_DER]    = { .trig_gpio = CONFIG_PROMETEO_SENSOR_TRIG_PIN, .echo_gpio = CONFIG_PROMETEO_SENSOR_DER_ECHO_PIN },
-        [SENSOR_FRENTE] = { .trig_gpio = CONFIG_PROMETEO_SENSOR_TRIG_PIN, .echo_gpio = CONFIG_PROMETEO_SENSOR_FRENTE_ECHO_PIN },
+        [SENSOR_DER]    = { .trig_gpio = GPIO_NUM_NC, .echo_gpio = CONFIG_PROMETEO_SENSOR_DER_ECHO_PIN },
+        [SENSOR_FRENTE] = { .trig_gpio = GPIO_NUM_NC, .echo_gpio = CONFIG_PROMETEO_SENSOR_FRENTE_ECHO_PIN },
     };
     for (int i = 0; i < NUM_SENSORS; i++) {
         esp_err_t err = hcsr04_new(&cfg[i], &sensors[i]);
