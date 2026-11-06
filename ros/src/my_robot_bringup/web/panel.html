@@ -92,6 +92,7 @@
   #p-brazo kbd { display: inline-block; min-width: 2em; text-align: center; padding: 2px 6px; border-radius: 6px;
                  border: 1px solid var(--line); background: var(--bg); font: .85rem ui-monospace, monospace; }
   #p-brazo kbd.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #cam-k-e.on, #cam-k-r.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   /* Camara */
   #cam-caja { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 4 / 3; }
@@ -353,6 +354,7 @@
         <img id="cam" alt="Lo que ve la cámara del robot">
         <div id="cam-sin">Sin imagen de la cámara.<br>Revisar que esté corriendo la cámara (o visión).</div>
       </div>
+      <p class="info"><kbd id="cam-k-e">E</kbd> <kbd id="cam-k-r">R</kbd> girar la cámara · ángulo pedido: <span id="cam-ang">90°</span></p>
     </section>
     <section>
       <h2>Ultrasonidos</h2>
@@ -382,6 +384,7 @@ const T = {
   estadoMot: P + "/estado_motores", velocidad: P + "/velocidad", ruedas: P + "/velocidad_ruedas",
   frenoObst: P + "/freno_emergencia", deteccion: "/vision/detections",
   joy: P + "/joy", frenoAsist: P + "/freno_asistencia", brazo: P + "/brazo/cmd",
+  camara: P + "/camara/cmd",
 };
 const TIPOS = {
   [T.estadoSel]: "std_msgs/msg/String", [T.orden]: "geometry_msgs/msg/Twist",
@@ -454,6 +457,7 @@ function conectar() {
     enviar({ op: "advertise", topic: T.seguridad, type: "std_msgs/msg/Bool" });
     enviar({ op: "advertise", topic: T.liberar, type: "std_msgs/msg/Empty" });
     enviar({ op: "advertise", topic: T.brazo, type: "std_msgs/msg/Float32MultiArray" });
+    enviar({ op: "advertise", topic: T.camara, type: "std_msgs/msg/Float32" });
     for (const t in TIPOS) suscribir(t);
   };
   ws.onmessage = ev => {
@@ -682,6 +686,37 @@ document.addEventListener("keydown", e => {
 });
 document.addEventListener("keyup", e => { const t = MAPA_TECLAS[e.key]; if (t) teclas.delete(t); });
 window.addEventListener("blur", () => teclas.clear());   // si se cambia de ventana, soltar todo
+
+// ---------- Servo de la cámara con E / R ----------
+// Mientras se mantiene la tecla, cada CAM_TICK_MS corre el ángulo CAM_PASO grados y lo
+// manda a camara/cmd (Float32, grados). El firmware lo limita a 0-180 y arranca en 90.
+// E suma grados y R resta: si en el robot queda al revés, cambiar el signo en CAM_TECLAS.
+const CAM_TICK_MS = 100, CAM_PASO = 6, CAM_MIN = 0, CAM_MAX = 180;
+const CAM_TECLAS = { e: +1, E: +1, r: -1, R: -1 };
+let camAngulo = 90;
+const camApretadas = new Set();
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
+  const k = e.key.toLowerCase();
+  if (CAM_TECLAS[k]) { e.preventDefault(); camApretadas.add(k); }
+});
+document.addEventListener("keyup", e => {
+  const k = e.key.toLowerCase();
+  if (!CAM_TECLAS[k] || !camApretadas.delete(k)) return;
+  if (!camApretadas.size) anotar(`Cámara: ${camAngulo.toFixed(0)}°`, "local");
+});
+window.addEventListener("blur", () => camApretadas.clear());
+setInterval(() => {
+  $("cam-k-e").classList.toggle("on", camApretadas.has("e"));
+  $("cam-k-r").classList.toggle("on", camApretadas.has("r"));
+  if (!camApretadas.size) return;
+  let sentido = 0;
+  for (const k of camApretadas) sentido += CAM_TECLAS[k];
+  if (!sentido) return;
+  camAngulo = Math.min(CAM_MAX, Math.max(CAM_MIN, camAngulo + sentido * CAM_PASO));
+  $("cam-ang").textContent = camAngulo.toFixed(0) + "°";
+  publicar(T.camara, { data: camAngulo });
+}, CAM_TICK_MS);
 
 let estabaManejando = false;
 setInterval(() => {

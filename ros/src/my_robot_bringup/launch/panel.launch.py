@@ -69,7 +69,8 @@ def generate_launch_description():
         " '/orden_enviada', '/estado_selector', '/pedido_operador', '/seguridad_habilitada',"
         " '/distancias', '/odom', '/navegacion/aviso', '/mapeo/libreta',"
         " '/estado_motores', '/velocidad', '/velocidad_ruedas', '/freno_emergencia',"
-        " '/brazo/cmd', '/joy', '/freno_asistencia', '/motores/liberar']]"
+        " '/brazo/cmd', '/joy', '/freno_asistencia', '/motores/liberar',"
+        " '/camara/cmd']]"
         " + ['/vision/detections']) + ']'",
     ])
 
