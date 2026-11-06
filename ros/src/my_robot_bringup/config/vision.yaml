@@ -1,7 +1,7 @@
-# Default parameters for huggin_vision/object_recognition (node name: vision_node).
+# Default parameters for huggin_vision/object_recognition (node name: vision_node, con o sin namespace).
 # Loaded by launch/vision.launch.py; pass another file with  vision_params:=/path/to/file.yaml
 # Values below equal the defaults declared in the Python code.
-vision_node:
+'/**':   # cualquier namespace (/prometeo en el robot real, ninguno en Gazebo)
   ros__parameters:
     # Floor frame detections are published in (x forward, y left, z up,
     # origin on the floor)

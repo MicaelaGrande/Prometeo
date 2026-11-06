@@ -69,7 +69,7 @@ def generate_launch_description():
         " '/orden_enviada', '/estado_selector', '/pedido_operador', '/seguridad_habilitada',"
         " '/distancias', '/odom', '/navegacion/aviso', '/mapeo/libreta',"
         " '/estado_motores', '/velocidad', '/velocidad_ruedas', '/freno_emergencia',"
-        " '/servos/estado', '/brazo/cmd', '/joy', '/freno_asistencia', '/motores/liberar']]"
+        " '/brazo/cmd', '/joy', '/freno_asistencia', '/motores/liberar']]"
         " + ['/vision/detections']) + ']'",
     ])
 
@@ -154,6 +154,7 @@ def generate_launch_description():
         # (igual que vision_real.launch.py)
         Node(
             package='huggin_vision', executable='object_recognition', name='vision_node',
+            namespace=ns,   # pan_topic (camara/cmd) queda en /prometeo/camara/cmd, como la ESP32
             parameters=[PathJoinSubstitution([FindPackageShare('my_robot_bringup'), 'config',
                                               'vision.yaml'])],
             output='screen',

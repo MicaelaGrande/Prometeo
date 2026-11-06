@@ -16,10 +16,14 @@ def generate_launch_description():
             default_value=PathJoinSubstitution(
                 [bringup_pkg_path, 'config', 'vision.yaml']),
             description='parameter file for the vision node'),
+        DeclareLaunchArgument(
+            'ns', default_value='prometeo',
+            description="namespace del robot ('prometeo' en el real)"),
         Node(
             package='huggin_vision',
             executable='object_recognition',
             name='vision_node',
+            namespace=LaunchConfiguration('ns'),
             parameters=[LaunchConfiguration('vision_params')],
             output='screen'),
     ])

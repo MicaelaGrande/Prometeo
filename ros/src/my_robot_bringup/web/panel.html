@@ -289,7 +289,7 @@
       <!-- BRAZO -->
       <div class="pestana" id="p-brazo">
         <h2>Control manual del brazo</h2>
-        <div class="nota" id="br-aviso">Esperando la posición de los servos (/servos/estado)… Los controles se habilitan cuando llega.</div>
+        <div class="nota">El panel no recibe la posición de los servos: los controles parten de la postura inicial del firmware (reposo elevado) y muestran lo <b>pedido</b>. Si la ESP32 se reinicia, el brazo vuelve a esa postura y el panel no se entera.</div>
         <p class="info">Cada orden manda los 4 ángulos juntos a <code>/brazo/cmd</code> [base, hombro, codo, pinza].
           El brazo se mueve con la rampa del firmware (no salta). Los deslizadores mandan la orden al <b>soltarlos</b>.
           Con <b>PARAR</b> puesto, el brazo no recibe órdenes.</p>
@@ -308,7 +308,7 @@
         </div>
         <p class="info">En esta pestaña las flechas mueven el <b>brazo</b>, no las ruedas. ESPACIO sigue siendo PARAR.
           Hacé clic en la página (no en un cuadro de texto) para que lea las teclas.</p>
-        <table class="brazo"><thead><tr><th>Articulación</th><th>Mover</th><th>Pedido</th><th>Real</th></tr></thead>
+        <table class="brazo"><thead><tr><th>Articulación</th><th>Mover</th><th>Pedido</th></tr></thead>
           <tbody id="br-juntas"></tbody></table>
         <h3>Pinza</h3>
         <div class="fila-br">
@@ -320,7 +320,6 @@
         <h3>Posturas</h3>
         <div class="fila-br">
           <button id="br-reposo" class="verde">Reposo elevado</button>
-          <button id="br-copiar">Copiar posición real</button>
         </div>
         <div class="fila-br">
           <input type="text" id="br-nombre" placeholder="nombre (ej: preagarre)" style="width:14em">
@@ -332,8 +331,6 @@
         <p class="info">Las posturas se guardan en este navegador. “Copiar lista” las copia como texto para anotarlas.</p>
         <div class="nota roja">Ojo con la cámara delante de la garra: moverse de a poco (±5°) y pasar por posturas intermedias.
           Los límites del firmware no evitan choques.</div>
-        <h3>Servos (telemetría)</h3>
-        <table><thead><tr><th>Servo</th><th>Ángulo</th></tr></thead><tbody id="servos"></tbody></table>
       </div>
 
       <!-- REGISTRO -->
@@ -383,7 +380,7 @@ const T = {
   liberar: P + "/motores/liberar",
   distancias: P + "/distancias", odom: P + "/odom", aviso: P + "/navegacion/aviso", libreta: P + "/mapeo/libreta",
   estadoMot: P + "/estado_motores", velocidad: P + "/velocidad", ruedas: P + "/velocidad_ruedas",
-  frenoObst: P + "/freno_emergencia", servos: P + "/servos/estado", deteccion: "/vision/detections",
+  frenoObst: P + "/freno_emergencia", deteccion: "/vision/detections",
   joy: P + "/joy", frenoAsist: P + "/freno_asistencia", brazo: P + "/brazo/cmd",
 };
 const TIPOS = {
@@ -392,7 +389,7 @@ const TIPOS = {
   [T.aviso]: "std_msgs/msg/String", [T.libreta]: "std_msgs/msg/String",
   [T.estadoMot]: "std_msgs/msg/String", [T.velocidad]: "geometry_msgs/msg/Twist",
   [T.ruedas]: "std_msgs/msg/Float32MultiArray", [T.frenoObst]: "std_msgs/msg/Bool",
-  [T.servos]: "std_msgs/msg/Float32MultiArray", [T.deteccion]: "huggin_vision_msgs/msg/DetectionArray",
+  [T.deteccion]: "huggin_vision_msgs/msg/DetectionArray",
   [T.joy]: "sensor_msgs/msg/Joy", [T.frenoAsist]: "std_msgs/msg/Bool",
 };
 // Para la tabla "Que esta llegando": nombre visible y cada cuanto deberia llegar (ms)
@@ -400,13 +397,12 @@ const SALUD = [
   ["Selector", T.estadoSel, 3000], ["Orden a la ESP32", T.orden, 1000], ["Ultrasonidos", T.distancias, 2000],
   ["Estado de la ESP32", T.estadoMot, 3000], ["Velocidad estimada", T.velocidad, 3000],
   ["Ruedas (encoders)", T.ruedas, 3000], ["Freno por obstáculo", T.frenoObst, 0],
-  ["Servos", T.servos, 3000], ["Visión", T.deteccion, 3000], ["Posición (odom)", T.odom, 3000],
+  ["Visión", T.deteccion, 3000], ["Posición (odom)", T.odom, 3000],
   ["Libreta (Mapeo)", T.libreta, 0], ["Avisos", T.aviso, 0], ["Joystick", T.joy, 0],
   ["Asistencia (freno de la compu)", T.frenoAsist, 0],
 ];
 const DIST_LEJOS_CM = 400;   // igual que micro_ros/main/sensores.h
 const CERCA_CM = 15;
-const SERVOS = ["Cámara", "Base del brazo", "Hombro", "Codo", "Garra"];   // orden de servos/estado
 const $ = id => document.getElementById(id);
 const ultimo = {};   // topic -> hora del ultimo mensaje (ms)
 
@@ -526,16 +522,6 @@ function recibir(topic, msg) {
       $("m-freno").textContent = activo ? `ACTIVO (${fuentes}): no deja avanzar` : "libre";
       $("b-obstaculo").style.display = activo ? "block" : "none"; break;
     }
-    case T.servos: {
-      $("servos").innerHTML = "";
-      (msg.data || []).forEach((v, i) => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${SERVOS[i] || "Servo " + (i + 1)}</td><td class="grande">${v.toFixed(0)}°</td>`;
-        $("servos").appendChild(tr);
-      });
-      brazoTelemetria(msg.data || []);
-      break;
-    }
     case T.deteccion: mostrarVision(msg.detections || []); break;
   }
 }
@@ -604,8 +590,7 @@ setInterval(() => {
   const vivo = (t, ms) => edad(t) < ms;
   pill("p-selector", vivo(T.estadoSel, 3000) ? "ok" : "bad", vivo(T.estadoSel, 3000) ? "selector" : "selector: no responde");
   if (!vivo(T.estadoSel, 3000)) { $("modo").className = "modo nada"; $("fuente").textContent = "—"; $("fuente").className = "fuente"; }
-  // La ESP32 está viva si llega su estado o la telemetría de los servos (firmware "solo brazo")
-  const espViva = vivo(T.estadoMot, 3000) || vivo(T.servos, 3000);
+  const espViva = vivo(T.estadoMot, 3000);
   pill("p-esp32", espViva ? "ok" : "bad", espViva ? "ESP32" : "ESP32: sin datos");
   pill("p-sensores", vivo(T.distancias, 2000) ? "ok" : "bad", vivo(T.distancias, 2000) ? "ultrasonidos" : "ultrasonidos: sin datos");
   pill("p-vision", vivo(T.deteccion, 3000) ? "ok" : "warn", vivo(T.deteccion, 3000) ? "visión" : "visión: sin datos");
@@ -800,17 +785,17 @@ try { const g = localStorage.getItem("pestana"); if (g) document.querySelector(`
 pedirDibujo();
 // ---------- Brazo (control 100% manual) ----------
 // /brazo/cmd = [base, hombro, codo, pinza] en grados. Se mandan SIEMPRE los 4 valores
-// (JSON no admite NaN), por eso los controles arrancan con la posición real de los servos.
+// (JSON no admite NaN), por eso los controles arrancan en la postura inicial del firmware (BR_REPOSO).
 // Límites = los del firmware (micro_ros/drivers/mg90s/mg90s.c): fuera de eso, el firmware recorta.
 const BR = [
-  { nombre: "Base",   min: 40, max: 140, tele: 1 },
-  { nombre: "Hombro", min: 0,  max: 150, tele: 2 },
-  { nombre: "Codo",   min: 0,  max: 150, tele: 3 },
-  { nombre: "Pinza",  min: 30, max: 100, tele: 4 },
+  { nombre: "Base",   min: 40, max: 140 },
+  { nombre: "Hombro", min: 0,  max: 150 },
+  { nombre: "Codo",   min: 0,  max: 150 },
+  { nombre: "Pinza",  min: 30, max: 100 },
 ];
 const BR_REPOSO = [100, 30, 20, 90];   // reposo elevado probado; pinza 90 = abierta
 const BR_PASO = 5;
-let brPedido = null;   // último [base, hombro, codo, pinza] pedido (null = todavía sin telemetría)
+let brPedido = BR_REPOSO.slice();   // último [base, hombro, codo, pinza] pedido; no hay telemetría de los servos
 
 function brLeer(clave, def) { try { const v = JSON.parse(localStorage.getItem(clave)); return v ?? def; } catch (e) { return def; } }
 function brEscribir(clave, v) { try { localStorage.setItem(clave, JSON.stringify(v)); } catch (e) {} }
@@ -821,15 +806,7 @@ $("br-juntas").innerHTML = BR.map((j, i) => `<tr>
   <td><button data-br="${i}" data-d="-${BR_PASO}">−${BR_PASO}</button>
       <input type="range" id="br-r${i}" min="${j.min}" max="${j.max}" step="1">
       <button data-br="${i}" data-d="${BR_PASO}">+${BR_PASO}</button></td>
-  <td class="grande" id="br-p${i}">—</td><td class="grande" id="br-t${i}">—</td></tr>`).join("");
-
-function brHabilitar(si) {
-  document.querySelectorAll("#p-brazo button, #p-brazo input[type=range]").forEach(x => {
-    if (!["br-exportar"].includes(x.id)) x.disabled = !si;
-  });
-  if (si) brDibujarPosturas();   // para habilitar también los botones "Ir"
-}
-brHabilitar(false);
+  <td class="grande" id="br-p${i}">—</td></tr>`).join("");
 
 function brMostrar() {
   if (!brPedido) return;
@@ -837,7 +814,6 @@ function brMostrar() {
 }
 
 function brMandar(angulos, motivo, silencioso) {
-  if (!brPedido) { anotar("Brazo: todavía no llegó la posición de los servos, no se manda nada", "local"); return; }
   if (estado.freno) { if (!silencioso) anotar("Brazo: PARAR está puesto, no se mueve", "freno"); brMostrar(); return false; }
   const a = angulos.map((v, i) => brLim(i, v));
   if (!publicar(T.brazo, { layout: { dim: [], data_offset: 0 }, data: a })) {
@@ -846,16 +822,6 @@ function brMandar(angulos, motivo, silencioso) {
   brPedido = a; brMostrar();
   if (!silencioso) anotar(`Brazo${motivo ? " (" + motivo + ")" : ""}: [${a.map(v => v.toFixed(0)).join(", ")}]`, "local");
   return true;
-}
-
-function brazoTelemetria(d) {
-  BR.forEach((j, i) => { if (d[j.tele] !== undefined) $("br-t" + i).textContent = d[j.tele].toFixed(0) + "°"; });
-  if (!brPedido && d.length >= 5) {
-    brPedido = BR.map((j, i) => brLim(i, d[j.tele]));
-    brMostrar(); brHabilitar(true);
-    $("br-aviso").style.display = "none";
-    anotar(`Brazo: controles listos, posición real [${brPedido.join(", ")}]`, "local");
-  }
 }
 
 document.querySelectorAll("#br-juntas button").forEach(b => b.onclick = () => {
@@ -941,12 +907,6 @@ setInterval(() => {
 }, BR_TICK_MS);
 
 $("br-reposo").onclick = () => brMandar(BR_REPOSO, "reposo elevado");
-$("br-copiar").onclick = () => {
-  const t = BR.map((j, i) => parseFloat($("br-t" + i).textContent));
-  if (t.some(isNaN)) return;
-  brPedido = t.map((v, i) => brLim(i, v)); brMostrar();
-  anotar(`Brazo: controles copiados de la posición real [${brPedido.join(", ")}]`, "local");
-};
 
 // Posturas guardadas: { nombre: [base, hombro, codo, pinza] }
 let brPosturas = brLeer("br-posturas", {});
@@ -983,6 +943,7 @@ $("br-exportar").onclick = () => {
                                           () => prompt("Copiá la lista:", texto));
 };
 brDibujarPosturas();
+brMostrar();
 
 conectar();
 </script>
