@@ -32,6 +32,7 @@
  *   reset              borra resultados y arranca el ciclo desde el motor A
  *   pausa | parar      frena todo y queda en pausa
  *   siguiente          salta al siguiente motor (en auto)
+ *   liberar            suelta las fallas latcheadas (atasco / sobreesfuerzo) de motores.c
  *   setall a b c d [ms]  manual: los 4 motores a la vez, cada uno con SU duty (A B C D, -1..1)
  *   set X duty [ms]    manual: motor X (o "all") a ese duty durante ms (def. 2000, máx. 10000)
  *   vmax v             potencia máxima (0.1..1.0) del ciclo automático, de los 4 motores
@@ -144,7 +145,7 @@ static portMUX_TYPE estado_mux = portMUX_INITIALIZER_UNLOCKED;
 // =========================================================
 typedef enum {
     C_AUTO, C_RESET, C_PAUSA, C_SIGUIENTE, C_SET, C_SETALL, C_VMAX, C_OK, C_FALLO,
-    C_RPM, C_PI, C_PROT
+    C_RPM, C_PI, C_PROT, C_LIBERAR
 } cmd_tipo_t;
 
 typedef struct {
@@ -186,6 +187,7 @@ static bool parsear(const char *txt, cmd_t *c)
         c->tipo = C_PAUSA; return true;
     }
     if (!strcmp(w[0], "siguiente")) { c->tipo = C_SIGUIENTE; return true; }
+    if (!strcmp(w[0], "liberar"))   { c->tipo = C_LIBERAR;   return true; }
 
     if (!strcmp(w[0], "vmax") && n >= 2) {
         // "vmax v" (todos) o "vmax X v" (un motor)
@@ -448,7 +450,8 @@ static void test_task(void *arg)
                 poner_alarma("");
             }
             if (modo == MODO_RPM && c.tipo != C_RPM && c.tipo != C_PI && c.tipo != C_VMAX &&
-                c.tipo != C_OK && c.tipo != C_FALLO && c.tipo != C_PROT) {
+                c.tipo != C_OK && c.tipo != C_FALLO && c.tipo != C_PROT &&
+                c.tipo != C_LIBERAR) {
                 memset(rpm_obj, 0, sizeof(rpm_obj));
                 memset(integ, 0, sizeof(integ));
                 publicar_rpm_obj(rpm_obj);
@@ -519,6 +522,10 @@ static void test_task(void *arg)
                 kp = c.valor; ki = c.valor2;
                 taskENTER_CRITICAL(&estado_mux); estado.kp = kp; estado.ki = ki; taskEXIT_CRITICAL(&estado_mux);
                 ESP_LOGI(TAG, "PI: kp=%.4f ki=%.4f", kp, ki);
+                break;
+            case C_LIBERAR:
+                if (motores_liberar_fallas()) ESP_LOGI(TAG, "Fallas liberadas");
+                else                          ESP_LOGW(TAG, "Liberar rechazado: un puente sigue caliente");
                 break;
             case C_PROT:
                 proteccion = c.valor > 0.5f;
@@ -769,6 +776,7 @@ static void micro_ros_task(void *arg)
     allocator = rcl_get_default_allocator();
     init_options = rcl_get_zero_initialized_init_options();
     rcl_init_options_init(&init_options, allocator);
+    rcl_init_options_set_domain_id(&init_options, 33);   // mismo ROS_DOMAIN_ID que el agente y la PC
     rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
     rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options);
 

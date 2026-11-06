@@ -229,6 +229,105 @@ static void vigilar_seguridad(const float duty[CANT_MOTORES])
     }
 }
 
+#define VEL_MAX_MPS   (CONFIG_PROMETEO_VEL_MAX_MM_S / 1000.0f)
+
+// ===== LAZO DE VELOCIDAD POR RUEDA (encoders) =====
+// Cada motor tiene su propia velocidad pedida (m/s) y su propio encoder. El lazo mide la
+// rueda y suma o resta duty a ESE motor hasta que gire a la velocidad pedida: asi las 4
+// ruedas giran igual aunque los motores, la carga o la friccion sean distintos.
+// Solo con la rampa ya terminada. El duty pedido (a ciegas, con VEL_MAX) es el punto de
+// partida; el refuerzo puede ser positivo (rueda lenta) o negativo (rueda rapida).
+// La velocidad se mide sobre una ventana larga: a 100 ms un solo pulso son ~0,1 m/s, mas que
+// la velocidad de un giro en el lugar. Con motor_set()/motores_set() a mano el lazo queda apagado.
+#ifdef CONFIG_PROMETEO_MOTORES_SPEED_LOOP
+#define LAZO_VENTANA_MS   CONFIG_PROMETEO_MOTORES_SPEED_WINDOW_MS
+#define LAZO_KP           (CONFIG_PROMETEO_MOTORES_SPEED_KP_X100 / 100.0f)   // duty por (error / VEL_MAX)
+#define LAZO_KI           (CONFIG_PROMETEO_MOTORES_SPEED_KI_X100 / 100.0f)   // duty por segundo por (error / VEL_MAX)
+#define LAZO_KD           (CONFIG_PROMETEO_MOTORES_SPEED_KD_X100 / 100.0f)   // duty*segundo por (error / VEL_MAX)
+#define LAZO_SUBE_MAX     (CONFIG_PROMETEO_MOTORES_SPEED_BOOST_MAX_PCT / 100.0f)
+#define LAZO_BAJA_MAX     (CONFIG_PROMETEO_MOTORES_SPEED_REDUCE_MAX_PCT / 100.0f)
+#define LAZO_TOL_RAMPA    0.03f    // la rampa "llego" si falta menos que esto
+#define LAZO_RUEDA_M      (3.14159265f * DIAMETRO_RUEDA_M)
+
+static volatile float vel_obj[CANT_MOTORES] = { -1.0f, -1.0f, -1.0f, -1.0f };   // |m/s| pedido; < 0 = lazo apagado
+static float    refuerzo[CANT_MOTORES];     // termino integral: duty extra (+) o de menos (-), en la direccion del objetivo
+static float    pd_duty[CANT_MOTORES];      // terminos P + D de la ultima ventana (se mantienen hasta la siguiente)
+static float    err_prev[CANT_MOTORES];     // error de la ventana anterior (para D)
+static bool     primera_ventana[CANT_MOTORES] = { true, true, true, true };
+static int      lazo_signo[CANT_MOTORES];   // signo del objetivo con que se midio
+static uint32_t lazo_acum_ms[CANT_MOTORES];
+static uint32_t lazo_pulsos[CANT_MOTORES];
+static uint32_t lazo_prev[CANT_MOTORES];
+
+static inline float limitar_refuerzo(float x)
+{
+    return x > LAZO_SUBE_MAX ? LAZO_SUBE_MAX : (x < -LAZO_BAJA_MAX ? -LAZO_BAJA_MAX : x);
+}
+
+static inline void lazo_reiniciar_ventana(int m)
+{
+    lazo_acum_ms[m] = 0;
+    lazo_pulsos[m] = 0;
+}
+
+// Duty que realmente se manda a un motor: el pedido mas su refuerzo
+static float meta_motor(motor_id_t m)
+{
+    float o = objetivo[m];
+    if (vel_obj[m] < 0.0f || (o > -0.001f && o < 0.001f)) return o;
+    float corr = limitar_refuerzo(refuerzo[m] + pd_duty[m]);    // PID completo
+    float mag = ((o > 0) ? o : -o) + corr;
+    if (mag < 0.01f) mag = 0.01f;          // nunca cambia de sentido (la zona muerta lo sube al minimo)
+    if (mag > 1.0f)  mag = 1.0f;
+    return (o > 0) ? mag : -mag;
+}
+
+static void lazo_velocidad(void)
+{
+    for (int m = 0; m < CANT_MOTORES; m++) {
+        uint32_t pul = encoder_get_pulsos(ENC_DE[m]);
+        uint32_t dp = pul - lazo_prev[m];
+        lazo_prev[m] = pul;
+
+        float o = objetivo[m];
+        int signo = (o > 0.001f) ? 1 : (o < -0.001f ? -1 : 0);
+        if (en_falla || vel_obj[m] <= 0.0f || signo == 0 || signo != lazo_signo[m]) {
+            refuerzo[m] = 0.0f;            // lazo apagado, rueda parada o cambio de sentido: de cero
+            pd_duty[m] = 0.0f;
+            err_prev[m] = 0.0f;
+            primera_ventana[m] = true;
+            lazo_signo[m] = signo;
+            lazo_reiniciar_ventana(m);
+            continue;
+        }
+
+        float falta = meta_motor((motor_id_t)m) - actual[m];
+        if (falta > LAZO_TOL_RAMPA || falta < -LAZO_TOL_RAMPA) {   // todavia acelerando: no se mide
+            lazo_reiniciar_ventana(m);
+            continue;
+        }
+
+        lazo_acum_ms[m] += TICK_MS;
+        lazo_pulsos[m] += dp;
+        if (lazo_acum_ms[m] >= LAZO_VENTANA_MS) {
+            float seg = lazo_acum_ms[m] / 1000.0f;
+            float medida = (float)lazo_pulsos[m] / PPR * LAZO_RUEDA_M / seg;   // m/s de esta rueda
+            float error = (vel_obj[m] - medida) / VEL_MAX_MPS;
+            // PID discreto, una vez por ventana. I con tope (anti-windup); P y D se mantienen
+            // hasta la proxima medicion. En la primera ventana no hay error previo: D = 0.
+            refuerzo[m] = limitar_refuerzo(refuerzo[m] + LAZO_KI * error * seg);
+            float deriv = primera_ventana[m] ? 0.0f : (error - err_prev[m]) / seg;
+            primera_ventana[m] = false;
+            err_prev[m] = error;
+            pd_duty[m] = LAZO_KP * error + LAZO_KD * deriv;
+            ESP_LOGD(TAG, "lazo %c: pedida %.3f medida %.3f m/s I %+.2f PD %+.2f", 'A' + m,
+                     (double)vel_obj[m], (double)medida, (double)refuerzo[m], (double)pd_duty[m]);
+            lazo_reiniciar_ventana(m);
+        }
+    }
+}
+#endif
+
 static void rampa_task(void *arg)
 {
     TickType_t t = xTaskGetTickCount();
@@ -244,13 +343,20 @@ static void rampa_task(void *arg)
         // ---- RAMPA ----
         float duty_ef[CANT_MOTORES] = { 0 };           // duty realmente aplicado (para la seguridad)
         if (!en_falla) {
+#ifdef CONFIG_PROMETEO_MOTORES_SPEED_LOOP
+            lazo_velocidad();
+#endif
             uint32_t bloq = motores_bloqueados();
             for (int m = 0; m < CANT_MOTORES; m++) {
                 if (bloq & (1u << m)) {                // falla latcheada: sigue frenado aunque haya ordenes
                     frenar_motor(m);
                     continue;
                 }
+#ifdef CONFIG_PROMETEO_MOTORES_SPEED_LOOP
+                float d = meta_motor((motor_id_t)m) - actual[m];
+#else
                 float d = objetivo[m] - actual[m];
+#endif
                 if (d >  RAMPA_PASO) d =  RAMPA_PASO;
                 if (d < -RAMPA_PASO) d = -RAMPA_PASO;
                 actual[m] += d;
@@ -297,6 +403,9 @@ void motor_set(motor_id_t m, float v)
     if (v > 1.0f)  v = 1.0f;
     if (v < -1.0f) v = -1.0f;
     objetivo[m] = v;
+#ifdef CONFIG_PROMETEO_MOTORES_SPEED_LOOP
+    vel_obj[m] = -1.0f;   // orden a mano: sin lazo (motores_set_ruedas lo vuelve a prender)
+#endif
 }
 
 void motores_alimentar(void)
@@ -318,26 +427,62 @@ void motores_set(float izq, float der)
 // ===== CINEMÁTICA DIFERENCIAL (4 ruedas, skid-steer) =====
 // Las ruedas de cada lado giran juntas. Al girar patinan, por eso el ancho
 // efectivo es mayor que el real: se corrige con PROMETEO_TURN_FACTOR_PCT.
-#define VEL_MAX_MPS   (CONFIG_PROMETEO_VEL_MAX_MM_S / 1000.0f)
 #define ANCHO_EFECT_M (CONFIG_PROMETEO_WHEEL_SEPARATION_MM / 1000.0f * CONFIG_PROMETEO_TURN_FACTOR_PCT / 100.0f)
 
-void motores_set_twist(float v_mps, float w_rads)
+// Velocidad de cada rueda (m/s, con signo) para un movimiento del robot.
+// Siempre las 4 ruedas; las de un lado piden lo mismo. Al girar (w != 0) el giro se refuerza
+// PROMETEO_TURN_BOOST_PCT % (mas duty, mas giro) para vencer el patinaje.
+// Si un lado se pasa de VEL_MAX se escala todo: se conserva el radio de giro.
+#define GIRO_MIN_RADS 0.01f   // por debajo de esto se considera recto
+#define GIRO_DUTY_MIN (CONFIG_PROMETEO_TURN_MIN_DUTY_PCT / 100.0f)
+void motores_twist_a_ruedas(float v_mps, float w_rads, float v_rueda_mps[CANT_MOTORES])
 {
-    // Velocidad de cada lado en m/s
+    bool girando = fabsf(w_rads) > GIRO_MIN_RADS;
+    if (girando) w_rads *= 1.0f + CONFIG_PROMETEO_TURN_BOOST_PCT / 100.0f;
+
     float v_izq = v_mps - w_rads * ANCHO_EFECT_M / 2.0f;
     float v_der = v_mps + w_rads * ANCHO_EFECT_M / 2.0f;
 
-    // A duty -1..1
-    float izq = v_izq / VEL_MAX_MPS;
-    float der = v_der / VEL_MAX_MPS;
-
-    // Si un lado se pasa de 1, escalar los dos: se conserva el radio de giro
-    float mayor = fmaxf(fabsf(izq), fabsf(der));
-    if (mayor > 1.0f) {
-        izq /= mayor;
-        der /= mayor;
+    // Al girar las 4 ruedas patinan: con poco duty no se mueven. Se sube el lado mas rapido
+    // hasta PROMETEO_TURN_MIN_DUTY_PCT (y el otro en proporcion: se conserva el radio de giro).
+    float mayor = fmaxf(fabsf(v_izq), fabsf(v_der)) / VEL_MAX_MPS;
+    if (girando && mayor > 0.0f && mayor < GIRO_DUTY_MIN) {
+        v_izq *= GIRO_DUTY_MIN / mayor;
+        v_der *= GIRO_DUTY_MIN / mayor;
+        mayor = GIRO_DUTY_MIN;
     }
-    motores_set(izq, der);
+    if (mayor > 1.0f) {
+        v_izq /= mayor;
+        v_der /= mayor;
+    }
+    for (int i = 0; i < 2; i++) {
+        v_rueda_mps[lado_izq[i]] = v_izq;
+        v_rueda_mps[lado_der[i]] = v_der;
+    }
+}
+
+// Pone la velocidad de CADA rueda por separado y alimenta el failsafe. El duty inicial sale de
+// VEL_MAX; el lazo de encoders (si esta prendido) lo corrige rueda por rueda.
+void motores_set_ruedas(const float v_rueda_mps[CANT_MOTORES])
+{
+    for (int m = 0; m < CANT_MOTORES; m++) {
+        float v = v_rueda_mps[m];
+        if (isnan(v)) v = 0.0f;
+        float duty = v / VEL_MAX_MPS;
+        motor_set((motor_id_t)m, duty);
+#ifdef CONFIG_PROMETEO_MOTORES_SPEED_LOOP
+        vel_obj[m] = fabsf(objetivo[m]) * VEL_MAX_MPS;   // ya con el limite de -1..1
+#endif
+    }
+    ultima_orden_us = (uint32_t)esp_timer_get_time();
+    en_falla = false;
+}
+
+void motores_set_twist(float v_mps, float w_rads)
+{
+    float v[CANT_MOTORES];
+    motores_twist_a_ruedas(v_mps, w_rads, v);
+    motores_set_ruedas(v);
 }
 
 void motores_frenar(void)
