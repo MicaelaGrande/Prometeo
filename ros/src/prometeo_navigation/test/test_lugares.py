@@ -310,6 +310,65 @@ def test_en_el_pasillo_actualizar_no_avisa_nada():
         assert detector.actualizar(20, 20, frente_cm=100) is None
 
 
+# --- MIDIENDO_LUGAR: la puerta ----------------------------------------------
+
+def test_puerta_a_la_izquierda_avisa_bifurcacion_con_adelante():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, izquierda=45, f0=150)
+    assert detector.actualizar(45, 20, frente_cm=140) is None    # pasando la abertura
+    assert detector.actualizar(20, 20, frente_cm=130) is None    # vuelve la pared: 1
+    assert detector.actualizar(20, 20, frente_cm=128) is None    # 2
+    lugar = detector.actualizar(20, 20, frente_cm=126)           # 3: puerta confirmada
+
+    assert lugar == (Lugar.BIFURCACION, [Lugar.IZQUIERDA, Lugar.ADELANTE])
+    assert detector.etapa == AVISADO
+    assert detector.frente_final_cm == 126                       # F1
+
+
+def test_puerta_a_la_derecha():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, izquierda=20, derecha=45, f0=150)
+    for frente in (130, 128):
+        assert detector.actualizar(20, 20, frente_cm=frente) is None
+
+    assert detector.actualizar(20, 20, frente_cm=126) == (
+        Lugar.BIFURCACION, [Lugar.ADELANTE, Lugar.DERECHA])
+
+
+def test_una_sola_lectura_cerrada_no_confirma_la_puerta():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, izquierda=45, f0=150)
+    for izquierda in (20, 45, 20, 45, 20, 45):                   # el sensor tiembla
+        assert detector.actualizar(izquierda, 20, frente_cm=130) is None
+
+    assert detector.etapa == MIDIENDO_LUGAR
+    assert not detector.puerta_confirmada
+
+
+def test_puerta_con_el_frente_sin_eco_espera_un_numero_para_f1():
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, izquierda=45, f0=150)
+    for _ in range(3):                                           # confirmada, sin eco
+        assert detector.actualizar(20, 20, frente_cm=math.inf) is None
+    assert detector.puerta_confirmada
+    assert detector.actualizar(20, 20, frente_cm=None) is None
+
+    assert detector.actualizar(20, 20, frente_cm=120) == (
+        Lugar.BIFURCACION, [Lugar.IZQUIERDA, Lugar.ADELANTE])
+    assert detector.frente_final_cm == 120
+
+
+def test_t_con_un_lado_que_se_cierra_avisa_un_cruce():
+    # A mirar en Gazebo: puerta de un lado y esquina del otro da un cruce.
+    detector = nuevo_detector()
+    llevar_a_midiendo(detector, izquierda=45, derecha=45, f0=150)
+    for frente in (130, 128):
+        assert detector.actualizar(45, 20, frente_cm=frente) is None   # se cierra la derecha
+
+    assert detector.actualizar(45, 20, frente_cm=126) == (
+        Lugar.BIFURCACION, [Lugar.IZQUIERDA, Lugar.ADELANTE, Lugar.DERECHA])
+
+
 # --- armar_lugar: el traductor para Decision (una prueba por fila de la tabla) ---
 # armar_lugar(izquierda_abierta, adelante_abierto, derecha_abierta)
 
