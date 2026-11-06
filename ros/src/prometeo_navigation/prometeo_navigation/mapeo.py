@@ -1,5 +1,11 @@
-# Nodo mapeo (T3): llena la libreta del recorrido con los avisos del detector.
-# La cuenta esta en libreta.py (Libreta); este nodo solo la conecta con ROS.
+# Nodo mapeo (T3) y exploracion (T4): llena la libreta del recorrido con los avisos
+# del detector, y cuando Decision no sabe por donde ir, elige con la libreta.
+# Las cuentas estan en libreta.py (Libreta) y exploracion.py (elegir_salida); este
+# nodo solo las conecta con ROS.
+#
+# Exploracion va en este mismo nodo porque necesita la libreta al dia: si fuera otro
+# nodo, podria elegir antes de que se anote el lugar donde esta.
+#   /decision/explorar (Empty, de Decision) ──► elegir_salida() ──► /mover
 #
 #   /navegacion/lugar (detector)        ──► Libreta.anotar()        ──┐
 #   /navegacion/salida_tomada (/mover)  ──► Libreta.tomar_salida()  ──┼──► mapeo/libreta (JSON)
@@ -17,12 +23,15 @@ import json
 from dataclasses import asdict
 
 import rclpy
+from rclpy.action import ActionClient
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
-from std_msgs.msg import String
+from std_msgs.msg import Empty, String
 
+from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar as AvisoLugar
+from prometeo_navigation.exploracion import elegir_salida
 from prometeo_navigation.libreta import Libreta
 from prometeo_navigation.modos import MANUAL
 
@@ -49,7 +58,9 @@ class NodoMapeo(Node):
         self.create_subscription(AvisoLugar, '/navegacion/lugar', self.al_llegar, 10)
         self.create_subscription(String, '/navegacion/salida_tomada', self.al_salir, 10)
         self.create_subscription(String, 'modo_actual', self.al_cambiar_modo, guardado)
+        self.create_subscription(Empty, '/decision/explorar', self.al_pedir_explorar, 10)
         self.pub_libreta = self.create_publisher(String, 'mapeo/libreta', guardado)
+        self.mover = ActionClient(self, Mover, '/mover')
         self.publicar()
         self.get_logger().info(f'Mapeo listo (margen {margen_m} m)')
 
@@ -83,6 +94,18 @@ class NodoMapeo(Node):
             self.get_logger().info('Manual: no anoto el tramo a mano')
             self.publicar()
         self.en_manual = en_manual
+
+    def al_pedir_explorar(self, _mensaje):
+        if self.en_manual or self.orientacion is None:
+            return
+        salida = elegir_salida(self.libreta, self.orientacion)
+        if salida is None:
+            self.get_logger().warning('Explorar: no hay lugar actual en la libreta')
+            return
+        self.get_logger().info(f'Explorar: elijo {salida}')
+        if not self.mover.server_is_ready():
+            self.get_logger().warning('/mover todavia no responde, mando igual')
+        self.mover.send_goal_async(Mover.Goal(accion=Mover.Goal.IR_A_SALIDA, salida=salida))
 
     def publicar(self):
         self.pub_libreta.publish(String(data=libreta_a_json(self.libreta)))
