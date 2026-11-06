@@ -100,6 +100,11 @@ class NodoMover(Node):
             ('giro_max', 0.9),               # rad/s
             ('tolerancia_giro_grados', 3.0),
             ('tiempo_max_giro_s', 10.0),     # si no llega, BLOQUEADA
+            # PROVISORIO: False = el giro sale solo de las ruedas (/odom o, sin /odom,
+            # el tiempo por factor_giro_tiempo), sin mirar los ultrasonidos. Se puso
+            # porque la confirmacion con ultrasonidos no esta andando en el robot.
+            # True = vuelve a confirmar con los ultrasonidos como antes.
+            ('confirmar_con_ultrasonidos', False),
             # Giro confirmado con el ultrasonido de adelante
             ('frente_abierto_cm', 40.0),     # adelante mide esto o mas = pasillo
             ('tolerancia_costado_cm', 8.0),  # esquina: costado vs. lo que media el frente
@@ -418,7 +423,11 @@ class NodoMover(Node):
         self.ultima_orientacion = self.orientacion if self.hay_odom() else None
         self.objetivo_estimado = self.giro_pedido
         self.frente_antes = self.frente_cm
-        self.como = como_confirmar(self.salida, self.frente_antes, self.p['frente_abierto_cm'])
+        if self.p['confirmar_con_ultrasonidos']:
+            self.como = como_confirmar(
+                self.salida, self.frente_antes, self.p['frente_abierto_cm'])
+        else:
+            self.como = SIN_CONFIRMAR   # PROVISORIO: solo ruedas
         self.get_logger().info(
             'Giro con ' + ('/odom' if self.hay_odom() else 'el tiempo (no hay /odom)') +
             f', confirma {self.como} (frente antes: {self.frente_antes} cm)')
@@ -438,7 +447,7 @@ class NodoMover(Node):
         if velocidad != 0.0:
             return self.mandar_giro(velocidad)
         if self.como == SIN_CONFIRMAR:
-            self.terminar_giro()   # puerta: confia en lo estimado
+            self.terminar_giro()   # puerta o solo ruedas: confia en lo estimado
             return self.mandar_giro(0.0)
         # 2. Frenar y mirar
         self.mirando = True
