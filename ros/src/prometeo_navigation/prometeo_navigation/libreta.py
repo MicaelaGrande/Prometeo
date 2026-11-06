@@ -114,3 +114,56 @@ class Lugar:
     # field(default_factory=list) le da a cada Lugar su propia lista vacia.
     # Con un simple "= []", todos los lugares compartirian la misma.
     salidas: List[Salida] = field(default_factory=list)
+
+
+# ===================== La libreta =====================
+
+class Libreta:
+    """Todas las hojas (Lugar) del recorrido. Empieza vacia en cada ronda.
+
+    anotar() recibe cada aviso del detector y hace una de dos cosas:
+    - si el robot ya estuvo ahi, devuelve esa misma hoja (no la repite);
+    - si no, agrega una hoja nueva.
+    """
+
+    def __init__(self, margen_m=0.30):
+        # Cuanto se puede equivocar /odom: dos avisos a menos de esto pueden ser el
+        # mismo lugar. Se ajusta probando (el robot real patina al girar).
+        self.margen_m = margen_m
+        self.lugares = []
+
+    def anotar(self, tipo, x, y, orientacion, salidas):
+        """Recibe un aviso del detector. Devuelve (hoja, es_nuevo).
+
+        salidas: como las manda el detector (izquierda, adelante, derecha). Se pasan
+        a puntos cardinales. Tambien se anota por donde vino (atras), ya PROBADA:
+        es una salida mas de ese lugar, y por ahi se vuelve.
+        """
+        direcciones = [direccion_de_salida(orientacion, s) for s in salidas]
+        de_donde_vino = direccion_de_salida(orientacion, Mover.Goal.VUELTA)
+
+        repetido = self.buscar(x, y, set(direcciones) | {de_donde_vino})
+        if repetido is not None:
+            return repetido, False
+
+        hoja = Lugar(len(self.lugares) + 1, x, y, tipo,
+                     [Salida(d) for d in direcciones] + [Salida(de_donde_vino, PROBADA)])
+        self.lugares.append(hoja)
+        return hoja, True
+
+    def buscar(self, x, y, direcciones):
+        """La hoja de un lugar ya anotado que coincide, o None.
+
+        Tienen que coincidir dos cosas (TICKETS_NAVEGACION.md, T3):
+        - la posicion, con el margen, porque /odom acumula error;
+        - las direcciones de todas sus salidas (contando por donde vino). Asi no se
+          confunde con otro lugar cercano que tiene otra forma.
+        Si hay varios, el mas cercano.
+        """
+        candidatos = [
+            hoja for hoja in self.lugares
+            if math.hypot(hoja.x - x, hoja.y - y) <= self.margen_m
+            and {s.direccion for s in hoja.salidas} == direcciones]
+        if not candidatos:
+            return None
+        return min(candidatos, key=lambda hoja: math.hypot(hoja.x - x, hoja.y - y))

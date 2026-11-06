@@ -9,7 +9,8 @@ import math
 from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar as AvisoLugar
 from prometeo_navigation.libreta import (
-    ESTE, Lugar, NORTE, OESTE, PENDIENTE, Salida, SUR, direccion_de_salida, rumbo_de,
+    ESTE, Libreta, Lugar, NORTE, OESTE, PENDIENTE, PROBADA, Salida, SUR, direccion_de_salida,
+    rumbo_de,
     salida_hacia)
 
 
@@ -98,3 +99,75 @@ def test_ida_y_vuelta_da_lo_mismo():
 
 def test_salida_hacia_un_rumbo_mal_escrito_es_none():
     assert salida_hacia(0.0, 'nrote') is None
+
+
+# ===== La libreta: anotar un lugar nuevo o reconocer uno repetido =====
+# Robot mirando al norte (orientacion 0), como al arrancar.
+
+def test_la_libreta_empieza_vacia():
+    assert Libreta().lugares == []
+
+
+def test_anota_un_lugar_nuevo_con_sus_salidas_en_puntos_cardinales():
+    libreta = Libreta()
+    hoja, es_nuevo = libreta.anotar('curva', 1.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    assert es_nuevo
+    assert hoja.numero == 1
+    assert (hoja.x, hoja.y, hoja.tipo) == (1.0, 0.0, 'curva')
+    assert [(s.direccion, s.estado) for s in hoja.salidas] == [
+        (OESTE, PENDIENTE), (SUR, PROBADA)]   # izquierda y por donde vino
+
+
+def test_un_callejon_solo_tiene_por_donde_vino():
+    hoja, _ = Libreta().anotar('callejon', 0.0, 0.0, 0.0, [])
+    assert [(s.direccion, s.estado) for s in hoja.salidas] == [(SUR, PROBADA)]
+
+
+def test_los_lugares_se_numeran_en_orden():
+    libreta = Libreta()
+    libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    hoja, _ = libreta.anotar('curva', 2.0, 0.0, 0.0, [AvisoLugar.DERECHA])
+    assert hoja.numero == 2
+    assert len(libreta.lugares) == 2
+
+
+def test_reconoce_un_lugar_al_volver_desde_otro_lado():
+    # Una T: salidas al oeste, este y sur. Primero llega desde el sur (mirando al
+    # norte); despues desde el oeste, mirando al este (orientacion -pi/2).
+    libreta = Libreta()
+    primera, _ = libreta.anotar('bifurcacion', 1.0, 1.0, 0.0,
+                                [AvisoLugar.IZQUIERDA, AvisoLugar.DERECHA])
+    otra_vez, es_nuevo = libreta.anotar('bifurcacion', 1.1, 0.95, -math.pi / 2,
+                                        [AvisoLugar.ADELANTE, AvisoLugar.DERECHA])
+    assert not es_nuevo
+    assert otra_vez is primera
+    assert len(libreta.lugares) == 1
+
+
+def test_mismo_lugar_pero_lejos_es_otro():
+    libreta = Libreta(margen_m=0.30)
+    libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    _, es_nuevo = libreta.anotar('curva', 0.5, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    assert es_nuevo
+
+
+def test_cerca_pero_con_otra_forma_es_otro():
+    libreta = Libreta()
+    libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    _, es_nuevo = libreta.anotar('curva', 0.1, 0.0, 0.0, [AvisoLugar.DERECHA])
+    assert es_nuevo
+
+
+def test_justo_en_el_margen_es_el_mismo():
+    libreta = Libreta(margen_m=0.30)
+    libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    _, es_nuevo = libreta.anotar('curva', 0.30, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    assert not es_nuevo
+
+
+def test_si_hay_dos_parecidos_elige_el_mas_cercano():
+    libreta = Libreta(margen_m=0.30)
+    lejos, _ = libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    libreta.lugares.append(Lugar(2, 0.4, 0.0, 'curva', list(lejos.salidas)))  # otro igual
+    hoja, _ = libreta.anotar('curva', 0.35, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    assert hoja.numero == 2
