@@ -9,7 +9,7 @@ import math
 from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar as AvisoLugar
 from prometeo_navigation.libreta import (
-    ESTE, Libreta, Lugar, NORTE, OESTE, PENDIENTE, PROBADA, Salida, SUR, TRABADA,
+    ESTE, LARGADA, Libreta, Lugar, NORTE, OESTE, PENDIENTE, PROBADA, Salida, SUR, TRABADA,
     direccion_de_salida,
     rumbo_de,
     salida_hacia)
@@ -200,10 +200,10 @@ def test_al_llegar_al_siguiente_quedan_unidos_en_los_dos_sentidos():
     assert este_de_b.estado == PROBADA
 
 
-def test_el_primer_lugar_no_sabe_de_donde_vino():
+def test_el_primer_lugar_vino_de_la_largada():
     hoja, _ = Libreta().anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
     sur = [s for s in hoja.salidas if s.direccion == SUR][0]
-    assert sur.lleva_a is None   # vino de la largada
+    assert sur.lleva_a == LARGADA
 
 
 def test_tomar_salida_sin_lugar_actual_no_hace_nada():

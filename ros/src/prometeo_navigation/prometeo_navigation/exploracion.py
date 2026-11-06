@@ -13,7 +13,8 @@ from collections import deque
 
 from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar as AvisoLugar
-from prometeo_navigation.libreta import PENDIENTE, direccion_de_salida, salida_hacia
+from prometeo_navigation.libreta import (
+    LARGADA, PENDIENTE, direccion_de_salida, salida_hacia)
 
 # PROVISORIO: el orden en que prueba las salidas pendientes. Da lo mismo cual, porque
 # la libreta despues hace que pruebe las otras; se puede cambiar si conviene.
@@ -36,6 +37,7 @@ def primer_paso_hacia_pendiente(libreta, desde):
     visitados = {desde.numero}
     # Cada elemento: (hoja, direccion del primer paso desde 'desde')
     cola = deque()
+    visitados.add(LARGADA)   # la largada no es un lugar de la libreta
     for camino in desde.salidas:
         if camino.lleva_a is not None and camino.lleva_a not in visitados:
             visitados.add(camino.lleva_a)

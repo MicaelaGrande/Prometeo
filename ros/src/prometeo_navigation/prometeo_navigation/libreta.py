@@ -19,6 +19,9 @@ from prometeo_interfaces.msg import Lugar as AvisoLugar
 # un error de tipeo en una constante da error, y en un texto pasa de largo.
 PENDIENTE = 'pendiente'  # todavia no la recorrimos
 PROBADA = 'probada'      # ya pasamos por ahi
+
+# lleva_a de la salida por donde arranco el robot: el inicio, donde estan los contenedores
+LARGADA = 0
 TRABADA = 'trabada'      # la estaba recorriendo y pasaron a manual (T11): no se sabe adonde va
 
 # ===================== Puntos cardinales =====================
@@ -94,7 +97,12 @@ class Salida:
     estado: str = PENDIENTE
 
     # El numero del lugar al que lleva. None significa que todavia no lo sabemos.
+    # LARGADA (0) = es el camino por donde arranco el robot: por ahi se vuelve al inicio.
     lleva_a: Optional[int] = None
+
+    # Cuantos segundos tardo el robot en recorrer este tramo (para Dijkstra al volver).
+    # None si todavia no lo recorrio entero.
+    segundos: Optional[float] = None
 
 
 @dataclass
@@ -136,13 +144,16 @@ class Libreta:
         self.lugares = []
         self.actual = None          # la hoja del lugar donde esta el robot
         self.saliendo_por = None    # la Salida que tomo y todavia no llego a otro lugar
+        self.hora_salida = None     # cuando la tomo (para medir el tramo)
 
-    def anotar(self, tipo, x, y, orientacion, salidas):
+    def anotar(self, tipo, x, y, orientacion, salidas, ahora_s=None):
         """Recibe un aviso del detector. Devuelve (hoja, es_nuevo).
 
         salidas: como las manda el detector (izquierda, adelante, derecha). Se pasan
         a puntos cardinales. Tambien se anota por donde vino (atras), ya PROBADA:
-        es una salida mas de ese lugar, y por ahi se vuelve.
+        es una salida mas de ese lugar, y por ahi se vuelve. En el primer lugar de la
+        ronda, por donde vino lleva a la LARGADA.
+        ahora_s: la hora (segundos) para medir cuanto tardo el tramo desde tomar_salida.
         """
         direcciones = [direccion_de_salida(orientacion, s) for s in salidas]
         de_donde_vino = direccion_de_salida(orientacion, Mover.Goal.VUELTA)
@@ -150,14 +161,17 @@ class Libreta:
         hoja = self.buscar(x, y, set(direcciones) | {de_donde_vino})
         es_nuevo = hoja is None
         if es_nuevo:
+            atras = Salida(de_donde_vino, PROBADA)
+            if not self.lugares:
+                atras.lleva_a = LARGADA     # el primer lugar: por ahi se vuelve al inicio
             hoja = Lugar(len(self.lugares) + 1, x, y, tipo,
-                         [Salida(d) for d in direcciones] + [Salida(de_donde_vino, PROBADA)])
+                         [Salida(d) for d in direcciones] + [atras])
             self.lugares.append(hoja)
-        self._unir(hoja, de_donde_vino)
+        self._unir(hoja, de_donde_vino, ahora_s)
         self.actual = hoja
         return hoja, es_nuevo
 
-    def tomar_salida(self, orientacion, salida):
+    def tomar_salida(self, orientacion, salida, ahora_s=None):
         """El robot sale del lugar actual por esa salida (izquierda, adelante...).
 
         La marca PROBADA y se acuerda de ella hasta llegar al lugar siguiente.
@@ -170,6 +184,7 @@ class Libreta:
             if camino.direccion == direccion:
                 camino.estado = PROBADA
                 self.saliendo_por = camino
+                self.hora_salida = ahora_s
                 return camino
         return None
 
@@ -184,7 +199,7 @@ class Libreta:
         self.saliendo_por = None
         self.actual = None
 
-    def _unir(self, hoja, de_donde_vino):
+    def _unir(self, hoja, de_donde_vino, ahora_s=None):
         """Une la salida que tomo en el lugar anterior con la de este lugar por donde llego.
 
         Las dos quedan PROBADAS y cada una dice a que lugar lleva. Si llego a un lugar
@@ -194,11 +209,16 @@ class Libreta:
         if self.saliendo_por is None or self.actual is None:
             return
         anterior = self.actual
+        segundos = None
+        if ahora_s is not None and self.hora_salida is not None:
+            segundos = ahora_s - self.hora_salida
         self.saliendo_por.lleva_a = hoja.numero
+        self.saliendo_por.segundos = segundos
         for camino in hoja.salidas:
             if camino.direccion == de_donde_vino:
                 camino.estado = PROBADA
                 camino.lleva_a = anterior.numero
+                camino.segundos = segundos      # el mismo tramo, al reves
         self.saliendo_por = None
 
     def buscar(self, x, y, direcciones):
