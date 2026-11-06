@@ -86,6 +86,12 @@
   th { color: var(--muted); font-weight: 600; font-size: .8rem; }
   .nota { border-left: 4px solid var(--warn); padding: 8px 12px; background: var(--bg); border-radius: 6px; font-size: .9rem; margin: 10px 0; }
   .nota.roja { border-left-color: var(--bad); }
+  table.brazo input[type=range] { width: 180px; vertical-align: middle; }
+  table.brazo button { padding: 4px 9px; }
+  .fila-br { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+  #p-brazo kbd { display: inline-block; min-width: 2em; text-align: center; padding: 2px 6px; border-radius: 6px;
+                 border: 1px solid var(--line); background: var(--bg); font: .85rem ui-monospace, monospace; }
+  #p-brazo kbd.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   /* Camara */
   #cam-caja { position: relative; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 4 / 3; }
@@ -273,9 +279,52 @@
 
       <!-- BRAZO -->
       <div class="pestana" id="p-brazo">
-        <h2>Servos</h2>
+        <h2>Control manual del brazo</h2>
+        <div class="nota" id="br-aviso">Esperando la posición de los servos (/servos/estado)… Los controles se habilitan cuando llega.</div>
+        <p class="info">Cada orden manda los 4 ángulos juntos a <code>/brazo/cmd</code> [base, hombro, codo, pinza].
+          El brazo se mueve con la rampa del firmware (no salta). Los deslizadores mandan la orden al <b>soltarlos</b>.
+          Con <b>PARAR</b> puesto, el brazo no recibe órdenes.</p>
+        <h3>Teclado (con esta pestaña abierta)</h3>
+        <div class="fila-br">
+          <span class="info">Mantener apretado para mover seguido:</span>
+          <span><kbd id="br-k-izq">←</kbd> <kbd id="br-k-der">→</kbd> base</span>
+          <span><kbd id="br-k-arr">↑</kbd> <kbd id="br-k-aba">↓</kbd> hombro</span>
+          <span><kbd id="br-k-w">W</kbd> <kbd id="br-k-s">S</kbd> codo</span>
+          <span><kbd id="br-k-enter">Enter</kbd> abrir / cerrar pinza</span>
+        </div>
+        <div class="fila-br">
+          <label class="info">Velocidad <input type="range" id="br-vel" min="5" max="45" step="5"></label>
+          <span class="info" id="br-vel-v"></span>
+          <span class="info">(el firmware no va más rápido que 45°/s)</span>
+        </div>
+        <p class="info">En esta pestaña las flechas mueven el <b>brazo</b>, no las ruedas. ESPACIO sigue siendo PARAR.
+          Hacé clic en la página (no en un cuadro de texto) para que lea las teclas.</p>
+        <table class="brazo"><thead><tr><th>Articulación</th><th>Mover</th><th>Pedido</th><th>Real</th></tr></thead>
+          <tbody id="br-juntas"></tbody></table>
+        <h3>Pinza</h3>
+        <div class="fila-br">
+          <button id="br-abrir">Abrir</button>
+          <button id="br-cerrar">Cerrar</button>
+          <label class="info">abierta <input type="number" id="br-abierta" min="30" max="100" step="1" style="width:4.5em">°</label>
+          <label class="info">cerrada <input type="number" id="br-cerrada" min="30" max="100" step="1" style="width:4.5em">°</label>
+        </div>
+        <h3>Posturas</h3>
+        <div class="fila-br">
+          <button id="br-reposo" class="verde">Reposo elevado</button>
+          <button id="br-copiar">Copiar posición real</button>
+        </div>
+        <div class="fila-br">
+          <input type="text" id="br-nombre" placeholder="nombre (ej: preagarre)" style="width:14em">
+          <button id="br-guardar">Guardar postura actual</button>
+          <button id="br-exportar">Copiar lista</button>
+        </div>
+        <table class="brazo"><thead><tr><th>Postura</th><th>[base, hombro, codo, pinza]</th><th></th></tr></thead>
+          <tbody id="br-posturas"></tbody></table>
+        <p class="info">Las posturas se guardan en este navegador. “Copiar lista” las copia como texto para anotarlas.</p>
+        <div class="nota roja">Ojo con la cámara delante de la garra: moverse de a poco (±5°) y pasar por posturas intermedias.
+          Los límites del firmware no evitan choques.</div>
+        <h3>Servos (telemetría)</h3>
         <table><thead><tr><th>Servo</th><th>Ángulo</th></tr></thead><tbody id="servos"></tbody></table>
-        <div class="nota">Solo lectura por ahora. Los controles se agregan cuando estén las posiciones de la garra.</div>
       </div>
 
       <!-- REGISTRO -->
@@ -325,7 +374,7 @@ const T = {
   distancias: P + "/distancias", odom: P + "/odom", aviso: P + "/navegacion/aviso", libreta: P + "/mapeo/libreta",
   estadoMot: P + "/estado_motores", velocidad: P + "/velocidad", ruedas: P + "/velocidad_ruedas",
   frenoObst: P + "/freno_emergencia", servos: P + "/servos/estado", deteccion: "/vision/detections",
-  joy: P + "/joy", frenoAsist: P + "/freno_asistencia",
+  joy: P + "/joy", frenoAsist: P + "/freno_asistencia", brazo: P + "/brazo/cmd",
 };
 const TIPOS = {
   [T.estadoSel]: "std_msgs/msg/String", [T.orden]: "geometry_msgs/msg/Twist",
@@ -397,6 +446,7 @@ function conectar() {
     enviar({ op: "advertise", topic: T.manual, type: "geometry_msgs/msg/Twist" });
     enviar({ op: "advertise", topic: T.pedido, type: "std_msgs/msg/String" });
     enviar({ op: "advertise", topic: T.seguridad, type: "std_msgs/msg/Bool" });
+    enviar({ op: "advertise", topic: T.brazo, type: "std_msgs/msg/Float32MultiArray" });
     for (const t in TIPOS) suscribir(t);
   };
   ws.onmessage = ev => {
@@ -472,6 +522,7 @@ function recibir(topic, msg) {
         tr.innerHTML = `<td>${SERVOS[i] || "Servo " + (i + 1)}</td><td class="grande">${v.toFixed(0)}°</td>`;
         $("servos").appendChild(tr);
       });
+      brazoTelemetria(msg.data || []);
       break;
     }
     case T.deteccion: mostrarVision(msg.detections || []); break;
@@ -542,7 +593,9 @@ setInterval(() => {
   const vivo = (t, ms) => edad(t) < ms;
   pill("p-selector", vivo(T.estadoSel, 3000) ? "ok" : "bad", vivo(T.estadoSel, 3000) ? "selector" : "selector: no responde");
   if (!vivo(T.estadoSel, 3000)) { $("modo").className = "modo nada"; $("fuente").textContent = "—"; $("fuente").className = "fuente"; }
-  pill("p-esp32", vivo(T.estadoMot, 3000) ? "ok" : "bad", vivo(T.estadoMot, 3000) ? "ESP32" : "ESP32: sin datos");
+  // La ESP32 está viva si llega su estado o la telemetría de los servos (firmware "solo brazo")
+  const espViva = vivo(T.estadoMot, 3000) || vivo(T.servos, 3000);
+  pill("p-esp32", espViva ? "ok" : "bad", espViva ? "ESP32" : "ESP32: sin datos");
   pill("p-sensores", vivo(T.distancias, 2000) ? "ok" : "bad", vivo(T.distancias, 2000) ? "ultrasonidos" : "ultrasonidos: sin datos");
   pill("p-vision", vivo(T.deteccion, 3000) ? "ok" : "warn", vivo(T.deteccion, 3000) ? "visión" : "visión: sin datos");
   // El joystick manda 20 veces por segundo mientras esta conectado (autorepeat_rate)
@@ -733,6 +786,192 @@ function dibujar() {
 // Volver a la pestaña que estaba abierta (al final, cuando ya esta todo definido)
 try { const g = localStorage.getItem("pestana"); if (g) document.querySelector(`#pestanas button[data-p="${g}"]`)?.click(); } catch (e) {}
 pedirDibujo();
+// ---------- Brazo (control 100% manual) ----------
+// /brazo/cmd = [base, hombro, codo, pinza] en grados. Se mandan SIEMPRE los 4 valores
+// (JSON no admite NaN), por eso los controles arrancan con la posición real de los servos.
+// Límites = los del firmware (micro_ros/drivers/mg90s/mg90s.c): fuera de eso, el firmware recorta.
+const BR = [
+  { nombre: "Base",   min: 40, max: 140, tele: 1 },
+  { nombre: "Hombro", min: 0,  max: 150, tele: 2 },
+  { nombre: "Codo",   min: 0,  max: 150, tele: 3 },
+  { nombre: "Pinza",  min: 30, max: 100, tele: 4 },
+];
+const BR_REPOSO = [100, 30, 20, 90];   // reposo elevado probado; pinza 90 = abierta
+const BR_PASO = 5;
+let brPedido = null;   // último [base, hombro, codo, pinza] pedido (null = todavía sin telemetría)
+
+function brLeer(clave, def) { try { const v = JSON.parse(localStorage.getItem(clave)); return v ?? def; } catch (e) { return def; } }
+function brEscribir(clave, v) { try { localStorage.setItem(clave, JSON.stringify(v)); } catch (e) {} }
+const brLim = (i, v) => Math.min(BR[i].max, Math.max(BR[i].min, Math.round(v * 10) / 10));   // 0,1°
+
+$("br-juntas").innerHTML = BR.map((j, i) => `<tr>
+  <td>${j.nombre} <span class="info">(${j.min}–${j.max}°)</span></td>
+  <td><button data-br="${i}" data-d="-${BR_PASO}">−${BR_PASO}</button>
+      <input type="range" id="br-r${i}" min="${j.min}" max="${j.max}" step="1">
+      <button data-br="${i}" data-d="${BR_PASO}">+${BR_PASO}</button></td>
+  <td class="grande" id="br-p${i}">—</td><td class="grande" id="br-t${i}">—</td></tr>`).join("");
+
+function brHabilitar(si) {
+  document.querySelectorAll("#p-brazo button, #p-brazo input[type=range]").forEach(x => {
+    if (!["br-exportar"].includes(x.id)) x.disabled = !si;
+  });
+  if (si) brDibujarPosturas();   // para habilitar también los botones "Ir"
+}
+brHabilitar(false);
+
+function brMostrar() {
+  if (!brPedido) return;
+  brPedido.forEach((v, i) => { $("br-r" + i).value = v; $("br-p" + i).textContent = v.toFixed(0) + "°"; });
+}
+
+function brMandar(angulos, motivo, silencioso) {
+  if (!brPedido) { anotar("Brazo: todavía no llegó la posición de los servos, no se manda nada", "local"); return; }
+  if (estado.freno) { if (!silencioso) anotar("Brazo: PARAR está puesto, no se mueve", "freno"); brMostrar(); return false; }
+  const a = angulos.map((v, i) => brLim(i, v));
+  if (!publicar(T.brazo, { layout: { dim: [], data_offset: 0 }, data: a })) {
+    anotar("Brazo: sin conexión con rosbridge", "local"); return;
+  }
+  brPedido = a; brMostrar();
+  if (!silencioso) anotar(`Brazo${motivo ? " (" + motivo + ")" : ""}: [${a.map(v => v.toFixed(0)).join(", ")}]`, "local");
+  return true;
+}
+
+function brazoTelemetria(d) {
+  BR.forEach((j, i) => { if (d[j.tele] !== undefined) $("br-t" + i).textContent = d[j.tele].toFixed(0) + "°"; });
+  if (!brPedido && d.length >= 5) {
+    brPedido = BR.map((j, i) => brLim(i, d[j.tele]));
+    brMostrar(); brHabilitar(true);
+    $("br-aviso").style.display = "none";
+    anotar(`Brazo: controles listos, posición real [${brPedido.join(", ")}]`, "local");
+  }
+}
+
+document.querySelectorAll("#br-juntas button").forEach(b => b.onclick = () => {
+  const i = +b.dataset.br, a = brPedido.slice(); a[i] += +b.dataset.d; brMandar(a, BR[i].nombre);
+});
+BR.forEach((j, i) => {
+  const r = $("br-r" + i);
+  r.oninput = () => { $("br-p" + i).textContent = r.value + "°"; };
+  r.onchange = () => { const a = brPedido.slice(); a[i] = +r.value; brMandar(a, j.nombre); };
+});
+
+// Pinza: los ángulos de abierta/cerrada se pueden ajustar y quedan guardados en el navegador
+$("br-abierta").value = brLeer("br-abierta", 90);
+$("br-cerrada").value = brLeer("br-cerrada", 50);
+$("br-abierta").onchange = () => brEscribir("br-abierta", brLim(3, +$("br-abierta").value));
+$("br-cerrada").onchange = () => brEscribir("br-cerrada", brLim(3, +$("br-cerrada").value));
+$("br-abrir").onclick = () => { const a = brPedido.slice(); a[3] = +$("br-abierta").value; brMandar(a, "abrir pinza"); };
+$("br-cerrar").onclick = () => { const a = brPedido.slice(); a[3] = +$("br-cerrada").value; brMandar(a, "cerrar pinza"); };
+// Enter: si la pinza está más cerca de "abierta", la cierra; si no, la abre
+function brAlternarPinza() {
+  const ab = +$("br-abierta").value, ce = +$("br-cerrada").value;
+  if (Math.abs(brPedido[3] - ab) <= Math.abs(brPedido[3] - ce)) $("br-cerrar").click(); else $("br-abrir").click();
+}
+
+// ---------- Brazo con teclado: movimiento continuo mientras se mantiene la tecla ----------
+// Solo con la pestaña Brazo abierta. Ahí las flechas y W/S son del brazo (no llegan a las ruedas).
+// Cada BR_TICK_MS se corre el objetivo vel*dt grados y se manda; el firmware lo sigue con su
+// rampa. La velocidad no pasa de 45°/s porque el firmware no va más rápido: si el objetivo se
+// adelantara, el brazo seguiría moviéndose un rato después de soltar la tecla.
+const BR_TICK_MS = 100;
+const BR_TECLAS = {   // tecla -> [articulación, sentido, id del dibujo]
+  ArrowLeft: [0, +1, "br-k-izq"], ArrowRight: [0, -1, "br-k-der"],
+  ArrowUp: [1, +1, "br-k-arr"], ArrowDown: [1, -1, "br-k-aba"],
+  w: [2, +1, "br-k-w"], W: [2, +1, "br-k-w"], s: [2, -1, "br-k-s"], S: [2, -1, "br-k-s"],
+};
+const brApretadas = new Set();
+const brPestanaActiva = () => $("p-brazo").classList.contains("activa");
+const brEscribiendo = e => e.target.tagName === "INPUT" && e.target.type !== "range";
+$("br-vel").value = brLeer("br-vel", 30);
+const brVelMostrar = () => { $("br-vel-v").textContent = $("br-vel").value + "°/s"; };
+$("br-vel").oninput = brVelMostrar; brVelMostrar();
+$("br-vel").onchange = () => brEscribir("br-vel", +$("br-vel").value);
+
+function brSoltarTodo() {
+  if (!brApretadas.size) return;
+  brApretadas.clear();
+  if (brPedido) anotar(`Brazo (teclado): [${brPedido.map(v => v.toFixed(0)).join(", ")}]`, "local");
+}
+// En fase de captura: se atiende antes que el teclado de las ruedas y se lo frena
+document.addEventListener("keydown", e => {
+  if (!brPestanaActiva() || brEscribiendo(e)) return;
+  if (e.key === "Enter") {
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (!e.repeat && brPedido) brAlternarPinza();
+    return;
+  }
+  if (BR_TECLAS[e.key]) {
+    e.preventDefault(); e.stopImmediatePropagation();
+    brApretadas.add(e.key);
+  } else if (["q", "Q", "d", "D"].includes(e.key)) {
+    e.stopImmediatePropagation();   // en esta pestaña tampoco se manejan las ruedas con Q/D
+  }
+}, true);
+document.addEventListener("keyup", e => {
+  if (!BR_TECLAS[e.key]) return;
+  // soltar también la otra forma de la letra (w/W) por si cambió Shift en el medio
+  for (const k of Object.keys(BR_TECLAS)) if (BR_TECLAS[k][2] === BR_TECLAS[e.key][2]) brApretadas.delete(k);
+  if (!brApretadas.size && brPedido) anotar(`Brazo (teclado): [${brPedido.map(v => v.toFixed(0)).join(", ")}]`, "local");
+}, true);
+window.addEventListener("blur", brSoltarTodo);
+document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("click", brSoltarTodo));
+
+setInterval(() => {
+  const dibujos = new Set([...brApretadas].map(k => BR_TECLAS[k][2]));
+  for (const id of ["br-k-izq", "br-k-der", "br-k-arr", "br-k-aba", "br-k-w", "br-k-s"]) $(id).classList.toggle("on", dibujos.has(id));
+  if (!brApretadas.size || !brPedido) return;
+  if (estado.freno) { brApretadas.clear(); anotar("Brazo: PARAR está puesto, no se mueve", "freno"); return; }
+  const paso = +$("br-vel").value * BR_TICK_MS / 1000;
+  const a = brPedido.slice();
+  for (const k of brApretadas) { const [i, signo] = BR_TECLAS[k]; a[i] += signo * paso; }
+  const limitado = a.map((v, i) => brLim(i, v));
+  if (limitado.some((v, i) => v !== brPedido[i])) brMandar(limitado, "teclado", true);
+}, BR_TICK_MS);
+
+$("br-reposo").onclick = () => brMandar(BR_REPOSO, "reposo elevado");
+$("br-copiar").onclick = () => {
+  const t = BR.map((j, i) => parseFloat($("br-t" + i).textContent));
+  if (t.some(isNaN)) return;
+  brPedido = t.map((v, i) => brLim(i, v)); brMostrar();
+  anotar(`Brazo: controles copiados de la posición real [${brPedido.join(", ")}]`, "local");
+};
+
+// Posturas guardadas: { nombre: [base, hombro, codo, pinza] }
+let brPosturas = brLeer("br-posturas", {});
+function brDibujarPosturas() {
+  const nombres = Object.keys(brPosturas);
+  $("br-posturas").innerHTML = nombres.length ? "" : `<tr><td colspan="3" class="info">Todavía no hay posturas guardadas</td></tr>`;
+  nombres.forEach(n => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td></td><td class="info">[${brPosturas[n].join(", ")}]</td>
+      <td><button>Ir</button> <button>Borrar</button></td>`;
+    tr.firstElementChild.textContent = n;
+    const [ir, borrar] = tr.querySelectorAll("button");
+    ir.disabled = !brPedido;
+    ir.onclick = () => brMandar(brPosturas[n], n);
+    borrar.onclick = () => {
+      if (!confirm(`¿Borrar la postura "${n}"?`)) return;
+      delete brPosturas[n]; brEscribir("br-posturas", brPosturas); brDibujarPosturas();
+    };
+    $("br-posturas").appendChild(tr);
+  });
+}
+$("br-guardar").onclick = () => {
+  const n = $("br-nombre").value.trim();
+  if (!n) { alert("Poné un nombre para la postura"); return; }
+  if (brPosturas[n] && !confirm(`Ya existe "${n}". ¿Reemplazarla?`)) return;
+  brPosturas[n] = brPedido.slice(); brEscribir("br-posturas", brPosturas);
+  $("br-nombre").value = ""; brDibujarPosturas();
+  anotar(`Brazo: postura "${n}" guardada [${brPosturas[n].join(", ")}]`, "local");
+};
+$("br-exportar").onclick = () => {
+  const texto = Object.entries(brPosturas).map(([n, a]) => `${n}: [${a.join(", ")}]`).join("\n");
+  if (!texto) { alert("No hay posturas guardadas"); return; }
+  navigator.clipboard?.writeText(texto).then(() => anotar("Brazo: lista de posturas copiada", "local"),
+                                          () => prompt("Copiá la lista:", texto));
+};
+brDibujarPosturas();
+
 conectar();
 </script>
 </body>

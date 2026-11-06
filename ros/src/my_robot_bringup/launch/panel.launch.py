@@ -69,7 +69,7 @@ def generate_launch_description():
         " '/orden_enviada', '/estado_selector', '/pedido_operador', '/seguridad_habilitada',"
         " '/distancias', '/odom', '/navegacion/aviso', '/mapeo/libreta',"
         " '/estado_motores', '/velocidad', '/velocidad_ruedas', '/freno_emergencia',"
-        " '/servos/estado', '/joy', '/freno_asistencia']] + ['/vision/detections']) + ']'",
+        " '/servos/estado', '/brazo/cmd', '/joy', '/freno_asistencia']] + ['/vision/detections']) + ']'",
     ])
 
     rosbridge = Node(
