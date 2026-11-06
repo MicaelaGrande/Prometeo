@@ -9,7 +9,8 @@ import math
 from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.lugares import (
     AVISADO, EN_PASILLO, MIDIENDO_LUGAR, Confirmador, DetectorDeLugares, Promedio,
-    armar_lugar, costado_abierto, entro_al_pasillo, frente_muy_cerca, lectura_vigente)
+    armar_lugar, costado_abierto, distancia_a_lectura, entro_al_pasillo, frente_muy_cerca,
+    lectura_vigente)
 
 
 def test_entro_si_las_dos_paredes_estan_parecidas():
@@ -480,3 +481,22 @@ def test_cruce_es_bifurcacion_con_tres_salidas():
 
 def test_sin_salidas_es_callejon():
     assert armar_lugar(False, False, False) == (Lugar.CALLEJON, [])
+
+
+# --- distancia_a_lectura: lo que llega por /distancias ---------------------------
+
+def test_distancia_normal_queda_igual():
+    assert distancia_a_lectura(23.5) == 23.5
+
+
+def test_distancia_negativa_es_sensor_fallado():
+    assert distancia_a_lectura(-1.0) is None
+
+
+def test_distancia_nan_no_se_sabe():
+    assert distancia_a_lectura(math.nan) is None
+
+
+def test_400_o_mas_es_sin_eco():
+    assert distancia_a_lectura(400.0) == math.inf
+    assert distancia_a_lectura(650.0) == math.inf

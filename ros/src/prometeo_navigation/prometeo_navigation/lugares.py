@@ -23,6 +23,25 @@ def entro_al_pasillo(izquierda_cm, derecha_cm, margen_cm):
     return abs(izquierda_cm - derecha_cm) <= margen_cm
 
 
+# Lo que manda la ESP32 (y hcsr04_sim en Gazebo) en /distancias, en cm.
+# Igual que en micro_ros/main/sensores.h y prometeo_sensores/distancias_a_range.py.
+DIST_LEJOS_CM = 400.0   # esto o mas = no hubo eco (no hay nada adelante)
+
+
+def distancia_a_lectura(cm):
+    """Pasa un valor de /distancias a lo que entiende el detector.
+
+    Negativo = el sensor fallo -> None (no se sabe).
+    DIST_LEJOS_CM o mas = sin eco -> inf (lejos, abierto).
+    Si no, el mismo numero en cm.
+    """
+    if cm is None or math.isnan(cm) or cm < 0:
+        return None
+    if cm >= DIST_LEJOS_CM:
+        return math.inf
+    return float(cm)
+
+
 def costado_abierto(medida_cm, promedio_cm, salto_cm):
     """True si este costado mide mucho mas que el promedio del pasillo, False si no.
 
