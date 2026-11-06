@@ -19,6 +19,7 @@ from prometeo_interfaces.msg import Lugar as AvisoLugar
 # un error de tipeo en una constante da error, y en un texto pasa de largo.
 PENDIENTE = 'pendiente'  # todavia no la recorrimos
 PROBADA = 'probada'      # ya pasamos por ahi
+TRABADA = 'trabada'      # la estaba recorriendo y pasaron a manual (T11): no se sabe adonde va
 
 # ===================== Puntos cardinales =====================
 # La libreta anota las salidas en norte, sur, este y oeste, no en izquierda o derecha:
@@ -171,6 +172,17 @@ class Libreta:
                 self.saliendo_por = camino
                 return camino
         return None
+
+    def pasar_a_manual(self):
+        """Pasaron a manual (T11): la libreta no se borra, pero el tramo a mano no se anota.
+
+        La salida que estaba recorriendo queda TRABADA: no se sabe adonde lleva.
+        Sin lugar actual, el proximo aviso (al volver a automatico) no se une a nada.
+        """
+        if self.saliendo_por is not None:
+            self.saliendo_por.estado = TRABADA
+        self.saliendo_por = None
+        self.actual = None
 
     def _unir(self, hoja, de_donde_vino):
         """Une la salida que tomo en el lugar anterior con la de este lugar por donde llego.

@@ -5,6 +5,7 @@
 #   Detector ──/navegacion/lugar──► Decision / Exploracion ──/mover──► este nodo ──► cmd_vel_auto
 #      ▲                                                                   │
 #      └──────────── /navegacion/reiniciar_detector ("ya sali") ──────────┘
+#   /navegacion/salida_tomada (String): por que salida se fue, para Mapeo.
 #
 # Etapas:
 #   AVANZANDO       va derecho por el pasillo (el centrado lo hace la asistencia / Bajo nivel)
@@ -87,6 +88,8 @@ class NodoMover(Node):
 
         self.pub_cmd = self.create_publisher(Twist, 'cmd_vel_auto', 10)
         self.pub_reiniciar = self.create_publisher(Empty, '/navegacion/reiniciar_detector', 10)
+        # Para Mapeo: por que salida se fue del lugar (la anota PROBADA en la libreta)
+        self.pub_salida = self.create_publisher(String, '/navegacion/salida_tomada', 10)
 
         ActionServer(self, Mover, '/mover', self.ejecutar,
                      goal_callback=self.al_recibir_pedido,
@@ -157,6 +160,7 @@ class NodoMover(Node):
             self.get_logger().error(f'Salida desconocida: "{orden.salida}"')
             self.terminar(Mover.Result.BLOQUEADA)
             return
+        self.pub_salida.publish(String(data=orden.salida))
         if orden.salida == Lugar.ADELANTE:
             self.salir_del_lugar()       # no hay que girar
             return

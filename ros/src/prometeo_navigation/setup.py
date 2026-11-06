@@ -34,6 +34,7 @@ setup(
             'joystick_modo = prometeo_navigation.joystick_modo:main',
             'detector_lugares = prometeo_navigation.detector_lugares:main',
             'mover = prometeo_navigation.mover:main',
+            'mapeo = prometeo_navigation.mapeo:main',
         ],
     },
 )

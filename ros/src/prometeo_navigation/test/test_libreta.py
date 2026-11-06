@@ -9,7 +9,8 @@ import math
 from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar as AvisoLugar
 from prometeo_navigation.libreta import (
-    ESTE, Libreta, Lugar, NORTE, OESTE, PENDIENTE, PROBADA, Salida, SUR, direccion_de_salida,
+    ESTE, Libreta, Lugar, NORTE, OESTE, PENDIENTE, PROBADA, Salida, SUR, TRABADA,
+    direccion_de_salida,
     rumbo_de,
     salida_hacia)
 
@@ -236,3 +237,24 @@ def test_rodear_una_isla_marca_probado_el_camino_de_vuelta():
     assert all(s.estado == PROBADA for s in a.salidas)
     oeste = [s for s in a.salidas if s.direccion == OESTE][0]
     assert oeste.lleva_a == 4   # D
+
+
+# ===== Manual (T11) =====
+
+def test_pasar_a_manual_traba_la_salida_que_estaba_recorriendo():
+    libreta = Libreta()
+    libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    camino = libreta.tomar_salida(0.0, AvisoLugar.IZQUIERDA)
+    libreta.pasar_a_manual()
+    assert camino.estado == TRABADA
+    assert libreta.actual is None
+
+
+def test_despues_de_manual_el_lugar_siguiente_no_se_une_al_anterior():
+    libreta = Libreta()
+    libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    camino = libreta.tomar_salida(0.0, AvisoLugar.IZQUIERDA)
+    libreta.pasar_a_manual()
+    b, _ = libreta.anotar('curva', -2.0, 0.0, math.pi / 2, [AvisoLugar.DERECHA])
+    assert camino.lleva_a is None
+    assert all(s.lleva_a is None for s in b.salidas)
