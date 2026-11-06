@@ -166,6 +166,86 @@ menu "Prometeo - Cinematica"
             que el real (tipico 150-250%). Ajustar girando en el lugar a una
             velocidad angular conocida: si gira de menos, bajar el factor.
 
+    config PROMETEO_MOTORES_SPEED_LOOP
+        bool "Mantener la velocidad de cada rueda con su encoder (PID)"
+        default y
+        help
+            Solo para ordenes de motores_set_twist() / motores_set_ruedas() (/cmd_vel). Cada
+            rueda se mide con su encoder y su motor sube o baja el duty hasta girar a la
+            velocidad pedida, asi las 4 ruedas giran igual. Requiere encoders.
+
+    config PROMETEO_TURN_BOOST_PCT
+        int "Refuerzo de duty al girar (%)"
+        range 0 200
+        default 30
+        help
+            Al girar la velocidad angular pedida se multiplica por 1 + este valor: mas duty en las 4 ruedas
+            para vencer el patinaje. 0 = sin refuerzo. El giro real sale mas rapido que el pedido.
+
+    config PROMETEO_TURN_MIN_DUTY_PCT
+        int "Duty minimo al girar (%)"
+        range 0 100
+        default 60
+        help
+            Al girar, el lado mas rapido recibe al menos este duty (el otro en proporcion, para
+            conservar el radio de giro). Las 4 ruedas patinan y con un giro lento el duty
+            que sale de cmd_vel no alcanza para moverlas. 0 = sin minimo. Subir si no gira,
+            bajar si gira demasiado rapido.
+
+    config PROMETEO_MOTORES_SPEED_WINDOW_MS
+        int "Ventana de medicion de velocidad del lazo (ms)"
+        depends on PROMETEO_MOTORES_SPEED_LOOP
+        range 200 3000
+        default 500
+        help
+            Un pulso en 500 ms de UNA rueda son ~0,02 m/s. Mas ventana = mas preciso pero mas
+            lento para corregir.
+
+    config PROMETEO_MOTORES_SPEED_KP_X100
+        int "Ganancia proporcional del lazo (x100)"
+        depends on PROMETEO_MOTORES_SPEED_LOOP
+        range 0 1000
+        default 30
+        help
+            100 = 1,0: un error igual a VEL_MAX suma 1,0 de duty. Se aplica una vez por ventana
+            y se mantiene hasta la siguiente medicion. 0 = sin P.
+
+    config PROMETEO_MOTORES_SPEED_KI_X100
+        int "Ganancia integral del lazo (x100)"
+        depends on PROMETEO_MOTORES_SPEED_LOOP
+        range 1 1000
+        default 100
+        help
+            100 = 1,0: por cada segundo con un error igual a VEL_MAX, sube 1,0 de duty.
+            Subirla corrige mas rapido pero puede oscilar.
+
+    config PROMETEO_MOTORES_SPEED_KD_X100
+        int "Ganancia derivativa del lazo (x100)"
+        depends on PROMETEO_MOTORES_SPEED_LOOP
+        range 0 1000
+        default 0
+        help
+            Frena la correccion cuando el error baja rapido. Con la resolucion de los encoders
+            (1 pulso por ventana) la derivada es muy ruidosa: dejar en 0 salvo que se mida bien.
+
+    config PROMETEO_MOTORES_SPEED_BOOST_MAX_PCT
+        int "Refuerzo maximo de duty (%)"
+        depends on PROMETEO_MOTORES_SPEED_LOOP
+        range 0 100
+        default 50
+        help
+            Tope de la correccion total (P+I+D) que puede sumar el lazo, para que un encoder roto o una
+            VEL_MAX mal estimada no lleven los motores al maximo.
+
+    config PROMETEO_MOTORES_SPEED_REDUCE_MAX_PCT
+        int "Reduccion maxima de duty de una rueda rapida (%)"
+        depends on PROMETEO_MOTORES_SPEED_LOOP
+        range 0 100
+        default 30
+        help
+            Cuanto puede bajar el lazo el duty de una rueda que gira mas rapido que la pedida,
+            para igualarla con las demas. La zona muerta de motores.c sigue poniendo el minimo.
+
 endmenu
 
 menu "Prometeo - Test de motores"

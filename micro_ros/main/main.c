@@ -134,8 +134,13 @@ static void cmd_vel_callback(const void *msgin)
     if (lineal > 0.0f && avance_norm <= 0.0f) {
         lineal = 0.0f;
     }
-    // La cinemática de 4 ruedas, el escalado y el failsafe están en motores_set_twist()
-    motores_set_twist(lineal, (float)m->angular.z);
+    // Cada rueda recibe su propia velocidad (m/s). Siempre las 4 ruedas; al girar
+    // el giro va reforzado (PROMETEO_TURN_BOOST_PCT). El PID de encoders de motores.c
+    // ajusta el duty de cada motor por separado hasta que cada rueda gire a su velocidad pedida.
+    // motores_set_ruedas() también alimenta el failsafe.
+    float v_rueda[CANT_MOTORES];
+    motores_twist_a_ruedas(lineal, (float)m->angular.z, v_rueda);
+    motores_set_ruedas(v_rueda);
     estado_actual = "MOVIENDO";
 }
 
@@ -381,6 +386,7 @@ static void micro_ros_task(void * arg)
     allocator = rcl_get_default_allocator();
     init_options = rcl_get_zero_initialized_init_options();
     rcl_init_options_init(&init_options, allocator);
+    rcl_init_options_set_domain_id(&init_options, 33);   // mismo ROS_DOMAIN_ID que el agente y la PC
     rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
     rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options);
 
