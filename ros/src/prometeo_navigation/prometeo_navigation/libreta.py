@@ -29,7 +29,7 @@ TRABADA = 'trabada'      # la estaba recorriendo y pasaron a manual (T11): no se
 # "izquierda" cambia segun hacia donde mira el robot, y "norte" no. Asi reconoce el
 # mismo lugar aunque llegue desde otro lado.
 #
-# No es el norte de verdad (TICKETS_NAVEGACION.md, T3): norte = hacia donde miraba el
+# No es el norte de verdad (Documentacion/ARQUITECTURA.md, seccion 6): norte = hacia donde miraba el
 # robot al arrancar (orientacion 0 en /odom). Oeste es 90 grados (a su izquierda),
 # sur 180 y este 270.
 ESTE = 'este'
@@ -224,7 +224,7 @@ class Libreta:
     def buscar(self, x, y, direcciones):
         """La hoja de un lugar ya anotado que coincide, o None.
 
-        Tienen que coincidir dos cosas (TICKETS_NAVEGACION.md, T3):
+        Tienen que coincidir dos cosas (Documentacion/ARQUITECTURA.md, seccion 6):
         - la posicion, con el margen, porque /odom acumula error;
         - las direcciones de todas sus salidas (contando por donde vino). Asi no se
           confunde con otro lugar cercano que tiene otra forma.

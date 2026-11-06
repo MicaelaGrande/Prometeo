@@ -15,7 +15,7 @@ T2 / teclado ──/cmd_vel──► este nodo ──/cmd_vel_corregido──►
 ## Por qué existe
 
 El equipo de Bajo nivel se encarga de que el robot no choque con las paredes (T9 en
-`ros/TICKETS_NAVEGACION.md`). En Gazebo no hay ESP32, así que sin este nodo el robot iría derecho
+`Documentacion/ARQUITECTURA.md`). En Gazebo no hay ESP32, así que sin este nodo el robot iría derecho
 hasta chocar y no se podría probar Navegación alta (T2).
 
 Este nodo **no decide hacia dónde doblar**. Eso lo deciden Decisión (T7) y Exploración (T4).

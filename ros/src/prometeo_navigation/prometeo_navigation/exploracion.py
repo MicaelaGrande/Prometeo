@@ -2,7 +2,7 @@
 # Lo usa el nodo mapeo cuando Decision pide explorar (/decision/explorar).
 #
 # Son solo cuentas sobre la libreta, sin ROS: se prueban sin robot.
-# La logica es la de TICKETS_NAVEGACION.md, "Como funciona la exploracion":
+# La logica es la de Documentacion/ARQUITECTURA.md, seccion 6:
 #   1. Si en este lugar hay una salida que todavia no se probo, tomar esa.
 #   2. Si no (callejon, o ya probo todo), volver hacia el lugar mas cercano que
 #      tenga una salida sin probar, por los caminos ya conocidos.

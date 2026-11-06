@@ -1,7 +1,7 @@
 # Deteccion de lugares: darse cuenta de que el robot llego a una curva, una
 # bifurcacion o un callejon, mirando los ultrasonidos.
 #
-# El diseno esta en ros/TICKETS_NAVEGACION.md, T2, "Deteccion de lugares".
+# El diseno esta en Documentacion/ARQUITECTURA.md, seccion 6, detector_lugares.
 #
 # Son solo cuentas, sin ROS: reciben numeros y devuelven numeros, asi se pueden
 # probar sin robot y sin simulador. Las distancias van en cm.

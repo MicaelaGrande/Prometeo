@@ -38,7 +38,7 @@
 #   modo_actual (selector): en manual   ──► Libreta.pasar_a_manual() ─┘     (lo dibuja el panel)
 #
 # mapeo/libreta es un String con JSON, el formato que espera el panel
-# (TICKETS_NAVEGACION.md, T11): {"lugares": [...], "actual": 1, "camino": []}.
+# (Documentacion/ARQUITECTURA.md, seccion 6): {"lugares": [...], "actual": 1, "camino": []}.
 # Se publica guardado (transient_local): quien se conecta tarde recibe la ultima.
 # "camino" queda vacio hasta que exista /volver (Dijkstra).
 #
