@@ -15,16 +15,16 @@ que miden los sensores y no por distancias fijas.
 | Orden | Ticket | Hito | Depende de | Estado |
 |---|---|---|---|---|
 | 1 | T1. Base de simulación | Llegar al cubo | Nada | Falta calibrar ultrasonidos |
-| 2 | T2. Navegación alta | Llegar al cubo | T1 | Nav2 descartado, sigue control por ultrasonidos |
-| 3 | T3. Mapeo: libreta del recorrido | Llegar al cubo | T2 | Solo los datos |
-| 4 | T4. Exploración con memoria | Llegar al cubo | T3 | Sin empezar |
+| 2 | T2. Navegación alta | Llegar al cubo | T1 | Hecha (detector, `/mover`, acercarse al cubo), sin probar en Gazebo ni en el robot |
+| 3 | T3. Mapeo: libreta del recorrido | Llegar al cubo | T2 | Hecha (nodo `mapeo`), sin probar en Gazebo ni en el robot |
+| 4 | T4. Exploración con memoria | Llegar al cubo | T3 | Hecha (en el nodo `mapeo`), sin probar en Gazebo ni en el robot |
 | 3 y 4, en paralelo | T6. Flechas en visión | Llegar al cubo | Nada | Casi lista, sin mergear |
-| 5 | T7. Decisión por colores | Llegar al cubo | T4 y T6 | Sin empezar |
-| 6 | T5. Decisión básica | Llegar al cubo | T7 | Sin empezar |
-| 7 | T8. Volver al inicio | Volver al inicio | T3 | Sin empezar |
+| 5 | T7. Decisión por colores | Llegar al cubo | T4 y T6 | Hecha (Natasha, `decision_basica_colores`, unida) |
+| 6 | T5. Decisión básica | Llegar al cubo | T7 | Hecha (Natasha, `decision_basica_colores`, unida) |
+| 7 | T8. Volver al inicio | Volver al inicio | T3 | Hecha (`/volver` en el nodo `mapeo`), sin probar en Gazebo ni en el robot |
 | En paralelo | T9. Bajo nivel en el robot real | Robot real | Nada | Parcial, sin mergear |
 | En paralelo | T10. Cámara en el robot real | Robot real | T6 | Parcial, sin mergear |
-| Antes de probar el robot real | T11. Modo manual de respaldo | Robot real | T2 | Diseño acordado |
+| Antes de probar el robot real | T11. Modo manual de respaldo | Robot real | T2 | Hecho (selector, panel, joystick, pausa para la garra) |
 
 Los tickets conservan su número para no confundir al equipo: el orden de trabajo es el de la tabla.
 T3 y T4 van juntos: la libreta de Mapeo no sirve sin alguien que la use, y Exploración no puede
@@ -280,8 +280,20 @@ emergencia propio: revisar que no frene de más en los pasillos angostos.
 Un grafo es como un mapa de subte: importan las estaciones y cómo se conectan, no el dibujo exacto.
 Con el reglamento actual no se puede sumar LiDAR, por eso conviene esto y no un mapa detallado.
 
-**Estado:** `feature/ros/mapeo` tiene el paquete `prometeo_navigation`, con los datos `Lugar` y
-`Salida` y 3 pruebas. Falta agregar lugares, marcar salidas, reconocer un lugar repetido y el nodo.
+**Estado (6/11/2026):** hecho en `feature/ros/navegacion-alta`. `libreta.py` pasa las salidas a
+norte, sur, este y oeste, anota lugares nuevos, reconoce los repetidos (posición con margen y
+mismas salidas), marca las salidas probadas, une los lugares (`lleva_a`) y guarda cuántos segundos
+tardó cada tramo. El nodo `mapeo` la llena con `/navegacion/lugar` y `/navegacion/salida_tomada`
+y la publica en `mapeo/libreta` para el panel. El primer lugar lleva a la largada (`lleva_a = 0`).
+
+**Posición sin odometría (6/11/2026):** las ruedas patinan y el robot real no publica `/odom`.
+`/mover` calcula una **posición de laberinto** (`odom_laberinto`): la dirección sale de los giros
+que confirmó con los ultrasonidos (cuartos de vuelta justos) y la distancia, del tiempo avanzando
+por la velocidad. El detector la usa en vez de `/odom` (`autonomia.launch.py`).
+
+**Manual sin moverse es una pausa (6/11/2026):** Mapeo y `/mover` miran `orden_enviada`. Si en
+manual el robot no se movió (por ejemplo, solo movieron la garra), al volver a automático todo
+sigue igual. Si se movió, recién ahí la salida queda `trabada` y el tramo no se anota.
 
 **Con el modo manual (T11, acordado el 5/11/2026):**
 
@@ -298,6 +310,12 @@ Con el reglamento actual no se puede sumar LiDAR, por eso conviene esto y no un 
   se conoce por la odometría.
 
 ### T4. Exploración con memoria
+
+**Estado (6/11/2026):** hecho en `feature/ros/navegacion-alta`, en el nodo `mapeo`
+(`exploracion.py`), cuando Decisión pide `/decision/explorar`. Prueba una salida sin probar; si
+no hay, vuelve por BFS al lugar con pendientes más cercano; si no queda nada, media vuelta. Al
+**abandonar un color** (botón del panel o 3 intentos fallidos), Decisión publica
+`/decision/retomar`: el robot vuelve al último lugar y sigue desde ahí, sin ir a la largada.
 
 - **Objetivo:** encontrar el camino cuando no hay flecha, sin dar vueltas alrededor de una isla.
 - **Lógica:** la de [Cómo funciona la exploración](#cómo-funciona-la-exploración).
@@ -367,6 +385,13 @@ cubos. Falta corregir los casos de arriba y probarlo fuera de las pruebas sinté
 **Primera tarea:** definir cómo se traduce una flecha en una salida. Si está de frente, la propuesta es: `left`, salida izquierda; `right`, salida derecha; `up`, seguir derecho. Por ahora solo se detectan flechas de frente, con la cámara fija.
 
 ### T8. Volver al inicio
+
+**Estado (6/11/2026):** hecho en `feature/ros/navegacion-alta`, en el nodo `mapeo` (acción
+`/volver`). Dijkstra (`vuelta.py`) usa los segundos de cada tramo, no los metros. Si está en un
+pasillo da media vuelta; en cada lugar recalcula el camino. Desde el primer lugar avanza lo que
+tardó el primer tramo y **pasa a manual**: el cubo se deja a mano. Al volver a automático la
+posición vuelve a (0, 0): hay que dejar el robot como arrancó la ronda. Pendiente: si la libreta
+quedó partida, hoy pide AYUDA; falta que el operador diga en el panel en qué lugar dejó el robot.
 
 - **Objetivo:** volver a la entrada después de cada cubo y depositarlo en el contenedor de su color.
 - **Entradas:** la libreta de T3.

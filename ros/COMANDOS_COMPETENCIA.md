@@ -202,6 +202,30 @@ Con **PARAR** puesto, el panel no le manda órdenes al brazo.
 intermedias: los límites no evitan choques. La telemetría es la posición que calcula la
 rampa del firmware, no una medición: no confirma que el brazo llegó ni que agarró el cubo.
 
+### Paso 8. Categoría A: que ande solo
+
+Con el panel corriendo (paso 4), en **otra terminal**:
+
+```bash
+ros2 launch my_robot_bringup autonomia.launch.py
+```
+
+Arranca el detector de lugares, `/mover`, Mapeo (con Exploración y la vuelta) y Decisión. El robot
+**no se mueve hasta poner el panel en automático**. En Gazebo: `autonomia.launch.py ns:=''`.
+
+Cómo va una ronda:
+
+1. Sigue las flechas. Sin flecha de su color, explora con la libreta.
+2. Ve su cubo: se acerca con la cámara, frena en el punto justo y **pasa solo a manual**.
+3. Agarrar el cubo con la pestaña Brazo **sin mover el robot** y volver a **automático**. Como no
+   se movió, no se reinicia nada y arranca la vuelta.
+   Si no lo pueden agarrar: **Abandonar este cubo**. Sigue con el próximo color desde el último
+   lugar, sin volver a la largada.
+4. Vuelve solo por el camino más rápido (Dijkstra) y en la largada **pasa a manual**.
+5. Dejar el cubo a mano, poner el robot **como arrancó la ronda** y volver a **automático**.
+
+Si aparece un cartel rojo **AYUDA** (por ejemplo, "no pude girar"), pasar a manual y hacerlo a mano.
+
 ### Ver el panel desde otra compu o el celular (opcional)
 
 Tiene que estar en la misma red WiFi que la compu. En el navegador: `http://<ip-de-la-compu>:8082`
@@ -401,6 +425,17 @@ falta.**
 | Centrado en el pasillo y freno (nodo provisorio que imita a la ESP32) | sí |
 | Cámara y visión (flechas, cubos, zonas) | sí, en el mundo `vision_testground` |
 | **Mover el brazo y la garra** | **no**: en esta rama el brazo está dibujado pero no se mueve. Ignacio tiene una garra a medio andar en `feature/ros/sim-merge` ("todavía rebota demasiado"), sin mergear |
+
+**Lo más fácil:** `ros/sim.sh` levanta Gazebo (mundo `vision_testground`) y abre solas las ventanas
+para probar el detector de lugares (detector, avisos, teclado y reiniciar). Arregla el error de
+la terminal de VS Code ("symbol lookup error ... libpthread") y compila si hace falta:
+
+```bash
+cd ~/Documentos/Robotica/Prometeo/ros
+./sim.sh                  # o ./sim.sh laberinto, ./sim.sh --mundos, ./sim.sh --solo-gazebo
+```
+
+O a mano:
 
 **Terminal 1: Gazebo.** Elegir un mundo:
 

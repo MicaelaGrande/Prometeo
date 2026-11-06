@@ -13,16 +13,6 @@ import math
 from prometeo_interfaces.msg import Lugar
 
 
-def entro_al_pasillo(izquierda_cm, derecha_cm, margen_cm):
-    """True si el robot ya esta dentro de un pasillo: las dos paredes a distancias parecidas.
-
-    Si un sensor no tiene dato (None), todavia no sabemos, asi que devuelve False.
-    """
-    if izquierda_cm is None or derecha_cm is None:
-        return False
-    return abs(izquierda_cm - derecha_cm) <= margen_cm
-
-
 # Lo que manda la ESP32 (y hcsr04_sim en Gazebo) en /distancias, en cm.
 # Igual que en micro_ros/main/sensores.h y prometeo_sensores/distancias_a_range.py.
 DIST_LEJOS_CM = 400.0   # esto o mas = no hubo eco (no hay nada adelante)

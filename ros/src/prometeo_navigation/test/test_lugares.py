@@ -10,29 +10,8 @@ from prometeo_interfaces.msg import Lugar
 from prometeo_navigation.lugares import (
     AVISADO, EN_PASILLO, MIDIENDO_LUGAR, MIRANDO_ALREDEDOR, Confirmador, DetectorDeLugares,
     Promedio,
-    armar_lugar, costado_abierto, distancia_a_lectura, entro_al_pasillo, frente_muy_cerca,
+    armar_lugar, costado_abierto, distancia_a_lectura, frente_muy_cerca,
     lectura_vigente)
-
-
-def test_entro_si_las_dos_paredes_estan_parecidas():
-    assert entro_al_pasillo(18, 22, margen_cm=5)  # diferencia 4
-
-
-def test_no_entro_si_una_pared_esta_mucho_mas_lejos():
-    assert not entro_al_pasillo(10, 30, margen_cm=5)  # diferencia 20
-
-
-def test_justo_en_el_margen_cuenta_como_entro():
-    assert entro_al_pasillo(20, 25, margen_cm=5)  # diferencia 5, igual al margen
-
-
-def test_no_importa_de_que_lado_este_mas_cerca():
-    assert entro_al_pasillo(22, 18, margen_cm=5)
-
-
-def test_sin_dato_de_un_sensor_todavia_no_sabemos():
-    assert not entro_al_pasillo(None, 20, margen_cm=5)
-    assert not entro_al_pasillo(20, None, margen_cm=5)
 
 
 def test_costado_cerrado_si_mide_parecido_al_promedio():
