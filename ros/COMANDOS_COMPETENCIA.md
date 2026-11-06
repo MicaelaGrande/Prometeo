@@ -174,6 +174,34 @@ En la pestaña **Monitoreo** hay una tabla "Qué está llegando" con cada dato y
 
 **Ojo:** con este firmware no funciona el freno por obstáculo (frenar solo antes de chocar). Manejar despacio.
 
+### Paso 7. Manejar el brazo (pestaña Brazo, 100% manual)
+
+El brazo se maneja **solo a mano** desde la pestaña **Brazo**. El panel manda los 4 ángulos
+`[base, hombro, codo, pinza]` a `/prometeo/brazo/cmd` y el firmware los mueve con rampa.
+
+1. Abrir la pestaña **Brazo**. Los controles están grises hasta que llega `/servos/estado`
+   desde la ESP32; ahí toman la posición real del brazo (así no salta al primer movimiento).
+2. **Con el teclado** (solo con la pestaña Brazo abierta; ahí las flechas no mueven las ruedas),
+   mantener apretado para mover seguido: **← →** base, **↑ ↓** hombro, **W / S** codo,
+   **Enter** abre o cierra la pinza. La velocidad se elige en la pestaña (hasta 45°/s, lo máximo
+   del firmware). ESPACIO sigue siendo PARAR.
+   También se puede con **−5 / +5** o con el deslizador (la orden sale al **soltarlo**).
+   "Pedido" es lo que se mandó y "Real" es lo que informa el firmware.
+3. **Abrir / Cerrar** mueve solo la pinza. Los ángulos de abierta (90) y cerrada se ajustan
+   ahí mismo y quedan guardados en el navegador.
+4. **Reposo elevado** manda `[100, 30, 20, 90]`.
+5. **Guardar postura actual** con un nombre (preagarre, transporte…) para volver con **Ir**.
+   **Copiar lista** copia todas como texto para anotarlas en el repo.
+
+Límites (los mismos del firmware): base 40–140, hombro 0–150, codo 0–150, pinza 30–100.
+Con **PARAR** puesto, el panel no le manda órdenes al brazo.
+
+✔ Anduvo si al tocar +5 en Base el brazo gira y "Real" sigue a "Pedido".
+
+**Ojo:** la cámara está delante de la garra. Moverse de a poco y pasar por posturas
+intermedias: los límites no evitan choques. La telemetría es la posición que calcula la
+rampa del firmware, no una medición: no confirma que el brazo llegó ni que agarró el cubo.
+
 ### Ver el panel desde otra compu o el celular (opcional)
 
 Tiene que estar en la misma red WiFi que la compu. En el navegador: `http://<ip-de-la-compu>:8082`
