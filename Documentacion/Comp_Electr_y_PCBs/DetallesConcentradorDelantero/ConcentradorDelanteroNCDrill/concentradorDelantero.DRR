@@ -1,0 +1,17 @@
+---------------------------------------------------------------------------
+NCDrill File Report For: concentradorDelantero.PcbDoc   15/10/2026  20:02:54
+---------------------------------------------------------------------------
+
+Layer Pair : Top Layer to Bottom Layer
+ASCII RoundHoles File : concentradorDelantero.TXT
+EIA File   : concentradorDelantero.DRL
+
+Tool         Hole Size           Hole Type     Hole Count Plated       Tool Travel
+---------------------------------------------------------------------------
+T1        28mil (0.7112mm)         Round          32               11.49 Inch (291.82 mm)
+T2        35.43mil (0.89992mm)     Round          41               6.22 Inch (157.89 mm)
+T3        137.8mil (3.50012mm)     Round          1                0.00 Inch (0.00 mm)
+---------------------------------------------------------------------------
+Totals                                            74               17.71 Inch (449.71 mm)
+
+Total Processing Time (hh:mm:ss) : 00:00:00

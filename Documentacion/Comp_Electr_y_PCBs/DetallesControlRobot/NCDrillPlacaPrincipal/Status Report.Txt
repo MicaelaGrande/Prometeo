@@ -1,0 +1,13 @@
+Output: NC Drill Files
+Type  : NC Drill
+From  : Project [ControlRobot.PrjPCB]
+   Generated File[placaPrincipal.TXT]
+   Generated File[placaPrincipal.DRL]
+   Generated File[placaPrincipal.LDP]
+   Generated File[placaPrincipal.DRR]
+
+
+Files Generated   : 4
+Documents Printed : 0
+
+Finished Output Generation At 20:23:18 On 15/10/2026

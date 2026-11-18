@@ -1,0 +1,13 @@
+Output: NC Drill Files
+Type  : NC Drill
+From  : Project [placaMotor.PrjPCB]
+   Generated File[placaMotor.TXT]
+   Generated File[placaMotor.DRL]
+   Generated File[placaMotor.LDP]
+   Generated File[placaMotor.DRR]
+
+
+Files Generated   : 4
+Documents Printed : 0
+
+Finished Output Generation At 20:56:20 On 15/10/2026
