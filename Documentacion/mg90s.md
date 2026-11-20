@@ -1,7 +1,7 @@
 # Librería de servos MG90S (`drivers/mg90s`)
 
 Driver para 5 servos MG90S (PWM de 50 Hz, analógicos, sin realimentación de posición) en un ESP32 clásico.
-Archivos: `micro_ros/drivers/mg90s/mg90s.h` y `mg90s.c`.
+Archivos: `firmware/micro_ros/drivers/mg90s/mg90s.h` y `mg90s.c`.
 
 - **Sin tarea de FreeRTOS:** la rampa corre en un callback periódico de `esp_timer` (20 ms). Lo único de FreeRTOS que se usa es una sección crítica (`portMUX`) para proteger el estado compartido.
 - **Un solo escritor:** solo el callback de la rampa llama a `ledc_set_duty` / `ledc_update_duty`. Las funciones públicas solo actualizan el estado, así que se pueden llamar desde cualquier tarea.

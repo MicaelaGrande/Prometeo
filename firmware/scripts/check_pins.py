@@ -7,7 +7,7 @@ del Kconfig. Detecta:
   - ERROR: pin fuera de rango, pines de flash (6-11), pin solo-entrada usado como salida
   - WARN : pines de arranque (0, 2, 12, 15), UART0 (1, 3)
 
-Uso: python3 tools/check_pins.py [--kconfig RUTA] [--sdkconfig RUTA]
+Uso: python3 firmware/scripts/check_pins.py [--kconfig RUTA] [--sdkconfig RUTA]
 Sale con código 1 si hay errores (sirve en CI / pre-commit).
 """
 import argparse
@@ -16,7 +16,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-RAIZ = Path(__file__).resolve().parent.parent
+RAIZ = Path(__file__).resolve().parent.parent / "micro_ros"   # proyecto del cuerpo
 
 SOLO_ENTRADA = {34, 35, 36, 39}
 PINES_FLASH = set(range(6, 12))

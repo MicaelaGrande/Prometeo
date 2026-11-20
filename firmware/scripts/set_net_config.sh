@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Carga SSID/password del WiFi actual y la IP local de la PC (agente micro-ROS)
-# en sdkconfig. Uso: scripts/set_net_config.sh [interfaz_para_IP]
+# en sdkconfig. Uso: firmware/scripts/set_net_config.sh [interfaz_para_IP]
 #   Sin argumento: IP de la ruta por defecto. sdkconfig esta ignorado por git.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../micro_ros"
 CFG=sdkconfig
 [ -f "$CFG" ] || { echo "No existe $CFG (corre idf.py menuconfig/build una vez)"; exit 1; }
 

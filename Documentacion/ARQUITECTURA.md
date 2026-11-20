@@ -35,7 +35,7 @@ Revisar datos: `ros2 node list`, `ros2 topic echo /prometeo/estado_selector`,
 Gazebo (sin robot): `cd ros && ./sim.sh` (o `./sim.sh laberinto`, `./sim.sh --mundos`).
 Con el panel: `panel.launch.py ns:=''` y `autonomia.launch.py ns:=''`.
 
-Firmware: `cd micro_ros && idf.py build && idf.py -p /dev/ttyUSB0 flash monitor`.
+Firmware: `cd firmware/micro_ros && idf.py build && idf.py -p /dev/ttyUSB0 flash monitor`.
 
 ---
 
@@ -54,7 +54,7 @@ Firmware: `cd micro_ros && idf.py build && idf.py -p /dev/ttyUSB0 flash monitor`
 └─────────────────────────────┼───────────────────────────────────────┘
                      WiFi · micro-ROS agent (~/Documentos/Robotica/micro_ws)
 ┌─────────────────────────────┼───────────────────────────────────────┐
-│  ESP32 (micro_ros/)         ▼                                       │
+│  ESP32 (firmware/micro_ros/)▼                                       │
 │  cmd_vel → freno → centrado → motores (PID por rueda, térmica)      │
 │  3 ultrasonidos → /distancias      brazo + garra + cámara (servos)  │
 └─────────────────────────────────────────────────────────────────────┘
@@ -71,9 +71,12 @@ Firmware: `cd micro_ros && idf.py build && idf.py -p /dev/ttyUSB0 flash monitor`
 
 ```
 Prometeo/
-├── micro_ros/                 Firmware de la ESP32 (ESP-IDF 5.5 + micro-ROS)
-│   ├── main/                  main.c, sensores, seguridad (freno), centrado
-│   └── drivers/               motores, hcsr04 (ultrasonidos), encoders, mg90s (servos), Kconfig
+├── firmware/
+│   ├── micro_ros/             Firmware del cuerpo (ESP32, ESP-IDF 5.5 + micro-ROS)
+│   │   ├── main/              main.c, sensores, seguridad (freno), centrado
+│   │   └── drivers/           motores, hcsr04 (ultrasonidos), encoders, mg90s (servos), Kconfig
+│   ├── esp32_cam/             Firmware de la ESP32-CAM: hotspot Wi-Fi + video MJPEG en /stream
+│   └── scripts/               reset_ambos.sh, set_net_config.sh, check_pins.py
 ├── ros/
 │   ├── sim.sh                 Levanta Gazebo con todo para probar
 │   └── src/                   Paquetes de ROS 2 (tabla abajo)
@@ -95,7 +98,7 @@ Prometeo/
 
 ---
 
-## 3. El cuerpo: firmware de la ESP32 (`micro_ros/`)
+## 3. El cuerpo: firmware de la ESP32 (`firmware/micro_ros/`)
 
 ### Camino de una orden de movimiento (`main/main.c`, `cmd_vel_callback`)
 1. Llega `cmd_vel` (avance m/s, giro rad/s).
