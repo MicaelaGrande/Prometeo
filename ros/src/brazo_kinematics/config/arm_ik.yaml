@@ -15,6 +15,6 @@
     # servo = sign * ángulo_deg + offset ; orden [base, hombro, codo]
     sign: [1.0, 1.0, 1.0]            # TODO calibrar
     offset_deg: [90.0, 0.0, 0.0]     # TODO calibrar
-    # Deben coincidir (o ser más estrictos) que lim_min/lim_max en micro_ros/drivers/mg90s/mg90s.c
+    # Deben coincidir (o ser más estrictos) que lim_min/lim_max en firmware/micro_ros/drivers/mg90s/mg90s.c
     servo_min_deg: [0.0, 0.0, 0.0]
     servo_max_deg: [180.0, 180.0, 180.0]

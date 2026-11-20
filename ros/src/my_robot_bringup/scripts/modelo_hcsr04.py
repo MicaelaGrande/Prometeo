@@ -18,7 +18,7 @@ import math
 
 import numpy as np
 
-# Valores de micro_ros/drivers/hcsr04/hcsr04.c y micro_ros/main/sensores.h
+# Valores de firmware/micro_ros/drivers/hcsr04/hcsr04.c y firmware/micro_ros/main/sensores.h
 US_POR_CM = 58.0        # distancia(cm) = tiempo_eco(us) / 58
 ECO_MIN_US = 116        # 2 cm * 58
 ECO_MAX_US = 23200      # 400 cm * 58

@@ -19,7 +19,7 @@ from std_msgs.msg import Float32MultiArray
 # En el mismo orden que /distancias
 SENSORES = ('izq', 'der', 'frente')
 
-DIST_LEJOS_CM = 400.0   # ver micro_ros/main/sensores.h
+DIST_LEJOS_CM = 400.0   # ver firmware/micro_ros/main/sensores.h
 CONO_RAD = math.radians(30.0)
 RANGO_MIN_M = 0.02
 RANGO_MAX_M = 4.0

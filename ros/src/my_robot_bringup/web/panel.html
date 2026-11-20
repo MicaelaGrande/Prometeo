@@ -404,7 +404,7 @@ const SALUD = [
   ["Libreta (Mapeo)", T.libreta, 0], ["Avisos", T.aviso, 0], ["Joystick", T.joy, 0],
   ["Asistencia (freno de la compu)", T.frenoAsist, 0],
 ];
-const DIST_LEJOS_CM = 400;   // igual que micro_ros/main/sensores.h
+const DIST_LEJOS_CM = 400;   // igual que firmware/micro_ros/main/sensores.h
 const CERCA_CM = 15;
 const $ = id => document.getElementById(id);
 const ultimo = {};   // topic -> hora del ultimo mensaje (ms)
@@ -821,7 +821,7 @@ pedirDibujo();
 // ---------- Brazo (control 100% manual) ----------
 // /brazo/cmd = [base, hombro, codo, pinza] en grados. Se mandan SIEMPRE los 4 valores
 // (JSON no admite NaN), por eso los controles arrancan en la postura inicial del firmware (BR_REPOSO).
-// Límites = los del firmware (micro_ros/drivers/mg90s/mg90s.c): fuera de eso, el firmware recorta.
+// Límites = los del firmware (firmware/micro_ros/drivers/mg90s/mg90s.c): fuera de eso, el firmware recorta.
 const BR = [
   { nombre: "Base",   min: 40, max: 140 },
   { nombre: "Hombro", min: 0,  max: 150 },

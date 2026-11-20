@@ -14,7 +14,7 @@ from provisorio_bajo_nivel_sim.calculos import (
     umbral_freno_cm,
 )
 
-# Los mismos valores que micro_ros/main/seguridad.c
+# Los mismos valores que firmware/micro_ros/main/seguridad.c
 T_REACCION_S = 0.14
 T_FRENADO_S = 0.08
 MARGEN_CM = 1.0

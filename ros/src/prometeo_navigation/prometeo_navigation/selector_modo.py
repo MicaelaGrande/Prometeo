@@ -10,7 +10,7 @@
 #
 # Publica cmd_vel siempre, varias veces por segundo, aunque la orden no cambie.
 # La ESP32 frena sola si pasan 300 ms sin ordenes (TIMEOUT_MS en
-# micro_ros/drivers/motores/motores.c), y el teclado solo manda cuando se aprieta
+# firmware/micro_ros/drivers/motores/motores.c), y el teclado solo manda cuando se aprieta
 # una tecla: sin este repetidor, el robot avanzaria a los tirones.
 #
 # Lo que avisa, para los demas nodos y el panel. Los dos primeros se guardan para quien

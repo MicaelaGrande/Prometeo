@@ -17,7 +17,7 @@
   ros__parameters:
     use_sim_time: false
 
-    # ===== Freno por obstaculo (la cuenta de micro_ros/main/seguridad.c) =====
+    # ===== Freno por obstaculo (la cuenta de firmware/micro_ros/main/seguridad.c) =====
     # 0,14 s de la ESP32 + unos 0,15 s de ida y vuelta por WiFi. Ajustar probando.
     t_reaccion_s: 0.30
     t_frenado_s: 0.08        # lo que sigue rodando despues de cortar

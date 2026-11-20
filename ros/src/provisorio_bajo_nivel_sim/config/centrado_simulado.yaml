@@ -7,7 +7,7 @@ centrado_simulado:
   ros__parameters:
     use_sim_time: true
 
-    # ===== Freno: COPIA de micro_ros/main/seguridad.c =====
+    # ===== Freno: COPIA de firmware/micro_ros/main/seguridad.c =====
     # Si Bajo nivel cambia estos numeros alla, cambiarlos aca.
     t_reaccion_s: 0.14       # tiempo hasta darse cuenta de la pared
     t_frenado_s: 0.08        # lo que sigue rodando despues de cortar

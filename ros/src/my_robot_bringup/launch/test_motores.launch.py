@@ -7,7 +7,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    """Panel web del firmware de TEST DE MOTORES (ver micro_ros/main/main_test_motores.c).
+    """Panel web del firmware de TEST DE MOTORES (ver firmware/micro_ros/main/main_test_motores.c).
 
     Abrir http://<ip-de-esta-maquina>:8081/test_motores.html
     Puertos: 8081 página, 9091 rosbridge. No choca con dashboard.launch.py (8080/9090).
