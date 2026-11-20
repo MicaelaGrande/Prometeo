@@ -1,12 +1,21 @@
-
-menu "Prometeo Wi-Fi"
+menu "Prometeo Wi-Fi (hotspot de la camara)"
 
     config PROMETEO_WIFI_SSID
-        string "Nombre de la red Wi-Fi"
-        default ""
+        string "Nombre del hotspot que crea la camara"
+        default "prometeo"
 
     config PROMETEO_WIFI_PASSWORD
-        string "Contrasena de la red Wi-Fi"
-        default ""
+        string "Contrasena del hotspot (minimo 8 caracteres, o vacia = red abierta)"
+        default "prometeo123"
+
+    config PROMETEO_WIFI_CHANNEL
+        int "Canal Wi-Fi (1-13)"
+        range 1 13
+        default 6
+
+    config PROMETEO_WIFI_MAX_CLIENTES
+        int "Maximo de clientes conectados (micro-ROS, la compu, ...)"
+        range 1 10
+        default 4
 
 endmenu
