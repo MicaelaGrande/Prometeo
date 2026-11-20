@@ -318,6 +318,46 @@ menu "Prometeo - Centrado en el pasillo"
 
 endmenu
 
+menu "Prometeo - Busqueda del agente micro-ROS"
+
+    config PROMETEO_AGENTE_AUTO
+        bool "Buscar el agente en la red (sin conocer su IP)"
+        default y
+        help
+            Si el agente no responde en MICRO_ROS_AGENT_IP, recorre las direcciones de la
+            red /24 de la ESP32 probando el puerto del agente, y usa la primera que
+            responde. Al perder el agente vuelve a buscar (la IP de la compu puede cambiar
+            al reconectarse al hotspot de la camara).
+
+    config PROMETEO_AGENTE_PING_MS
+        int "Espera por direccion al buscar (ms)"
+        depends on PROMETEO_AGENTE_AUTO
+        range 20 500
+        default 60
+        help
+            Tiempo que se espera la respuesta de cada IP en la barrida completa (cada intento
+            real tarda ~2 veces este valor). En las primeras IP se espera el triple.
+
+    config PROMETEO_AGENTE_HOSTS_RAPIDOS
+        int "Cantidad de IP a probar primero (desde .2)"
+        depends on PROMETEO_AGENTE_AUTO
+        range 1 50
+        default 8
+        help
+            El DHCP de la camara reparte las IP en orden desde .2, asi que la compu y el
+            cuerpo estan en las primeras. Se prueban estas en cada intento (rapido).
+
+    config PROMETEO_AGENTE_BARRIDO_CADA
+        int "Cada cuantos intentos hacer la barrida completa de la red"
+        depends on PROMETEO_AGENTE_AUTO
+        range 1 100
+        default 6
+        help
+            Si el agente no esta entre las primeras IP, se recorre el resto de la red /24
+            (lento, ~25 s) cada tantos intentos.
+
+endmenu
+
 menu "Prometeo - Test de motores"
 
     config PROMETEO_BUILD_MOTOR_TEST

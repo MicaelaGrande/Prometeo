@@ -1,10 +1,16 @@
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
+#include "esp_sleep.h"
+#include "esp_netif.h"
+#include "esp_event.h"
+#include "nvs_flash.h"
+#include "lwip/inet.h"
 #include "esp_heap_caps.h"
 
 // Nuestras librerías de motores, sensores y freno de emergencia
@@ -16,7 +22,6 @@
 #include "encoder.h"
 
 // Librerías base de micro-ROS
-#include <uros_network_interfaces.h>
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
 #include <rclc/rclc.h>
@@ -61,6 +66,12 @@ static const servo_id_t brazo_vel_gps[BRAZO_JUNTAS] = { SERVO_BASE_VEL, SERVO_HO
 static const char *TAG = "prometeo_body";
 
 static const char *volatile estado_actual = "ESPERANDO ORDENES";
+
+#define ROSDOMAIN_ID 33
+
+// IP donde se busca/usa el agente. Con PROMETEO_AGENTE_AUTO se reemplaza por la que responda.
+static char micro_ros_agent_ip_buf[16] = CONFIG_MICRO_ROS_AGENT_IP;
+char * micro_ros_agent_ip = micro_ros_agent_ip_buf;
 
 // =========================================================
 // OBJETOS DE MICRO-ROS
@@ -426,14 +437,122 @@ typedef enum {
     DESCONECTADO
 } estado_uros_t;
 
+// =========================================================
+// WIFI: se une al hotspot de la camara y reintenta SIEMPRE
+// =========================================================
+// (La interfaz de red de micro-ROS se rinde despues de unos pocos intentos y no vuelve a
+// probar: si la camara tardaba en levantar el hotspot, el cuerpo se quedaba sin WiFi.)
+static void wifi_evento(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    static uint32_t fallos = 0;
+
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (fallos++ % 20 == 0) {   // no llenar el log: solo avisa cada tanto
+            ESP_LOGW(TAG, "Sin hotspot '%s': reintentando (intentos: %u)",
+                     CONFIG_ESP_WIFI_SSID, (unsigned)fallos);
+        }
+        esp_wifi_connect();
+    } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t *ev = data;
+        fallos = 0;
+        ESP_LOGI(TAG, "WiFi conectado. IP: " IPSTR, IP2STR(&ev->ip_info.ip));
+    }
+}
+
+// Arranca el WiFi y vuelve enseguida (no espera a conectarse).
+static esp_err_t wifi_cliente_init(void)
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_evento, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_evento, NULL));
+
+    wifi_config_t wifi_config = { 0 };
+    strlcpy((char *)wifi_config.sta.ssid, CONFIG_ESP_WIFI_SSID, sizeof(wifi_config.sta.ssid));
+    strlcpy((char *)wifi_config.sta.password, CONFIG_ESP_WIFI_PASSWORD, sizeof(wifi_config.sta.password));
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    return ESP_OK;
+}
+
+#ifdef CONFIG_PROMETEO_AGENTE_AUTO
+// Prueba el puerto del agente en las IP .host_ini ... .host_fin de la red /24 de la ESP32.
+// Si alguna responde, la deja en micro_ros_agent_ip y devuelve true.
+static bool probar_hosts(uint32_t red, uint32_t propia, uint32_t gateway,
+                         uint32_t host_ini, uint32_t host_fin, int espera_ms)
+{
+    for (uint32_t host = host_ini; host <= host_fin && host < 255; host++) {
+        uint32_t ip = red | host;
+        if (ip == propia || ip == gateway) {   // ni yo mismo ni la camara
+            continue;
+        }
+        char candidata[16];
+        snprintf(candidata, sizeof(candidata), "%u.%u.%u.%u",
+                 (unsigned)(ip >> 24), (unsigned)((ip >> 16) & 255),
+                 (unsigned)((ip >> 8) & 255), (unsigned)(ip & 255));
+        rmw_uros_options_set_udp_address(candidata, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options);
+        if (rmw_uros_ping_agent_options(espera_ms, 1, rmw_options) == RMW_RET_OK) {
+            strlcpy(micro_ros_agent_ip_buf, candidata, sizeof(micro_ros_agent_ip_buf));
+            return true;
+        }
+    }
+    return false;
+}
+
+// Busca el agente en la red. El DHCP de la camara reparte las IP en orden desde .2 (tiene
+// pocos clientes), asi que el agente casi siempre esta en las primeras: se prueban esas
+// con una espera larga (la compu puede tardar en contestar el ARP si ahorra energia).
+// La barrida completa de la red (.2 a .254) es lenta, por eso solo se hace cada tanto.
+static bool buscar_agente_en_red(void)
+{
+    static unsigned ciclo = 0;
+
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    esp_netif_ip_info_t info;
+    if (netif == NULL || esp_netif_get_ip_info(netif, &info) != ESP_OK || info.ip.addr == 0) {
+        return false;
+    }
+
+    uint32_t propia = lwip_ntohl(info.ip.addr);
+    uint32_t red = propia & 0xFFFFFF00u;
+    uint32_t gateway = lwip_ntohl(info.gw.addr);
+
+    uint32_t rapidos_fin = 1 + CONFIG_PROMETEO_AGENTE_HOSTS_RAPIDOS;   // .2 ... .(1+N)
+    if (probar_hosts(red, propia, gateway, 2, rapidos_fin, 3 * CONFIG_PROMETEO_AGENTE_PING_MS)) {
+        return true;
+    }
+
+    if (++ciclo % CONFIG_PROMETEO_AGENTE_BARRIDO_CADA == 0) {
+        ESP_LOGW(TAG, "No esta en las primeras IP: barrida completa de la red...");
+        return probar_hosts(red, propia, gateway, rapidos_fin + 1, 254, CONFIG_PROMETEO_AGENTE_PING_MS);
+    }
+    return false;
+}
+#endif
+
 static void micro_ros_task(void * arg)
 {
     allocator = rcl_get_default_allocator();
     init_options = rcl_get_zero_initialized_init_options();
     rcl_init_options_init(&init_options, allocator);
-    rcl_init_options_set_domain_id(&init_options, 33);   // mismo ROS_DOMAIN_ID que el agente y la PC
+    rcl_init_options_set_domain_id(&init_options, ROSDOMAIN_ID);   // mismo ROS_DOMAIN_ID que el agente y la PC
     rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
-    rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options);
+    rmw_uros_options_set_udp_address(micro_ros_agent_ip, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options);
 
     // El mensaje de distancias usa un buffer fijo: no se pide memoria dinámica
     msg_dist.data.data = buf_dist;
@@ -465,7 +584,16 @@ static void micro_ros_task(void * arg)
                 estado = AGENTE_DISPONIBLE;
             } else {
                 ESP_LOGW(TAG, "Buscando agente en %s:%s ...",
-                         CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT);
+                         micro_ros_agent_ip, CONFIG_MICRO_ROS_AGENT_PORT);
+#ifdef CONFIG_PROMETEO_AGENTE_AUTO
+                if (buscar_agente_en_red()) {
+                    ESP_LOGI(TAG, "Agente encontrado por barrida en %s", micro_ros_agent_ip);
+                    estado = AGENTE_DISPONIBLE;
+                    break;
+                }
+                // la barrida dejó cambiada la dirección: volver a la última conocida
+                rmw_uros_options_set_udp_address(micro_ros_agent_ip, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options);
+#endif
                 vTaskDelay(pdMS_TO_TICKS(500));
             }
             break;
@@ -529,8 +657,8 @@ void app_main(void)
     // 2b. Freno de emergencia: vigila el FRENTE aunque no haya agente
     ESP_ERROR_CHECK(seguridad_init());
 
-    // 3. Conectarse al WiFi
-    ESP_ERROR_CHECK(uros_network_interface_initialize());
+    // 3. Conectarse al WiFi (reintenta para siempre; no importa quien arranque primero)
+    ESP_ERROR_CHECK(wifi_cliente_init());
 
     // Sin ahorro de energía: si no, la radio duerme ~300 ms entre escuchas,
     // los /cmd_vel llegan amontonados, salta el failsafe y se "pierde" el agente
