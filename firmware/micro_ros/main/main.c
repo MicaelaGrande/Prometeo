@@ -404,22 +404,22 @@ static void destruir_entidades(void)
     rmw_context_t *rmw_context = rcl_context_get_rmw_context(&support.context);
     (void) rmw_uros_set_context_entity_destroy_session_timeout(rmw_context, 0);
 
-    (void) rcl_subscription_fini(&sub_cmd_vel, &node);
-    (void) rcl_subscription_fini(&sub_seguridad, &node);
-    (void) rcl_subscription_fini(&sub_liberar, &node);
-    (void) rcl_subscription_fini(&sub_camara, &node);
-    (void) rcl_subscription_fini(&sub_brazo, &node);
-    (void) rcl_publisher_fini(&publisher, &node);
-    (void) rcl_publisher_fini(&pub_dist, &node);
-    (void) rcl_publisher_fini(&pub_freno, &node);
-    (void) rcl_publisher_fini(&pub_vel_ruedas, &node);
-    (void) rcl_publisher_fini(&pub_vel, &node);
-    (void) rcl_publisher_fini(&pub_servos, &node);
-    (void) rcl_timer_fini(&timer);
-    (void) rcl_timer_fini(&timer_ruedas);
-    (void) rclc_executor_fini(&executor);
-    (void) rcl_node_fini(&node);
-    (void) rclc_support_fini(&support);
+    RCSOFTCHECK(rcl_subscription_fini(&sub_cmd_vel, &node));
+    RCSOFTCHECK(rcl_subscription_fini(&sub_seguridad, &node));
+    RCSOFTCHECK(rcl_subscription_fini(&sub_liberar, &node));
+    RCSOFTCHECK(rcl_subscription_fini(&sub_camara, &node));
+    RCSOFTCHECK(rcl_subscription_fini(&sub_brazo, &node));
+    RCSOFTCHECK(rcl_publisher_fini(&publisher, &node));
+    RCSOFTCHECK(rcl_publisher_fini(&pub_dist, &node));
+    RCSOFTCHECK(rcl_publisher_fini(&pub_freno, &node));
+    RCSOFTCHECK(rcl_publisher_fini(&pub_vel_ruedas, &node));
+    RCSOFTCHECK(rcl_publisher_fini(&pub_vel, &node));
+    RCSOFTCHECK(rcl_publisher_fini(&pub_servos, &node));
+    RCSOFTCHECK(rcl_timer_fini(&timer));
+    RCSOFTCHECK(rcl_timer_fini(&timer_ruedas));
+    RCSOFTCHECK(rclc_executor_fini(&executor));
+    RCSOFTCHECK(rcl_node_fini(&node));
+    RCSOFTCHECK(rclc_support_fini(&support));
 }
 
 // =========================================================

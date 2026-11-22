@@ -92,21 +92,6 @@ static float historial_mediana(const historial_t *h)
     return v[h->cant / 2];
 }
 
-/* Arma el texto de un sensor: distancia final y cruda, o el motivo del error
- *
-static void formatear(char *buf, size_t len, bool hay_dato, esp_err_t err,
-                      float crudo, float final)
-{
-    if (!hay_dato) {
-        snprintf(buf, len, "%s", err == ESP_ERR_TIMEOUT ? "sin eco" : esp_err_to_name(err));
-    } else if (crudo >= DIST_LEJOS_CM) {
-        snprintf(buf, len, "lejos");
-    } else {
-        snprintf(buf, len, "%5.1f cm (crudo %5.1f)", final, crudo);
-    }
-}
- */
-
 // Mide sin parar. Casi todo el tiempo está bloqueada esperando el eco (RMT),
 // así que no consume CPU. No toca micro-ROS: solo deja los valores en distancias_cm.
 static void sensores_task(void *arg)
@@ -114,13 +99,11 @@ static void sensores_task(void *arg)
     float cm[NUM_SENSORS] = { 0 };
     esp_err_t errs[NUM_SENSORS];
     historial_t hist[NUM_SENSORS] = { 0 };
-    int ciclo = 0;
 
     while (1) {
         /* TRIG compartido: un solo pulso dispara los 3 sensores, asi que se miden juntos */
         hcsr04_measure_group_cm(sensors, NUM_SENSORS, cm, errs);
 
-        char txt[NUM_SENSORS][40];
         float nuevas[NUM_SENSORS];
         float crudas[NUM_SENSORS];
 
