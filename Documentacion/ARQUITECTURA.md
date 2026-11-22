@@ -144,6 +144,24 @@ Prometeo/
 
 ---
 
+### La cámara: firmware de la ESP32-CAM (`firmware/esp32_cam/`)
+- Crea el hotspot Wi-Fi (`prometeo`, `192.168.4.1`) y el servidor HTTP **antes** de tocar el sensor: el hotspot no
+  depende de la cámara. Si el hotspot o el servidor no arrancan, la placa se reinicia sola a los 3 s (salvo una
+  contraseña inválida en menuconfig: reiniciar no lo arregla, queda el LED en 3 destellos).
+- La cámara arranca en una tarea aparte y solo se da por lista cuando entrega un **JPEG completo** (se piden hasta
+  8 cuadros; con poca tensión el sensor a veces inicia pero entrega cuadros rotos). Si no responde se reintenta sola
+  (espera creciente de 1 a 10 s). Una vez lista:
+  - se la reinicia sola tras **3 capturas fallidas seguidas**;
+  - si nadie mira el video, se pide un cuadro de prueba cada 10 s para notar igual que dejó de funcionar.
+  - `/stream` (puerto 80, MJPEG) contesta 503 hasta que la cámara esté lista.
+- **LED rojo** (una tanda cada 2 s): 1 destello = todo bien · 2 = hotspot arriba y cámara sin responder · 3 = sin
+  hotspot · apagado = el firmware no corre (sin alimentación o reiniciando).
+- **Estado sin cable serie**: `curl http://192.168.4.1:81/status` (puerto 81, así contesta aunque alguien esté viendo el
+  video). Devuelve JSON con `uptime_s`, `ultimo_reinicio` (`BROWNOUT` = la placa se reinició por baja tensión),
+  `camara` (`ok`/`error`), `camara_inicios_fallidos`, `camara_fallos_seguidos`, `clientes_wifi` y `heap_libre`.
+- La potencia del Wi-Fi está reducida a 10 dBm para bajar los picos de corriente (menuconfig → "Prometeo Wi-Fi
+  (hotspot de la camara)" → `PROMETEO_WIFI_TX_POWER_DBM`, 2–20). Si el cuerpo o la PC están lejos, subirla.
+
 ## 4. Piso 1: quién manda (`panel.launch.py`)
 
 ### `selector_modo` (`prometeo_navigation/selector_modo.py`)

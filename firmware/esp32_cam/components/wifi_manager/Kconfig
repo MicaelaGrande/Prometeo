@@ -18,4 +18,13 @@ menu "Prometeo Wi-Fi (hotspot de la camara)"
         range 1 10
         default 4
 
+    config PROMETEO_WIFI_TX_POWER_DBM
+        int "Potencia de transmision del hotspot (dBm)"
+        range 2 20
+        default 10
+        help
+            Menos potencia = picos de corriente mas chicos. Con la fuente del robot justa,
+            los picos del Wi-Fi bajan la tension y pueden reiniciar la placa. A 10 dBm
+            sobra para unos metros; si el cuerpo o la PC estan lejos, subirla (maximo 20).
+
 endmenu

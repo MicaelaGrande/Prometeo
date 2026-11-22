@@ -1,10 +1,27 @@
 
 #include "camera_manager.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 static const char *TAG = "CAMERA_MANAGER";
 
-esp_err_t camera_manager_init(void)
+#define VALIDACION_CUADROS 8   // cuadros que se piden al arrancar hasta ver un JPEG completo
+
+static volatile bool     s_lista = false;
+static volatile unsigned s_fallos_seguidos = 0;
+static volatile unsigned s_inicios_fallidos = 0;
+static volatile int64_t  s_ultima_captura_us = 0;
+
+static bool jpeg_completo(const camera_fb_t *frame)
+{
+    return frame != NULL &&
+           frame->format == PIXFORMAT_JPEG &&
+           frame->len >= 4 &&
+           frame->buf[0] == 0xFF && frame->buf[1] == 0xD8 &&
+           frame->buf[frame->len - 2] == 0xFF && frame->buf[frame->len - 1] == 0xD9;
+}
+
+static esp_err_t camera_iniciar(void)
 {
     camera_config_t config = {
         // Pines ESP32-CAM AI-Thinker
@@ -96,36 +113,77 @@ esp_err_t camera_manager_init(void)
     
 }
 
+esp_err_t camera_manager_init(void)
+{
+    if (s_lista) {
+        return ESP_OK;
+    }
+
+    esp_err_t err = camera_iniciar();
+
+    if (err == ESP_OK) {
+        // Con poca tension el sensor a veces inicia pero entrega cuadros rotos:
+        // se exige ver un JPEG completo antes de dar la camara por buena.
+        bool ok = false;
+
+        for (int i = 0; i < VALIDACION_CUADROS && !ok; i++) {
+            camera_fb_t *frame = esp_camera_fb_get();
+            if (frame != NULL) {
+                ok = jpeg_completo(frame);
+                esp_camera_fb_return(frame);
+            }
+        }
+
+        if (!ok) {
+            ESP_LOGE(TAG, "La camara no entrega un JPEG completo en %d cuadros", VALIDACION_CUADROS);
+            esp_camera_deinit();
+            err = ESP_FAIL;
+        }
+    }
+
+    if (err != ESP_OK) {
+        s_inicios_fallidos++;
+        return err;
+    }
+
+    s_fallos_seguidos = 0;
+    s_ultima_captura_us = esp_timer_get_time();
+    s_lista = true;
+    ESP_LOGI(TAG, "Camara validada: entrega JPEG completos");
+    return ESP_OK;
+}
+
+void camera_manager_deinit(void)
+{
+    s_lista = false;
+    esp_camera_deinit();
+}
+
+bool camera_manager_lista(void)
+{
+    return s_lista;
+}
+
 camera_fb_t *camera_manager_capture(void)
 {
-    camera_fb_t *frame = esp_camera_fb_get();
-
-    if (frame == NULL) {
-        ESP_LOGE(TAG, "Error al capturar imagen");
+    if (!s_lista) {
         return NULL;
     }
 
+    camera_fb_t *frame = esp_camera_fb_get();
+    s_ultima_captura_us = esp_timer_get_time();
+
+    if (frame == NULL) {
+        s_fallos_seguidos++;
+        ESP_LOGE(TAG, "Error al capturar imagen (fallos seguidos: %u)", s_fallos_seguidos);
+        return NULL;
+    }
+
+    s_fallos_seguidos = 0;
+
     // Diagnostico de integridad JPEG
-    if (frame->format == PIXFORMAT_JPEG) {
-        bool inicio_ok =
-            frame->len >= 4 &&
-            frame->buf[0] == 0xFF &&
-            frame->buf[1] == 0xD8;
-
-        bool final_ok =
-            frame->len >= 4 &&
-            frame->buf[frame->len - 2] == 0xFF &&
-            frame->buf[frame->len - 1] == 0xD9;
-
-        if (!inicio_ok || !final_ok) {
-            ESP_LOGW(
-                TAG,
-                "JPEG posiblemente incompleto: len=%u, inicio=%d, final=%d",
-                (unsigned)frame->len,
-                inicio_ok,
-                final_ok
-            );
-        }
+    if (frame->format == PIXFORMAT_JPEG && !jpeg_completo(frame)) {
+        ESP_LOGW(TAG, "JPEG posiblemente incompleto: len=%u", (unsigned)frame->len);
     }
 
     return frame;
@@ -136,4 +194,36 @@ void camera_manager_release(camera_fb_t *frame)
     if (frame != NULL) {
         esp_camera_fb_return(frame);
     }
+}
+
+unsigned camera_manager_fallos_seguidos(void)
+{
+    return s_fallos_seguidos;
+}
+
+bool camera_manager_probar(void)
+{
+    for (int i = 0; i < 3; i++) {
+        camera_fb_t *frame = camera_manager_capture();
+        if (frame == NULL) {
+            return false;   // camera_manager_capture ya conto la falla
+        }
+        bool ok = jpeg_completo(frame);
+        camera_manager_release(frame);
+        if (ok) {
+            return true;
+        }
+    }
+    s_fallos_seguidos++;   // salieron cuadros, pero ninguno completo
+    return false;
+}
+
+int64_t camera_manager_inactiva_ms(void)
+{
+    return (esp_timer_get_time() - s_ultima_captura_us) / 1000;
+}
+
+unsigned camera_manager_inicios_fallidos(void)
+{
+    return s_inicios_fallidos;
 }

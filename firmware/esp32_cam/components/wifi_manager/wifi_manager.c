@@ -87,12 +87,15 @@ esp_err_t wifi_manager_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    // Potencia reducida: baja los picos de corriente (la unidad es 0,25 dBm)
+    ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(CONFIG_PROMETEO_WIFI_TX_POWER_DBM * 4));
+
     esp_netif_ip_info_t ip;
     esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
     if (ap && esp_netif_get_ip_info(ap, &ip) == ESP_OK) {
-        ESP_LOGI(TAG, "Hotspot '%s' activo (canal %d). IP de la camara: " IPSTR,
+        ESP_LOGI(TAG, "Hotspot '%s' activo (canal %d, %d dBm). IP de la camara: " IPSTR,
                  CONFIG_PROMETEO_WIFI_SSID, CONFIG_PROMETEO_WIFI_CHANNEL,
-                 IP2STR(&ip.ip));
+                 CONFIG_PROMETEO_WIFI_TX_POWER_DBM, IP2STR(&ip.ip));
     }
 
     return ESP_OK;
