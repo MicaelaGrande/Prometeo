@@ -73,7 +73,7 @@ Firmware: `cd firmware/micro_ros && idf.py build && idf.py -p /dev/ttyUSB0 flash
 Prometeo/
 ├── firmware/
 │   ├── micro_ros/             Firmware del cuerpo (ESP32, ESP-IDF 5.5 + micro-ROS)
-│   │   ├── main/              main.c (micro-ROS: topics y callbacks), main_test_motores.c
+│   │   ├── main/              main.c (micro-ROS: topics y callbacks), red.c (WiFi y busqueda del agente), main_test_motores.c
 │   │   ├── logica/            sensores, seguridad (freno), centrado (+ su Kconfig)
 │   │   └── drivers/           motores, hcsr04 (ultrasonidos), encoders, mg90s (servos), Kconfig
 │   ├── esp32_cam/             Firmware de la ESP32-CAM: hotspot Wi-Fi + video MJPEG en /stream
