@@ -51,7 +51,7 @@ def generate_launch_description():
                               description='buscar la ESP32-CAM y mostrarla en el panel'),
         DeclareLaunchArgument('camara_ip', default_value='',
                               description='IP de la ESP32-CAM, si se sabe (si no, se busca)'),
-        DeclareLaunchArgument('camara_mac', default_value='d4:e9:f4:8a:b6:68',
+        DeclareLaunchArgument('camara_mac', default_value='d4:e9:f4:8a:b6:69',
                               description="MAC de nuestra ESP32-CAM ('' = cualquier camara)"),
         DeclareLaunchArgument('vision', default_value='true',
                               description='arrancar el nodo de vision (dibuja lo que detecta)'),

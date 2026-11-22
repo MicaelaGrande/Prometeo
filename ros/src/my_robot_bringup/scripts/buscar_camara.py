@@ -48,7 +48,7 @@ def red_local():
 
 
 # La MAC de nuestra ESP32-CAM (vista el 4/11/2026 con "ip neigh")
-MAC_NUESTRA = 'd4:e9:f4:8a:b6:68'
+MAC_NUESTRA = 'd4:e9:f4:8a:b6:69'
 
 
 def mac_de(ip):
