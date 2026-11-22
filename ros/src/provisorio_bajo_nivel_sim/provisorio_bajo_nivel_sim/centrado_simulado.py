@@ -6,7 +6,7 @@ Borrar cuando la ESP32 se centre sola. Ver LEEME_BORRAR.md.
 
 Hace dos cosas con la orden que llega:
 - Freno: si hay una pared adelante, no deja avanzar. Girar y retroceder siempre pasan.
-  Es una COPIA de firmware/micro_ros/main/seguridad.c.
+  Es una COPIA de firmware/micro_ros/logica/seguridad.c.
 - Centrado: si el robot avanza derecho, le suma un giro para quedar en el medio del pasillo.
   Si quien manda esta girando, no toca el giro: este nodo no decide hacia donde doblar.
 

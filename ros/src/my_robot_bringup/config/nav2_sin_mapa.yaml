@@ -137,7 +137,7 @@ local_costmap:
       # sin suponer un ancho fijo: 0.30 centra pasillos de hasta 60 cm; en los mas
       # anchos va a mas de 30 cm de cada pared. Tambien aleja la ruta de la pared
       # del fondo en las curvas, donde puede saltar el freno de emergencia
-      # (firmware/micro_ros/main/seguridad.c, ~4 cm con el sensor de adelante).
+      # (firmware/micro_ros/logica/seguridad.c, ~4 cm con el sensor de adelante).
       # Costo = 252 * e^(-cost_scaling_factor * (distancia - 0.08)); 0.08 = medio ancho.
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"

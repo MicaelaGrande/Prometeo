@@ -73,7 +73,8 @@ Firmware: `cd firmware/micro_ros && idf.py build && idf.py -p /dev/ttyUSB0 flash
 Prometeo/
 ├── firmware/
 │   ├── micro_ros/             Firmware del cuerpo (ESP32, ESP-IDF 5.5 + micro-ROS)
-│   │   ├── main/              main.c, sensores, seguridad (freno), centrado
+│   │   ├── main/              main.c (micro-ROS: topics y callbacks), main_test_motores.c
+│   │   ├── logica/            sensores, seguridad (freno), centrado (+ su Kconfig)
 │   │   └── drivers/           motores, hcsr04 (ultrasonidos), encoders, mg90s (servos), Kconfig
 │   ├── esp32_cam/             Firmware de la ESP32-CAM: hotspot Wi-Fi + video MJPEG en /stream
 │   └── scripts/               reset_ambos.sh, set_net_config.sh, check_pins.py
@@ -102,15 +103,15 @@ Prometeo/
 
 ### Camino de una orden de movimiento (`main/main.c`, `cmd_vel_callback`)
 1. Llega `cmd_vel` (avance m/s, giro rad/s).
-2. **Freno** (`main/seguridad.c`, `seguridad_filtrar`): si el frente está más cerca de lo que el
+2. **Freno** (`logica/seguridad.c`, `seguridad_filtrar`): si el frente está más cerca de lo que el
    robot necesita para frenar a esa velocidad, no deja avanzar. Retroceder y girar sí.
-3. **Centrado** (`main/centrado.c`): si avanza derecho y hay pared a los dos lados, suma un giro
+3. **Centrado** (`logica/centrado.c`): si avanza derecho y hay pared a los dos lados, suma un giro
    chico (PID) para ir por el medio del pasillo.
 4. **Motores** (`drivers/motores/motores.c`): reparte en las 4 ruedas, mantiene la velocidad de
    cada una con su encoder (PID), refuerza el giro y cuida los puentes H.
 5. Si pasan 300 ms sin órdenes, frena solo (failsafe).
 
-### Ultrasonidos (`main/sensores.c`, `drivers/hcsr04/`)
+### Ultrasonidos (`logica/sensores.c`, `drivers/hcsr04/`)
 - 3 HC-SR04 que comparten el cable TRIG: un pulso dispara los tres juntos, cada 60–85 ms.
 - Mediana de las últimas 3 lecturas. `400` = no ve pared, `-1` = sin dato (cableado).
 - El freno usa la lectura cruda (reacciona un ciclo antes); todo lo demás, la de mediana.

@@ -1,12 +1,14 @@
-#include "sdkconfig.h"
+#include "sensores.h"
+
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
+
 #include "hcsr04.h"
-#include "sensores.h"
 
 #define SENSORES_TASK_STACK  4096
 #define SENSORES_TASK_PRIO   4     // debajo de micro-ROS: nunca le gana a /cmd_vel

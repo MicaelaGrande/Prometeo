@@ -1,10 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 
-# drivers: componente con todos los drivers (ver drivers/CMakeLists.txt)
+# Capas (cada una solo usa las de abajo):
+#   main/    micro-ROS: topics, callbacks y arranque
+#   logica/  sensores, freno de emergencia, centrado (ver logica/CMakeLists.txt)
+#   drivers/ hardware: motores, ultrasonidos, servos, encoders (ver drivers/CMakeLists.txt)
 # esp_components: cliente micro-ROS instalado fuera del repo
 set(
   EXTRA_COMPONENT_DIRS
     drivers
+    logica
     "$ENV{HOME}/esp_components"
 )
 

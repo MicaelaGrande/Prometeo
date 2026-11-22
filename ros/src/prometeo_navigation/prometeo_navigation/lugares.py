@@ -14,7 +14,7 @@ from prometeo_interfaces.msg import Lugar
 
 
 # Lo que manda la ESP32 (y hcsr04_sim en Gazebo) en /distancias, en cm.
-# Igual que en firmware/micro_ros/main/sensores.h y prometeo_sensores/distancias_a_range.py.
+# Igual que en firmware/micro_ros/logica/sensores.h y prometeo_sensores/distancias_a_range.py.
 DIST_LEJOS_CM = 400.0   # esto o mas = no hubo eco (no hay nada adelante)
 
 

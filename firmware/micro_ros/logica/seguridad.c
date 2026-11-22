@@ -1,11 +1,13 @@
+#include "seguridad.h"
+
 #include <stdbool.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
+
 #include "motores.h"
 #include "sensores.h"
-#include "seguridad.h"
-#include "sdkconfig.h"
 
 #define SEGURIDAD_TASK_STACK 3072
 #define SEGURIDAD_TASK_PRIO  6     // arriba de micro-ROS (5): el freno no espera al WiFi

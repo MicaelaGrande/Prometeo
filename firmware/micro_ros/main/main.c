@@ -13,13 +13,13 @@
 #include "lwip/inet.h"
 #include "esp_heap_caps.h"
 
-// Nuestras librerías de motores, sensores y freno de emergencia
+// Drivers (drivers/) y logica del robot (logica/)
 #include "motores.h"
+#include "mg90s.h"
+#include "encoder.h"
 #include "sensores.h"
 #include "seguridad.h"
 #include "centrado.h"
-#include "mg90s.h"
-#include "encoder.h"
 
 // Librerías base de micro-ROS
 #include <rcl/rcl.h>

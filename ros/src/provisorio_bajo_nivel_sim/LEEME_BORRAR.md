@@ -6,7 +6,7 @@ Un nodo que hace en la simulación lo que en el robot real va a hacer la ESP32:
 
 - **Centrarse en el pasillo** comparando los ultrasonidos de la izquierda y la derecha.
 - **Frenar ante un obstáculo** con el ultrasonido de adelante, igual que
-  `firmware/micro_ros/main/seguridad.c`.
+  `firmware/micro_ros/logica/seguridad.c`.
 
 ```
 T2 / teclado ──/cmd_vel──► este nodo ──/cmd_vel_corregido──► Gazebo
@@ -22,7 +22,7 @@ Este nodo **no decide hacia dónde doblar**. Eso lo deciden Decisión (T7) y Exp
 
 ## Ojo: el freno es una copia
 
-El freno de `provisorio_bajo_nivel_sim/calculos.py` copia `firmware/micro_ros/main/seguridad.c`, porque
+El freno de `provisorio_bajo_nivel_sim/calculos.py` copia `firmware/micro_ros/logica/seguridad.c`, porque
 ese archivo está en C para la ESP32 y no compila en la PC. Si Bajo nivel cambia los números de
 `seguridad.c`, hay que actualizarlos acá. El centrado no es copia: todavía no existe en la ESP32.
 

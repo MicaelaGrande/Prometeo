@@ -1,11 +1,13 @@
-#include "sdkconfig.h"
 #include "centrado.h"
+
+#include "sdkconfig.h"
 
 #ifdef CONFIG_PROMETEO_CENTRADO
 
 #include <stdint.h>
 #include "esp_timer.h"
 #include "esp_log.h"
+
 #include "sensores.h"
 #include "centrado_pid.h"
 

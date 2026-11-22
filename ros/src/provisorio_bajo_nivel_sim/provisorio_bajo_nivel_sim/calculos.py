@@ -6,7 +6,7 @@ Estan separadas del nodo para poder probarlas sin ROS ni Gazebo: reciben numeros
 devuelven numeros. Las distancias van en cm, como en la ESP32, para que sea facil
 comparar las dos versiones. None significa "el sensor no tiene dato".
 
-AVISO: el freno es una COPIA de firmware/micro_ros/main/seguridad.c, porque ese archivo esta en C
+AVISO: el freno es una COPIA de firmware/micro_ros/logica/seguridad.c, porque ese archivo esta en C
 para la ESP32 y no compila en la PC. Si Bajo nivel cambia seguridad.c, actualizar aca.
 El centrado no existe todavia en la ESP32: esta escrito de cero.
 """
