@@ -74,10 +74,10 @@ Prometeo/
 ├── firmware/
 │   ├── micro_ros/             Firmware del cuerpo (ESP32, ESP-IDF 5.5 + micro-ROS)
 │   │   ├── main/              main.c (micro-ROS: topics y callbacks), red.c (WiFi y busqueda del agente), main_test_motores.c
-│   │   ├── logica/            sensores, seguridad (freno), centrado (+ su Kconfig)
+│   │   ├── logica/            sensores, seguridad (freno), centrado (+ su Kconfig), brazo (camara y servos), ruedas (velocidad medida), test/ (pruebas en la compu)
 │   │   └── drivers/           motores, hcsr04 (ultrasonidos), encoders, mg90s (servos), Kconfig
 │   ├── esp32_cam/             Firmware de la ESP32-CAM: hotspot Wi-Fi + video MJPEG en /stream
-│   └── scripts/               reset_ambos.sh, set_net_config.sh, check_pins.py
+│   └── scripts/               reset_ambos.sh, set_net_config.sh, check_pins.py, test_logica.sh
 ├── ros/
 │   ├── sim.sh                 Levanta Gazebo con todo para probar
 │   └── src/                   Paquetes de ROS 2 (tabla abajo)
