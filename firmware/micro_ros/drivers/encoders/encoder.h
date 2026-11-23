@@ -12,7 +12,7 @@
 #define TIMEOUT_PERIODO_US 3000000LL // sin pulsos por más de 3 s = rueda parada (mín. ~1 rpm)
 
 // ===== DATOS DE LA RUEDA =====
-#define DIAMETRO_RUEDA_M  0.065f   // 65 mm (hay que medir la rueda real)(no lo hice todavia xd)
+#define DIAMETRO_RUEDA_M  0.065f   // 65 mm (PENDIENTE: medir la rueda real)
 
 // ===== RUEDAS =====
 typedef enum {

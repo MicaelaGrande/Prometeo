@@ -82,7 +82,7 @@ esp_err_t hcsr04_new(const hcsr04_config_t *config, hcsr04_handle_t *out_handle)
         .gpio_num = config->echo_gpio,
         .mem_block_symbols = 64,
         .resolution_hz = RMT_RESOLUTION_HZ,
-        .flags.invert_in = false, // do not invert input signal
+        .flags.invert_in = false, // no invertir la señal de entrada
         .flags.with_dma = false,
     };
     ESP_GOTO_ON_ERROR(rmt_new_rx_channel(&rx_cfg, &h->rx_chan), err, TAG, "fallo canal RX");
@@ -143,8 +143,7 @@ static esp_err_t finish(hcsr04_handle_t h, float *distance_cm)
 
     /* Esperar el resultado del RX (eco hasta ~23 ms + 25 ms de silencio de cierre) */
     rmt_rx_done_event_data_t evt;
-    if (xQueueReceive(h->rx_queue, &evt, pdMS_TO_TICKS(100)) != pdTRUE)
-    {
+    if (xQueueReceive(h->rx_queue, &evt, pdMS_TO_TICKS(100)) != pdTRUE) {
         /* No hubo ningun flanco: cancelar la recepcion pendiente reiniciando el canal */
         rmt_disable(h->rx_chan);
         rmt_enable(h->rx_chan);
@@ -153,23 +152,19 @@ static esp_err_t finish(hcsr04_handle_t h, float *distance_cm)
 
     /* Buscar el tramo en ALTO: su duracion (en ticks = us) es el ancho del eco */
     uint32_t echo_us = 0;
-    for (size_t i = 0; i < evt.num_symbols; i++)
-    {
+    for (size_t i = 0; i < evt.num_symbols; i++) {
         const rmt_symbol_word_t *s = &evt.received_symbols[i];
-        if (s->level0 == 1 && s->duration0 > 0)
-        {
+        if (s->level0 == 1 && s->duration0 > 0) {
             echo_us = s->duration0;
             break;
         }
-        if (s->level1 == 1 && s->duration1 > 0)
-        {
+        if (s->level1 == 1 && s->duration1 > 0) {
             echo_us = s->duration1;
             break;
         }
     }
 
-    if (echo_us < ECHO_MIN_US || echo_us > ECHO_MAX_US)
-    {
+    if (echo_us < ECHO_MIN_US || echo_us > ECHO_MAX_US) {
         ESP_LOGD(TAG, "eco fuera de rango: %lu us", (unsigned long)echo_us);
         return ESP_ERR_INVALID_RESPONSE;
     }
@@ -185,8 +180,7 @@ esp_err_t hcsr04_measure_group_cm(const hcsr04_handle_t *hs, size_t n,
 
     /* 1) Respetar >= 60 ms desde el ultimo disparo de cualquier sensor */
     int64_t elapsed = esp_timer_get_time() - s_last_trigger_us;
-    if (elapsed < HCSR04_MIN_CYCLE_US)
-    {
+    if (elapsed < HCSR04_MIN_CYCLE_US) {
         uint32_t wait_ms = (uint32_t)((HCSR04_MIN_CYCLE_US - elapsed + 999) / 1000);
         vTaskDelay(pdMS_TO_TICKS(wait_ms) + 1);
     }
@@ -194,23 +188,18 @@ esp_err_t hcsr04_measure_group_cm(const hcsr04_handle_t *hs, size_t n,
     /* 2) Armar TODOS los receptores y despues disparar. Con TRIG compartido un solo pulso
      *    dispara a todos los sensores; si cada uno tiene su TRIG, se disparan casi a la vez. */
     s_last_trigger_us = esp_timer_get_time();
-    for (size_t i = 0; i < n; i++)
-    {
+    for (size_t i = 0; i < n; i++) {
         errs[i] = hs[i] ? arm(hs[i]) : ESP_ERR_INVALID_ARG;
     }
-    for (size_t i = 0; i < n; i++)
-    {
-        if (errs[i] == ESP_OK)
-        {
+    for (size_t i = 0; i < n; i++) {
+        if (errs[i] == ESP_OK) {
             errs[i] = fire(hs[i]);
         }
     }
 
     /* 3) Recoger el eco de cada uno */
-    for (size_t i = 0; i < n; i++)
-    {
-        if (errs[i] == ESP_OK)
-        {
+    for (size_t i = 0; i < n; i++) {
+        if (errs[i] == ESP_OK) {
             errs[i] = finish(hs[i], &distance_cm[i]);
         }
     }
@@ -228,26 +217,21 @@ esp_err_t hcsr04_measure_cm(hcsr04_handle_t h, float *distance_cm)
 
 esp_err_t hcsr04_del(hcsr04_handle_t h)
 {
-    if (!h)
-    {
+    if (!h) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (h->rx_chan)
-    {
+    if (h->rx_chan) {
         rmt_disable(h->rx_chan);
         rmt_del_channel(h->rx_chan);
     }
-    if (h->tx_chan)
-    {
+    if (h->tx_chan) {
         rmt_disable(h->tx_chan);
         rmt_del_channel(h->tx_chan);
     }
-    if (h->copy_encoder)
-    {
+    if (h->copy_encoder) {
         rmt_del_encoder(h->copy_encoder);
     }
-    if (h->rx_queue)
-    {
+    if (h->rx_queue) {
         vQueueDelete(h->rx_queue);
     }
     free(h);

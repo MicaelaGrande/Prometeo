@@ -124,11 +124,13 @@ static float aplicar(motor_id_t m, float v)
 static portMUX_TYPE mux_seg = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t fallas_seg;                     // bits MOTORES_FALLA_* (latcheados)
 static float    esfuerzo[2];                    // promedio de duty^2 por puente (0 = izq, 1 = der)
+#ifdef CONFIG_PROMETEO_MOTORES_STALL_ENABLE
 // solo la tarea de rampa:
 static uint32_t pulsos_prev[CANT_MOTORES];
 static uint32_t stall_acum_ms[CANT_MOTORES];    // tiempo de la ventana de medicion
 static uint32_t stall_pulsos[CANT_MOTORES];     // pulsos contados en la ventana
 static uint32_t gracia_ms[CANT_MOTORES];
+#endif
 
 // Motores que hay que mantener frenados por una falla latcheada (bit m)
 static uint32_t motores_bloqueados(void)
@@ -161,13 +163,13 @@ static void vigilar_seguridad(const float duty[CANT_MOTORES])
     float P[2] = { 0.0f, 0.0f };
 
     for (int m = 0; m < CANT_MOTORES; m++) {
+        P[m / 2] += duty[m] * duty[m];
+
+#ifdef CONFIG_PROMETEO_MOTORES_STALL_ENABLE
         uint32_t pul = encoder_get_pulsos(ENC_DE[m]);
         uint32_t dp = pul - pulsos_prev[m];
         pulsos_prev[m] = pul;
 
-        P[m / 2] += duty[m] * duty[m];
-
-#ifdef CONFIG_PROMETEO_MOTORES_STALL_ENABLE
         if (duty[m] < STALL_DUTY_MIN) {
             stall_acum_ms[m] = 0;
             stall_pulsos[m] = 0;
@@ -191,27 +193,23 @@ static void vigilar_seguridad(const float duty[CANT_MOTORES])
                 }
             }
         }
-#else
-        (void)dp;
 #endif
     }
-
-#ifdef CONFIG_PROMETEO_MOTORES_EFFORT_ENABLE
+    // Esfuerzo: promedio de duty^2 del puente (siempre, aunque la vigilancia este apagada)
     const float a = (float)TICK_MS / EFFORT_TAU_MS;
     taskENTER_CRITICAL(&mux_seg);
     for (int b = 0; b < 2; b++) {
         esfuerzo[b] += (P[b] - esfuerzo[b]) * a;
+#ifdef CONFIG_PROMETEO_MOTORES_EFFORT_ENABLE
         if (esfuerzo[b] > EFFORT_LIMITE && !(fallas_seg & MOTORES_FALLA_SOBRE(b))) nuevas |= MOTORES_FALLA_SOBRE(b);
+#endif
     }
     taskEXIT_CRITICAL(&mux_seg);
+#ifdef CONFIG_PROMETEO_MOTORES_EFFORT_ENABLE
     for (int b = 0; b < 2; b++)
         if (nuevas & MOTORES_FALLA_SOBRE(b))
             ESP_LOGE(TAG, "sobreesfuerzo en el puente %s (%.2f > %.2f): FALLA",
                      b ? "derecho" : "izquierdo", (double)esfuerzo[b], (double)EFFORT_LIMITE);
-#else
-    taskENTER_CRITICAL(&mux_seg);
-    for (int b = 0; b < 2; b++) esfuerzo[b] += (P[b] - esfuerzo[b]) * ((float)TICK_MS / EFFORT_TAU_MS);
-    taskEXIT_CRITICAL(&mux_seg);
 #endif
 
     if (nuevas) {
@@ -378,7 +376,7 @@ void motores_init(void)
         .freq_hz = PWM_FREC_HZ,
         .clk_cfg = LEDC_AUTO_CLK
     };
-    ledc_timer_config(&timer);
+    ESP_ERROR_CHECK(ledc_timer_config(&timer));
 
     for (int i = 0; i < CANT_MOTORES * 2; i++) {
         ledc_channel_config_t canal = {
@@ -389,12 +387,12 @@ void motores_init(void)
             .duty = 0,
             .hpoint = 0
         };
-        ledc_channel_config(&canal);
+        ESP_ERROR_CHECK(ledc_channel_config(&canal));
     }
     motores_frenar();
     en_falla = true;
 
-    xTaskCreate(rampa_task, "rampa", 3072, NULL, 10, NULL);
+    ESP_ERROR_CHECK(xTaskCreate(rampa_task, "rampa", 3072, NULL, 10, NULL) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 }
 
 void motor_set(motor_id_t m, float v)
