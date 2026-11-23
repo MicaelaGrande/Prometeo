@@ -10,7 +10,6 @@
 # Escucha:
 #   /vision/detections   lo que ve la camara             -> logica.ver()
 #   /navegacion/lugar    llego a curva/bifurcacion/...   -> logica.llegar_a_lugar()
-#   /brazo/agarrado      el brazo agarro (true) o no     -> logica.cubo_agarrado() / cubo_no_agarrado()
 #   /prometeo/modo_actual     'auto' o 'manual', del selector del panel
 #   /prometeo/freno_operador  true si apretaron PARAR
 #   /prometeo/pedido_operador 'abandonar' (boton del panel) -> logica.abandonar_color()
@@ -21,9 +20,15 @@
 #
 # Manda:
 #   /mover               accion: ir a una salida o acercarse al cubo
+#                        (si acercarse no termina bien, o no contesta en
+#                        tiempo_max_acercando_s, es falsa alarma -> sigue por el pasillo)
 #   /volver              accion: volver al inicio (con o sin cubo)
+#                        con cubo, al terminar -> logica.llegue_al_deposito() -> soltar
+#   /brazo               accion: agarrar o soltar el cubo (Brazo.action). Contesta
+#                        listo o fallo. Si no contesta en tiempo_max_brazo_s, es fallo.
+#                        Con sin_brazo:=true (por defecto) no se usa: hace de cuenta
+#                        que agarra y suelta enseguida.
 #   /decision/explorar   timbre para que Exploracion elija por donde ir
-#   /decision/agarrar    timbre para que el brazo agarre el cubo
 #   /decision/retomar    timbre: abandono el color, Navegacion vuelve al ultimo lugar
 #   /prometeo/seguridad_habilitada  false = modo recoger (sin freno) para acercarse al cubo
 #   /decision/estado     en que anda Decision, para mirar desde la terminal
@@ -36,11 +41,13 @@ from rclpy.qos import DurabilityPolicy, QoSProfile
 from std_msgs.msg import Bool, Empty, String
 
 from huggin_vision_msgs.msg import DetectionArray
-from prometeo_interfaces.action import Mover, Volver
+from prometeo_interfaces.action import Brazo, Mover, Volver
 from prometeo_interfaces.msg import Lugar
 
 from prometeo_decision.logica import (
-    ACERCARSE, AGARRAR, Decision, EXPLORAR, IR_A_SALIDA, RETOMAR, VOLVER, VOLVIENDO,
+    ACERCARSE, AGARRAR, DISTANCIA_MAX_CUBO, DISTANCIA_MIN_CUBO, Decision, EXPLORAR,
+    IMAGENES_CUBO, IR_A_SALIDA, MINIMO_CUBO, RETOMAR,
+    SEGUIR, SOLTAR, VOLVER, VOLVIENDO,
 )
 
 
@@ -49,10 +56,20 @@ class NodoDecision(Node):
     def __init__(self):
         super().__init__('decision')
 
-        # Mientras no este el brazo, hace de cuenta que agarro el cubo enseguida.
-        # Cuando el brazo exista: ros2 run ... --ros-args -p sin_brazo:=false
+        # Mientras no este el brazo, hace de cuenta que agarra y suelta el cubo
+        # enseguida. Con el brazo (o brazo_falso): --ros-args -p sin_brazo:=false
         self.sin_brazo = self.declare_parameter('sin_brazo', True).value
         confianza = self.declare_parameter('confianza_minima', 0.6).value
+        # Filtro del cubo: lo tiene que ver en minimo_cubo de las ultimas
+        # imagenes_cubo imagenes (por defecto 4 de 5).
+        imagenes_cubo = self.declare_parameter('imagenes_cubo', IMAGENES_CUBO).value
+        minimo_cubo = self.declare_parameter('minimo_cubo', MINIMO_CUBO).value
+        # Un cubo mas cerca o mas lejos que esto (metros) se descarta: es una
+        # mancha que no es un cubo (por ejemplo el fondo azul).
+        distancia_min_cubo = self.declare_parameter(
+            'distancia_min_cubo', DISTANCIA_MIN_CUBO).value
+        distancia_max_cubo = self.declare_parameter(
+            'distancia_max_cubo', DISTANCIA_MAX_CUBO).value
 
         # Donde escucha la ESP32 el freno. Con el firmware nuevo lleva /prometeo
         # adelante. Con el viejo: -p topic_seguridad:=/seguridad_habilitada
@@ -63,16 +80,33 @@ class NodoDecision(Node):
         # Sirve para probar a mano con navegacion_falsa: -p usar_selector:=false
         self.usar_selector = self.declare_parameter('usar_selector', True).value
 
+        # Reloj de seguridad: si /mover no contesta en este tiempo mientras se acerca
+        # al cubo, cuenta como que no llego (falsa alarma). Mas que los 25 s de mover.
+        self.tiempo_max_acercando = self.declare_parameter(
+            'tiempo_max_acercando_s', 40.0).value
+        self.reloj_acercando = None
+        # Numero del ultimo pedido de acercarse: una respuesta vieja que llega tarde
+        # (de un acercarse anterior) no se confunde con la del actual.
+        self.numero_acercarse = 0
+
+        # Reloj de seguridad del brazo: si no contesta en este tiempo, cuenta como
+        # que fallo (asi Decision nunca queda esperando para siempre).
+        self.tiempo_max_brazo = self.declare_parameter('tiempo_max_brazo_s', 20.0).value
+        self.reloj_brazo = None
+        self.numero_brazo = 0   # igual que numero_acercarse, para el brazo
+
         # Hasta que el selector avise, supone lo seguro: manual y frenado.
         self.modo = 'manual'
         self.freno = True
 
-        self.logica = Decision(confianza_minima=confianza)
+        self.logica = Decision(confianza_minima=confianza, imagenes_cubo=imagenes_cubo,
+                               minimo_cubo=minimo_cubo,
+                               distancia_min_cubo=distancia_min_cubo,
+                               distancia_max_cubo=distancia_max_cubo)
 
         # Lo que escucha
         self.create_subscription(DetectionArray, '/vision/detections', self.al_ver, 10)
         self.create_subscription(Lugar, '/navegacion/lugar', self.al_llegar_a_lugar, 10)
-        self.create_subscription(Bool, '/brazo/agarrado', self.al_responder_el_brazo, 10)
 
         # El selector repite el modo y el freno, y los guarda para el que se
         # conecta tarde (TRANSIENT_LOCAL). Hay que escucharlos igual.
@@ -87,11 +121,11 @@ class NodoDecision(Node):
         self.pub_explorar = self.create_publisher(Empty, '/decision/explorar', 10)
         # Abandono el color: Navegacion vuelve al ultimo lugar y se decide de nuevo
         self.pub_retomar = self.create_publisher(Empty, '/decision/retomar', 10)
-        self.pub_agarrar = self.create_publisher(Empty, '/decision/agarrar', 10)
         self.pub_seguridad = self.create_publisher(Bool, topic_seguridad, 10)
         self.pub_estado = self.create_publisher(String, '/decision/estado', 10)
         self.mover = ActionClient(self, Mover, '/mover')
         self.volver = ActionClient(self, Volver, '/volver')
+        self.brazo = ActionClient(self, Brazo, '/brazo')
 
         # Publica el estado una vez por segundo, para verlo con ros2 topic echo.
         self.create_timer(1.0, self.publicar_estado)
@@ -151,14 +185,6 @@ class NodoDecision(Node):
             self.get_logger().info('El operador abandona el color')
             self.hacer(self.logica.abandonar_color())
 
-    def al_responder_el_brazo(self, msg):
-        if not self.puede_decidir():
-            return
-        if msg.data:
-            self.hacer(self.logica.cubo_agarrado())
-        else:
-            self.hacer(self.logica.cubo_no_agarrado())
-
     # -----------------------------------------------------------------------
     # Lo que manda: traduce cada Orden de la logica a un mensaje de ROS
     # -----------------------------------------------------------------------
@@ -174,7 +200,13 @@ class NodoDecision(Node):
 
         elif orden.accion == ACERCARSE:
             self.pub_seguridad.publish(Bool(data=False))  # modo recoger: sin freno
-            self.pedir_mover(Mover.Goal.ACERCARSE)
+            self.pedir_acercarse()
+
+        elif orden.accion == SEGUIR:
+            # Falsa alarma: vuelve el freno y sigue por el pasillo.
+            # PENDIENTE confirmar en Gazebo que 'adelante' retoma bien el pasillo.
+            self.pub_seguridad.publish(Bool(data=True))
+            self.pedir_mover(Mover.Goal.IR_A_SALIDA, Lugar.ADELANTE)
 
         elif orden.accion == EXPLORAR:
             self.pub_explorar.publish(Empty())
@@ -183,7 +215,13 @@ class NodoDecision(Node):
             if self.sin_brazo:
                 self.hacer(self.logica.cubo_agarrado())  # hace de cuenta que lo agarro
             else:
-                self.pub_agarrar.publish(Empty())
+                self.pedir_brazo(Brazo.Goal.AGARRAR)
+
+        elif orden.accion == SOLTAR:
+            if self.sin_brazo:
+                self.logica.cubo_soltado()               # hace de cuenta que lo solto
+            else:
+                self.pedir_brazo(Brazo.Goal.SOLTAR)
 
         elif orden.accion == VOLVER:
             self.pub_seguridad.publish(Bool(data=True))  # vuelve el freno
@@ -203,14 +241,66 @@ class NodoDecision(Node):
         self.enviar(self.mover, pedido,
                     lambda resultado: self.al_terminar_mover(accion, resultado))
 
+    def pedir_acercarse(self):
+        """Pide /mover acercarse y arranca el reloj de seguridad."""
+        self.numero_acercarse += 1
+        numero = self.numero_acercarse
+        pedido = Mover.Goal()
+        pedido.accion = Mover.Goal.ACERCARSE
+        self.parar_reloj_acercando()
+        self.reloj_acercando = self.create_timer(
+            self.tiempo_max_acercando, self.se_acabo_el_tiempo_acercando)
+        self.enviar(self.mover, pedido,
+                    lambda resultado: self.al_terminar_acercarse(numero, resultado),
+                    al_rechazar=lambda: self.al_terminar_acercarse(
+                        numero, Mover.Result.BLOQUEADA))
+
+    def parar_reloj_acercando(self):
+        if self.reloj_acercando is not None:
+            self.destroy_timer(self.reloj_acercando)
+            self.reloj_acercando = None
+
+    def se_acabo_el_tiempo_acercando(self):
+        self.parar_reloj_acercando()
+        self.get_logger().warn(
+            f'/mover no contesto en {self.tiempo_max_acercando} s: no llegue al cubo')
+        self.hacer(self.logica.no_llegue_al_cubo())
+
+    def pedir_brazo(self, accion):
+        """Pide /brazo agarrar o soltar, y arranca el reloj de seguridad del brazo."""
+        self.numero_brazo += 1
+        numero = self.numero_brazo
+        pedido = Brazo.Goal()
+        pedido.accion = accion
+        pedido.color = self.logica.color_actual or ''
+        self.parar_reloj_brazo()
+        self.reloj_brazo = self.create_timer(
+            self.tiempo_max_brazo, lambda: self.se_acabo_el_tiempo_brazo(numero, accion))
+        self.enviar(self.brazo, pedido,
+                    lambda resultado: self.al_responder_el_brazo(numero, accion, resultado),
+                    al_rechazar=lambda: self.al_responder_el_brazo(
+                        numero, accion, Brazo.Result.FALLO))
+
+    def parar_reloj_brazo(self):
+        if self.reloj_brazo is not None:
+            self.destroy_timer(self.reloj_brazo)
+            self.reloj_brazo = None
+
+    def se_acabo_el_tiempo_brazo(self, numero, accion):
+        self.get_logger().warn(f'/brazo no contesto en {self.tiempo_max_brazo} s ({accion})')
+        self.al_responder_el_brazo(numero, accion, Brazo.Result.FALLO)
+
     def pedir_volver(self):
         pedido = Volver.Goal()
         # Con cubo: el color, para ir a su contenedor. Sin cubo: vacio.
         pedido.color = self.logica.color_actual or ''
         self.enviar(self.volver, pedido, self.al_terminar_volver)
 
-    def enviar(self, cliente, pedido, al_terminar):
-        """Manda un pedido a una accion y llama a al_terminar con la respuesta."""
+    def enviar(self, cliente, pedido, al_terminar, al_rechazar=None):
+        """Manda un pedido a una accion y llama a al_terminar con la respuesta.
+
+        Si la accion rechaza el pedido, llama a al_rechazar (si se lo pasaron).
+        """
         if not cliente.server_is_ready():
             self.get_logger().warn(f'{cliente._action_name} todavia no responde, mando igual')
 
@@ -218,6 +308,8 @@ class NodoDecision(Node):
             handle = futuro.result()
             if not handle.accepted:
                 self.get_logger().warn(f'{cliente._action_name} rechazo el pedido')
+                if al_rechazar is not None:
+                    al_rechazar()
                 return
             handle.get_result_async().add_done_callback(
                 lambda f: al_terminar(f.result().result.resultado))
@@ -229,27 +321,51 @@ class NodoDecision(Node):
     # -----------------------------------------------------------------------
 
     def al_terminar_mover(self, accion, resultado):
+        # Si termina un ir_a_salida, sigue andando y no hay nada que decidir.
         self.get_logger().info(f'/mover ({accion}) contesto: {resultado}')
-        # Solo importa cuando termina de acercarse: ahi llego al cubo.
-        # (Si termina un ir_a_salida, sigue andando y no hay nada que decidir.)
-        if accion == Mover.Goal.ACERCARSE and resultado == Mover.Result.TERMINADA:
-            self.hacer(self.logica.llegue_al_cubo())
+
+    def al_terminar_acercarse(self, numero, resultado):
+        self.get_logger().info(f'/mover (acercarse) contesto: {resultado}')
+        if numero != self.numero_acercarse:
+            return  # respuesta de un acercarse viejo: ya no importa
+        self.parar_reloj_acercando()
+        if resultado == Mover.Result.TERMINADA:
+            self.hacer(self.logica.llegue_al_cubo())      # llego al cubo
+        else:
+            self.hacer(self.logica.no_llegue_al_cubo())   # bloqueada o cancelada
 
     def al_terminar_volver(self, resultado):
         self.get_logger().info(f'/volver contesto: {resultado}')
         if resultado != Volver.Result.TERMINADA:
             return
         if self.logica.estado == VOLVIENDO:
-            self.logica.cubo_depositado()   # volvio con el cubo
+            self.hacer(self.logica.llegue_al_deposito())   # volvio con el cubo: soltarlo
         else:
-            self.logica.llegue_al_inicio()  # volvio sin cubo
+            self.logica.llegue_al_inicio()                 # volvio sin cubo
         self.publicar_estado()
+
+    def al_responder_el_brazo(self, numero, accion, resultado):
+        self.get_logger().info(f'/brazo ({accion}) contesto: {resultado}')
+        if numero != self.numero_brazo:
+            return  # respuesta de un pedido viejo (o ya se acabo su tiempo)
+        self.parar_reloj_brazo()
+        self.numero_brazo += 1  # este pedido ya tuvo respuesta: las siguientes no cuentan
+        listo = resultado == Brazo.Result.LISTO
+        if accion == Brazo.Goal.AGARRAR:
+            self.hacer(self.logica.cubo_agarrado() if listo else self.logica.cubo_no_agarrado())
+        else:
+            if listo:
+                self.logica.cubo_soltado()
+                self.publicar_estado()
+            else:
+                self.hacer(self.logica.cubo_no_soltado())
 
     def publicar_estado(self):
         l = self.logica
         decide = 'si' if self.puede_decidir() else 'no (manual o PARAR)'
         texto = (f'estado={l.estado} color={l.color_actual} '
-                 f'faltan={sorted(l.cubos_faltantes)} decide={decide}')
+                 f'faltan={sorted(l.cubos_faltantes)} decide={decide} '
+                 f'cubos_descartados={l.cubos_descartados}')
         self.pub_estado.publish(String(data=texto))
 
 

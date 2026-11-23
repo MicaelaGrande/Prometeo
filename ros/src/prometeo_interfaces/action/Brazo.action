@@ -1,0 +1,13 @@
+# Lo que pide Decision al brazo (accion /brazo)
+# Acciones (constantes: en el codigo, Brazo.Goal.AGARRAR y Brazo.Goal.SOLTAR)
+string AGARRAR="agarrar"   # el robot quedo quieto frente al cubo: agarrarlo
+string SOLTAR="soltar"     # el robot llego al deposito: soltar el cubo
+string accion          # AGARRAR o SOLTAR
+string color           # color del cubo (red, green o blue), por si el brazo lo usa
+---
+# Lo que contesta el brazo cuando termina (Brazo.Result.LISTO, etc.)
+string LISTO="listo"       # lo agarro / lo solto
+string FALLO="fallo"       # no pudo (Decision reintenta o sigue con otra cosa)
+string resultado       # LISTO o FALLO
+---
+# Lo que va contando mientras se mueve (por ahora nada)

@@ -8,6 +8,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Lugar.msg"
   "action/Mover.action"
   "action/Volver.action"
+  "action/Brazo.action"
 )
 
 ament_package()
