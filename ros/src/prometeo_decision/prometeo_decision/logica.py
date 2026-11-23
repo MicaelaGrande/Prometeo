@@ -9,9 +9,11 @@
 #   - Sigue un color por vez, siempre en el orden rojo, verde y azul.
 #     Arranca con el primero que falte, cuando ve su flecha.
 #   - Mientras sigue ese color, ignora las flechas y los cubos de los otros.
-#   - El color se libera recien al depositar el cubo. Si el brazo falla,
-#     lo intenta hasta MAXIMO_DE_INTENTOS veces en total. Si falla todas,
-#     abandona ese color, vuelve al inicio y sigue con el proximo.
+#   - Si el brazo no puede agarrar el cubo, lo intenta hasta MAXIMO_DE_INTENTOS
+#     veces en total. Si falla todas, abandona ese color y sigue con el proximo.
+#   - El color se libera recien al depositar el cubo: el brazo lo suelta en el
+#     deposito. Si no puede soltarlo despues de MAXIMO_DE_INTENTOS_SOLTAR veces,
+#     igual sigue con el proximo color.
 #   - Si no hay flecha de su color, o no se entiende hacia donde apunta,
 #     decide Exploracion.
 #
@@ -19,6 +21,7 @@
 # Solo usa las constantes de prometeo_interfaces (hay que compilarlo y hacer
 # source install/setup.bash antes de correr las pruebas).
 
+import math
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional
@@ -36,6 +39,7 @@ SIGUIENDO = 'siguiendo'            # sigue las flechas de color_actual
 ACERCANDO = 'acercando'            # vio su cubo y se esta acercando
 VOLVIENDO_SIN_CUBO = 'volviendo_sin_cubo'  # abandono el color y vuelve al inicio
 VOLVIENDO = 'volviendo'            # agarro el cubo y vuelve a depositarlo (T8)
+SOLTANDO = 'soltando'              # llego al deposito y el brazo esta soltando el cubo
 TERMINADO = 'terminado'            # ya no le queda ningun color por buscar
 
 # --- Colores ---------------------------------------------------------------
@@ -72,15 +76,35 @@ SALIDA_SEGUN_FLECHA = {
     'up': ADELANTE,
 }
 
-# --- Filtro "la mejor de 3" ------------------------------------------------
+# --- Filtro de imagenes repetidas -------------------------------------------
 # A la camara le cuesta reconocer, asi que Decision le cree solo a lo que ve
-# repetido: lo mismo en al menos 2 de las ultimas 3 imagenes.
-IMAGENES_A_MIRAR = 3
-MINIMO_PARA_CREER = 2
+# repetido en las ultimas imagenes.
+# Flechas: lo mismo en al menos 2 de las ultimas 3. Ya cuesta verlas (son
+# chicas y estan lejos), y equivocarse sale barato.
+IMAGENES_FLECHA = 3
+MINIMO_FLECHA = 2
+# Cubos: al menos 4 de las ultimas 5. Equivocarse sale caro (el robot deja todo
+# y va hacia el cubo), y en la competencia el fondo azul parecia un cubo azul.
+IMAGENES_CUBO = 5
+MINIMO_CUBO = 4
+
+# --- Distancia creible de un cubo (metros) ---------------------------------
+# La camara no mide la distancia: la adivina por el tamaño, suponiendo que
+# todo cubo mide 2 cm. Una mancha enorme (el fondo azul) parece un cubo pegado
+# a la camara, y una mancha chiquita parece un cubo lejisimos.
+# Menos de 7 cm: el robot nunca ve un cubo tan cerca (mover se arrima hasta 10 cm).
+# Mas de 1 m: vision no detecta un cubo real de 2 cm tan lejos.
+DISTANCIA_MIN_CUBO = 0.07
+DISTANCIA_MAX_CUBO = 1.0
 
 # --- Intentos de agarre ----------------------------------------------------
 # Cuantas veces en total intenta agarrar el cubo antes de abandonar el color.
 MAXIMO_DE_INTENTOS = 3
+
+# --- Intentos de soltar ----------------------------------------------------
+# Cuantas veces intenta soltar el cubo en el deposito. Si falla todas, igual
+# lo da por depositado: es mejor seguir con el proximo color que quedar quieto.
+MAXIMO_DE_INTENTOS_SOLTAR = 2
 
 # --- Acciones que puede pedir Decision -------------------------------------
 IR_A_SALIDA = Mover.Goal.IR_A_SALIDA  # tomar una salida concreta
@@ -88,14 +112,17 @@ EXPLORAR = 'explorar'        # que Exploracion elija por donde seguir
 ACERCARSE = Mover.Goal.ACERCARSE      # acercarse al cubo que tiene adelante
 AGARRAR = 'agarrar'          # pedirle al brazo que agarre el cubo
 VOLVER = 'volver'            # ya tiene el cubo: volver al deposito (T8)
+SOLTAR = 'soltar'            # llego al deposito: pedirle al brazo que suelte el cubo
 RETOMAR = 'retomar'          # abandono el color: volver al ultimo lugar y seguir desde ahi
+SEGUIR = 'seguir'            # falsa alarma (no llego al cubo): seguir por el pasillo
 
 
 @dataclass
 class Orden:
     """Lo que Decision le pide al resto del robot."""
 
-    # Que hacer: IR_A_SALIDA, EXPLORAR, ACERCARSE, AGARRAR o VOLVER.
+    # Que hacer: IR_A_SALIDA, EXPLORAR, ACERCARSE, AGARRAR, VOLVER, SOLTAR, RETOMAR
+    # o SEGUIR.
     accion: str
 
     # Solo para IR_A_SALIDA: por donde ir (IZQUIERDA, ADELANTE o DERECHA).
@@ -118,9 +145,22 @@ def clave(d):
 class Decision:
     """Recuerda que color sigue el robot y decide que hacer en cada momento."""
 
-    def __init__(self, confianza_minima=0.6):
+    def __init__(self, confianza_minima=0.6, imagenes_cubo=IMAGENES_CUBO,
+                 minimo_cubo=MINIMO_CUBO, distancia_min_cubo=DISTANCIA_MIN_CUBO,
+                 distancia_max_cubo=DISTANCIA_MAX_CUBO):
         # Las detecciones con menos confianza que esto se ignoran.
         self.confianza_minima = confianza_minima
+
+        # Cuantas de las ultimas imagenes mira para creerle a un cubo, y en
+        # cuantas lo tiene que ver (el nodo los puede cambiar con parametros).
+        self.imagenes_cubo = imagenes_cubo
+        self.minimo_cubo = minimo_cubo
+
+        # Entre que distancias (metros) un cubo es creible, y cuantos se
+        # descartaron por estar fuera (se ve en /decision/estado).
+        self.distancia_min_cubo = distancia_min_cubo
+        self.distancia_max_cubo = distancia_max_cubo
+        self.cubos_descartados = 0
 
         # Los colores cuyo cubo todavia no se deposito.
         # set(...) hace una copia: si no, se borrarian colores de TODOS_LOS_COLORES.
@@ -136,11 +176,18 @@ class Decision:
         # Navegacion avise que llego.
         self.flecha_pendiente = None
 
-        # Las claves de lo que se vio en las ultimas imagenes. Guarda solo
-        # las ultimas IMAGENES_A_MIRAR y tira la mas vieja sola.
-        self.ultimas = deque(maxlen=IMAGENES_A_MIRAR)
+        # Las claves de lo que se vio en las ultimas imagenes. Guarda las que
+        # hacen falta para el filtro mas largo y tira la mas vieja sola.
+        self.ultimas = deque(maxlen=max(IMAGENES_FLECHA, imagenes_cubo))
         # Cuantas veces intento agarrar el cubo que tiene adelante.
         self.intentos = 0
+        # Cuantas veces intento soltar el cubo en el deposito.
+        self.intentos_soltar = 0
+
+        # True despues de una falsa alarma (no llego al cubo): ignora los cubos
+        # hasta el proximo lugar, asi lo mismo (por ejemplo el fondo azul) no lo
+        # vuelve a frenar enseguida.
+        self.ignorar_cubos = False
 
     def proximo_color(self):
         """El primer color de ORDEN_DE_COLORES que todavia falta.
@@ -152,6 +199,38 @@ class Decision:
                 return color
         return None
 
+    def es_creible(self, d):
+        """True si la deteccion puede ser real.
+
+        Las flechas siempre. Un cubo, solo si esta adelante del robot y a una
+        distancia entre distancia_min_cubo y distancia_max_cubo. Si no, lo
+        cuenta en cubos_descartados.
+        """
+        if d.kind != CUBO:
+            return True
+        # La pose viene con x hacia adelante e y a la izquierda, en metros.
+        x, y = d.pose.position.x, d.pose.position.y
+        distancia = math.hypot(x, y)
+        if x > 0 and self.distancia_min_cubo <= distancia <= self.distancia_max_cubo:
+            return True
+        self.cubos_descartados += 1
+        return False
+
+    def le_creo(self, d):
+        """True si la deteccion d se repitio lo suficiente en las ultimas imagenes.
+
+        Flecha: en MINIMO_FLECHA de las ultimas IMAGENES_FLECHA.
+        Cubo: en minimo_cubo de las ultimas imagenes_cubo.
+        """
+        if d.kind == FLECHA:
+            cuantas, minimo = IMAGENES_FLECHA, MINIMO_FLECHA
+        else:
+            cuantas, minimo = self.imagenes_cubo, self.minimo_cubo
+        # list(...)[-cuantas:] se queda con las ultimas "cuantas" imagenes.
+        mirar = list(self.ultimas)[-cuantas:]
+        veces = sum(clave(d) in imagen for imagen in mirar)
+        return veces >= minimo
+
     # -----------------------------------------------------------------------
     # Lo que llega de la camara
     # -----------------------------------------------------------------------
@@ -159,8 +238,8 @@ class Decision:
     def ver(self, detecciones):
         """Recibe la lista de detecciones de la camara (/vision/detections).
 
-        De cada deteccion usa solo kind, color, direction, length_class y
-        confidence. Por eso sirve tanto con huggin_vision_msgs/Detection como
+        De cada deteccion usa solo kind, color, direction, length_class,
+        confidence y (en los cubos) pose. Por eso sirve tanto con huggin_vision_msgs/Detection como
         con objetos armados a mano en las pruebas.
 
         Devuelve una Orden si hay que hacer algo ya (acercarse a un cubo),
@@ -170,20 +249,19 @@ class Decision:
         if self.estado not in (BUSCANDO_COLOR, SIGUIENDO):
             return None
 
-        # Se queda con las detecciones confiables. Las zonas se ignoran,
-        # porque las maneja Navegacion alta.
+        # Se queda con las detecciones confiables y creibles. Las zonas se
+        # ignoran, porque las maneja Navegacion alta. Un cubo a una distancia
+        # imposible ni siquiera cuenta como visto para el filtro.
         utiles = [
             d for d in detecciones
             if d.confidence >= self.confianza_minima and d.kind in (FLECHA, CUBO)
+            and self.es_creible(d)
         ]
 
-        # Filtro "la mejor de 3": anota lo que vio en esta imagen y se queda
-        # solo con lo que aparece en al menos MINIMO_PARA_CREER de las ultimas.
+        # Filtro de imagenes repetidas: anota lo que vio en esta imagen y se
+        # queda solo con lo que se repite lo suficiente (ver le_creo).
         self.ultimas.append({clave(d) for d in utiles})
-        utiles = [
-            d for d in utiles
-            if sum(clave(d) in imagen for imagen in self.ultimas) >= MINIMO_PARA_CREER
-        ]
+        utiles = [d for d in utiles if self.le_creo(d)]
 
         # 1) Si todavia no eligio color, espera la flecha del proximo color
         #    del orden. Las flechas de los otros colores no lo hacen arrancar.
@@ -205,6 +283,8 @@ class Decision:
                 continue
 
             if d.kind == CUBO:
+                if self.ignorar_cubos:
+                    continue  # hubo una falsa alarma en este pasillo
                 # Encontro su cubo: deja de seguir flechas y se acerca.
                 self.estado = ACERCANDO
                 self.flecha_pendiente = None
@@ -231,6 +311,9 @@ class Decision:
         # Si se esta acercando o volviendo, no decide por donde ir.
         if self.estado not in (BUSCANDO_COLOR, SIGUIENDO):
             return None
+
+        # Es otro pasillo: vuelve a mirar los cubos.
+        self.ignorar_cubos = False
 
         # Hay flecha en cada curva y en cada bifurcacion (no en las islas).
         # La flecha guardada sirve para UN lugar solo, sea curva, bifurcacion o
@@ -275,6 +358,25 @@ class Decision:
         # recien cuando el brazo avisa que lo agarro (cubo_agarrado).
         self.intentos = 1
         return Orden(AGARRAR)
+
+    def no_llegue_al_cubo(self):
+        """Navegacion alta avisa que NO pudo llegar al cubo (bloqueada o cancelada).
+
+        Lo mas probable es que no fuera un cubo (por ejemplo, el fondo azul del
+        laberinto). Es una falsa alarma: sigue con el mismo color por el pasillo e
+        ignora los cubos hasta el proximo lugar.
+        Devuelve Orden(SEGUIR), o None si no se estaba acercando.
+        """
+        # Solo tiene sentido si se estaba acercando a su cubo.
+        if self.estado != ACERCANDO:
+            return None
+
+        self.estado = SIGUIENDO
+        self.intentos = 0
+        self.flecha_pendiente = None
+        self.ultimas.clear()
+        self.ignorar_cubos = True
+        return Orden(SEGUIR)
 
     # -----------------------------------------------------------------------
     # Lo que llega del brazo y de Volver al inicio
@@ -331,15 +433,57 @@ class Decision:
         self.flecha_pendiente = None
         self.ultimas.clear()
         self.intentos = 0
+        self.ignorar_cubos = False
         if not self.cubos_faltantes:
             self.estado = VOLVIENDO_SIN_CUBO
             return Orden(VOLVER)
         self.estado = BUSCANDO_COLOR
         return Orden(RETOMAR)
 
-    def cubo_depositado(self):
-        """Avisan que el cubo quedo en su deposito. Libera el color."""
+    def llegue_al_deposito(self):
+        """Volver avisa que el robot llego al deposito con el cubo.
+
+        Devuelve la Orden de soltarlo, o None si no estaba volviendo con un cubo.
+        """
         if self.estado != VOLVIENDO:
+            return None
+
+        # Es el primer intento de soltar.
+        self.estado = SOLTANDO
+        self.intentos_soltar = 1
+        return Orden(SOLTAR)
+
+    def cubo_soltado(self):
+        """El brazo avisa que solto el cubo en el deposito. Libera el color."""
+        if self.estado != SOLTANDO:
+            return
+        self.cubo_depositado()
+
+    def cubo_no_soltado(self):
+        """El brazo avisa que no pudo soltar el cubo.
+
+        Si le quedan intentos, pide soltarlo otra vez. Si ya fallo
+        MAXIMO_DE_INTENTOS_SOLTAR veces, igual lo da por depositado y sigue con
+        el proximo color (quedarse quieto en el deposito no sirve para nada).
+        Devuelve None si no estaba soltando.
+        """
+        if self.estado != SOLTANDO:
+            return None
+
+        if self.intentos_soltar < MAXIMO_DE_INTENTOS_SOLTAR:
+            self.intentos_soltar += 1
+            return Orden(SOLTAR)
+
+        self.cubo_depositado()
+        return None
+
+    def cubo_depositado(self):
+        """El cubo quedo en su deposito. Libera el color.
+
+        Lo llama cubo_soltado() (o cubo_no_soltado() si se rinde). Vale tambien
+        desde VOLVIENDO, para probar sin el paso de soltar.
+        """
+        if self.estado not in (VOLVIENDO, SOLTANDO):
             return
 
         # discard saca el color sin dar error si ya no estaba.
@@ -347,6 +491,9 @@ class Decision:
         self.color_actual = None
         self.flecha_pendiente = None
         self.ultimas.clear()  # el color nuevo empieza a contar de cero
+        self.ignorar_cubos = False
+        self.intentos = 0
+        self.intentos_soltar = 0
 
         if self.cubos_faltantes:
             self.estado = BUSCANDO_COLOR

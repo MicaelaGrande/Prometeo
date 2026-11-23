@@ -9,8 +9,8 @@ from types import SimpleNamespace
 from prometeo_decision.logica import (
     ACERCANDO, ACERCARSE, AGARRAR, BIFURCACION, BUSCANDO_COLOR, CALLEJON, CURVA,
     DERECHA, Decision, EXPLORAR, IR_A_SALIDA, IZQUIERDA, ADELANTE,
-    MAXIMO_DE_INTENTOS, RETOMAR, SIGUIENDO, TERMINADO, VOLVER, VOLVIENDO,
-    VOLVIENDO_SIN_CUBO,
+    MAXIMO_DE_INTENTOS, RETOMAR, SEGUIR, SIGUIENDO, TERMINADO, VOLVER, VOLVIENDO,
+    VOLVIENDO_SIN_CUBO, SOLTANDO, SOLTAR, MAXIMO_DE_INTENTOS_SOLTAR,
 )
 
 
@@ -21,13 +21,17 @@ def flecha(color, direccion='left', largo='normal', confianza=0.9):
                            length_class=largo, confidence=confianza)
 
 
-def cubo(color, confianza=0.9):
+def cubo(color, confianza=0.9, x=0.4, y=0.0):
+    # x: cuanto adelante del robot, y: cuanto a la izquierda (metros).
     return SimpleNamespace(kind='cube', color=color, direction='',
-                           length_class='', confidence=confianza)
+                           length_class='', confidence=confianza,
+                           pose=SimpleNamespace(position=SimpleNamespace(x=x, y=y)))
 
 
-def ver_varias(d, detecciones, veces=2):
+def ver_varias(d, detecciones, veces=4):
     """Muestra lo mismo en varias imagenes seguidas, para pasar el filtro.
+
+    4 veces alcanza para las flechas (2 de 3) y para los cubos (4 de 5).
 
     Devuelve la Orden de la ultima imagen.
     """
@@ -296,7 +300,7 @@ def test_despues_de_los_3_cubos_termina():
     assert d.cubos_faltantes == set()
     assert d.estado == TERMINADO
 
-# --- 7. Filtro "la mejor de 3" ----------------------------------------------
+# --- 7. Filtro de imagenes repetidas: flechas 2 de 3, cubos 4 de 5 ----------
 
 def test_una_sola_imagen_no_alcanza_para_elegir_color():
     d = Decision()
@@ -325,13 +329,60 @@ def test_gana_la_direccion_que_mas_se_repite():
     assert orden.salida == IZQUIERDA
 
 
-def test_un_cubo_en_una_sola_imagen_no_alcanza():
+def test_tres_imagenes_de_cubo_no_alcanzan():
     d = Decision()
     ver_varias(d, [flecha('red')])
 
-    assert d.ver([cubo('red')]) is None   # 1 vez: todavia no le cree
+    assert ver_varias(d, [cubo('red')], veces=3) is None   # 3 veces: todavia no le cree
     assert d.estado == SIGUIENDO
-    orden = d.ver([cubo('red')])          # 2 veces: ahora si
+    orden = d.ver([cubo('red')])                           # 4 veces: ahora si
+    assert orden.accion == ACERCARSE
+
+
+def test_cubo_en_4_de_5_imagenes_con_un_hueco_alcanza():
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    d.ver([cubo('red')])
+    d.ver([cubo('red')])
+    d.ver([])                 # en esta imagen la camara no lo vio
+    d.ver([cubo('red')])
+    orden = d.ver([cubo('red')])
+
+    assert orden.accion == ACERCARSE
+    assert d.estado == ACERCANDO
+
+
+def test_cubo_que_aparece_y_desaparece_no_alcanza():
+    # Como el fondo azul: se ve en una imagen si y en otra no (3 de 5).
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    for detecciones in ([cubo('red')], [], [cubo('red')], [], [cubo('red')]):
+        orden = d.ver(detecciones)
+
+    assert orden is None
+    assert d.estado == SIGUIENDO
+
+
+def test_una_flecha_vieja_no_cuenta_aunque_se_guarden_5_imagenes():
+    d = Decision()
+    ver_varias(d, [flecha('red', 'left')])
+    # La derecha aparece 2 veces, pero separadas: en las ultimas 3 imagenes
+    # esta 1 sola vez, asi que no le cree y queda la izquierda.
+    d.ver([flecha('red', 'right')])
+    d.ver([])
+    d.ver([])
+    d.ver([flecha('red', 'right')])
+    orden = d.llegar_a_lugar(BIFURCACION, [IZQUIERDA, DERECHA])
+
+    assert orden.salida == IZQUIERDA
+
+
+def test_el_filtro_del_cubo_se_puede_cambiar():
+    d = Decision(imagenes_cubo=3, minimo_cubo=2)
+    ver_varias(d, [flecha('red')])
+    d.ver([cubo('red')])
+    orden = d.ver([cubo('red')])
+
     assert orden.accion == ACERCARSE
 
 
@@ -425,3 +476,224 @@ def test_llegar_al_inicio_sin_haber_abandonado_no_hace_nada():
     d.llegue_al_inicio()
 
     assert d.estado == BUSCANDO_COLOR
+
+
+# --- 9. Falsa alarma: no llego al cubo --------------------------------------
+
+def acercandose_al_cubo_rojo():
+    """Arma una Decision que sigue el rojo y se esta acercando a un cubo rojo."""
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    ver_varias(d, [cubo('red')])
+    return d
+
+
+def test_no_llegar_al_cubo_vuelve_a_seguir_el_mismo_color():
+    d = acercandose_al_cubo_rojo()
+    orden = d.no_llegue_al_cubo()
+
+    assert orden.accion == SEGUIR
+    assert d.estado == SIGUIENDO
+    assert d.color_actual == 'red'
+
+
+def test_despues_de_una_falsa_alarma_ignora_los_cubos():
+    d = acercandose_al_cubo_rojo()
+    d.no_llegue_al_cubo()
+    orden = ver_varias(d, [cubo('red')], veces=5)
+
+    assert orden is None
+    assert d.estado == SIGUIENDO
+
+
+def test_despues_de_una_falsa_alarma_sigue_mirando_flechas():
+    d = acercandose_al_cubo_rojo()
+    d.no_llegue_al_cubo()
+    ver_varias(d, [flecha('red', 'right')])
+    orden = d.llegar_a_lugar(BIFURCACION, [IZQUIERDA, DERECHA])
+
+    assert orden.accion == IR_A_SALIDA
+    assert orden.salida == DERECHA
+
+
+def test_en_el_lugar_siguiente_vuelve_a_mirar_los_cubos():
+    d = acercandose_al_cubo_rojo()
+    d.no_llegue_al_cubo()
+    d.llegar_a_lugar(CURVA, [IZQUIERDA])
+    orden = ver_varias(d, [cubo('red')])
+
+    assert orden.accion == ACERCARSE
+    assert d.estado == ACERCANDO
+
+
+def test_no_llegar_al_cubo_sin_estar_acercandose_no_hace_nada():
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+
+    assert d.no_llegue_al_cubo() is None
+    assert d.estado == SIGUIENDO
+
+
+# --- 10. Distancia creible del cubo -----------------------------------------
+
+def test_un_cubo_pegado_a_la_camara_se_ignora():
+    # Como el fondo azul: una mancha enorme parece un cubo a 3 cm.
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    orden = ver_varias(d, [cubo('red', x=0.03)], veces=5)
+
+    assert orden is None
+    assert d.estado == SIGUIENDO
+    assert d.cubos_descartados == 5
+
+
+def test_un_cubo_a_2_metros_se_ignora():
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    orden = ver_varias(d, [cubo('red', x=2.0)], veces=5)
+
+    assert orden is None
+    assert d.estado == SIGUIENDO
+
+
+def test_un_cubo_atras_del_robot_se_ignora():
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    orden = ver_varias(d, [cubo('red', x=-0.3)], veces=5)
+
+    assert orden is None
+    assert d.estado == SIGUIENDO
+
+
+def test_un_cubo_de_costado_a_40_cm_vale():
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    orden = ver_varias(d, [cubo('red', x=0.3, y=0.25)])
+
+    assert orden.accion == ACERCARSE
+    assert d.cubos_descartados == 0
+
+
+def test_los_limites_de_distancia_se_pueden_cambiar():
+    d = Decision(distancia_max_cubo=3.0)
+    ver_varias(d, [flecha('red')])
+    orden = ver_varias(d, [cubo('red', x=2.0)])
+
+    assert orden.accion == ACERCARSE
+
+
+def test_las_flechas_no_se_descartan_por_distancia():
+    # Las flechas no traen pose en estas pruebas: si se revisara su
+    # distancia, daria error.
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+
+    assert d.color_actual == 'red'
+    assert d.cubos_descartados == 0
+
+
+# --- 11. Soltar el cubo en el deposito ---------------------------------------
+
+def volviendo_con_el_cubo_rojo():
+    """Arma una Decision que agarro el cubo rojo y vuelve al deposito."""
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+    ver_varias(d, [cubo('red')])
+    d.llegue_al_cubo()
+    d.cubo_agarrado()
+    return d
+
+
+def test_llegar_al_deposito_pide_soltar():
+    d = volviendo_con_el_cubo_rojo()
+    orden = d.llegue_al_deposito()
+
+    assert orden.accion == SOLTAR
+    assert d.estado == SOLTANDO
+    assert d.color_actual == 'red'   # todavia no se libera: falta soltarlo
+
+
+def test_soltar_el_cubo_libera_el_color():
+    d = volviendo_con_el_cubo_rojo()
+    d.llegue_al_deposito()
+    d.cubo_soltado()
+
+    assert d.cubos_faltantes == {'green', 'blue'}
+    assert d.color_actual is None
+    assert d.estado == BUSCANDO_COLOR
+
+
+def test_si_no_lo_suelta_lo_intenta_de_nuevo():
+    d = volviendo_con_el_cubo_rojo()
+    d.llegue_al_deposito()
+    orden = d.cubo_no_soltado()
+
+    assert orden.accion == SOLTAR
+    assert d.estado == SOLTANDO
+    assert d.intentos_soltar == 2
+
+
+def test_si_nunca_lo_suelta_igual_sigue_con_el_proximo_color():
+    d = volviendo_con_el_cubo_rojo()
+    d.llegue_al_deposito()
+    for _ in range(MAXIMO_DE_INTENTOS_SOLTAR - 1):
+        d.cubo_no_soltado()
+    orden = d.cubo_no_soltado()   # ultimo intento fallido: se rinde
+
+    assert orden is None
+    assert d.estado == BUSCANDO_COLOR
+    assert 'red' not in d.cubos_faltantes
+
+
+def test_llegar_al_deposito_sin_cubo_no_hace_nada():
+    d = Decision()
+    ver_varias(d, [flecha('red')])
+
+    assert d.llegue_al_deposito() is None
+    assert d.estado == SIGUIENDO
+
+
+def test_soltado_sin_estar_soltando_no_hace_nada():
+    d = volviendo_con_el_cubo_rojo()
+    d.cubo_soltado()       # todavia no llego al deposito
+
+    assert d.estado == VOLVIENDO
+    assert d.color_actual == 'red'
+    assert d.cubo_no_soltado() is None
+
+
+def test_mientras_suelta_no_mira_la_camara_ni_los_lugares():
+    d = volviendo_con_el_cubo_rojo()
+    d.llegue_al_deposito()
+
+    assert ver_varias(d, [cubo('red')]) is None
+    assert d.llegar_a_lugar(BIFURCACION, [IZQUIERDA, DERECHA]) is None
+    assert d.estado == SOLTANDO
+
+
+def test_los_3_cubos_soltados_terminan():
+    d = Decision()
+    for color in ('red', 'green', 'blue'):
+        ver_varias(d, [flecha(color)])
+        ver_varias(d, [cubo(color)])
+        d.llegue_al_cubo()
+        d.cubo_agarrado()
+        d.llegue_al_deposito()
+        d.cubo_soltado()
+
+    assert d.estado == TERMINADO
+    assert d.cubos_faltantes == set()
+
+
+def test_despues_de_soltar_los_intentos_empiezan_de_cero():
+    d = volviendo_con_el_cubo_rojo()
+    d.llegue_al_deposito()
+    d.cubo_no_soltado()
+    d.cubo_soltado()
+    # Sigue con el verde: llega al cubo y falla una vez al agarrarlo.
+    ver_varias(d, [flecha('green')])
+    ver_varias(d, [cubo('green')])
+    d.llegue_al_cubo()
+
+    assert d.intentos == 1
+    assert d.intentos_soltar == 0
