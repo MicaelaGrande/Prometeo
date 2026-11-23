@@ -55,7 +55,7 @@ static void IRAM_ATTR isr_encoder(void *arg)
     taskEXIT_CRITICAL_ISR(&candado);
 }
 
-// ===== 3. TIMER: cada PERIOD_MS calcula la velocidad =====
+// ===== 3. TIMER: cada ENC_PERIODO_MS calcula la velocidad =====
 // Lee cuántos pulsos se contaron y vuelve los contadores a 0
 static void timer_cb(void *arg)
 {
@@ -69,10 +69,10 @@ static void timer_cb(void *arg)
     }
     taskEXIT_CRITICAL(&candado);
 
-    float periodo_s = PERIOD_MS / 1000.0f;
+    float periodo_s = ENC_PERIODO_MS / 1000.0f;
 
     for (int e = 0; e < ENC_CANTIDAD; e++) {
-        float vueltas = (float)pulsos[e] / PPR;
+        float vueltas = (float)pulsos[e] / ENC_PPR;
         rpm[e] = vueltas * (60.0f / periodo_s);
         vel[e] = vueltas * PI_F * DIAMETRO_RUEDA_M / periodo_s;
     }
@@ -115,11 +115,11 @@ void encoders_init(void)
         .name     = "encoder_vel",
     };
     ESP_ERROR_CHECK(esp_timer_create(&args, &timer));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(timer, PERIOD_MS * 1000ULL));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(timer, ENC_PERIODO_MS * 1000ULL));
 
     ESP_LOGI(TAG, "Encoders listos (DEL_IZQ=%d, DEL_DER=%d, TRAS_IZQ=%d, TRAS_DER=%d, PPR=%d, periodo=%d ms)",
              PINES[ENC_DEL_IZQ], PINES[ENC_DEL_DER], PINES[ENC_TRAS_IZQ], PINES[ENC_TRAS_DER],
-             PPR, PERIOD_MS);
+             ENC_PPR, ENC_PERIODO_MS);
 }
 
 // ===== 4. FUNCIONES DEL MENÚ =====
@@ -149,7 +149,7 @@ float encoder_get_rpm_lenta(encoder_id_t e)
     // Si ya pasó más tiempo que el último período, la rueda está frenando:
     // se usa ese tiempo para que la lectura baje sola en vez de quedar congelada
     int64_t t = (desde_ultimo > periodo) ? desde_ultimo : periodo;
-    return 60.0e6f / ((float)PPR * (float)t);
+    return 60.0e6f / ((float)ENC_PPR * (float)t);
 }
 
 uint32_t encoder_get_pulsos(encoder_id_t e) { return (e < ENC_CANTIDAD) ? total[e] : 0; }

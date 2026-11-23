@@ -7,8 +7,8 @@
 //   CONFIG_PROMETEO_ENCODER_TRAS_IZQ_PIN, CONFIG_PROMETEO_ENCODER_TRAS_DER_PIN
 
 // ===== DATOS DEL ENCODER =====
-#define PPR             20      // cantidad de ranuras del disco
-#define PERIOD_MS       100     // cada cuánto se calcula la velocidad
+#define ENC_PPR             20      // cantidad de ranuras del disco
+#define ENC_PERIODO_MS       100     // cada cuánto se calcula la velocidad
 #define TIMEOUT_PERIODO_US 3000000LL // sin pulsos por más de 3 s = rueda parada (mín. ~1 rpm)
 
 // ===== DATOS DE LA RUEDA =====

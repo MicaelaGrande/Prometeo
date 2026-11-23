@@ -209,7 +209,7 @@ static void timer_callback(rcl_timer_t * t, int64_t last_call_time)
 }
 
 // =========================================================
-// PUBLICAR VELOCIDAD DE LAS RUEDAS cada PERIOD_MS (lo mismo que tarda el
+// PUBLICAR VELOCIDAD DE LAS RUEDAS cada ENC_PERIODO_MS (lo mismo que tarda el
 // driver en recalcularla); ver ruedas_leer() en logica/ruedas.c.
 // =========================================================
 
@@ -327,7 +327,7 @@ static bool crear_entidades(void)
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "brazo/cmd"));
 
     RCRET(rclc_timer_init_default(&timer, &support, RCL_MS_TO_NS(500), timer_callback));
-    RCRET(rclc_timer_init_default(&timer_ruedas, &support, RCL_MS_TO_NS(PERIOD_MS), timer_ruedas_callback));
+    RCRET(rclc_timer_init_default(&timer_ruedas, &support, RCL_MS_TO_NS(ENC_PERIODO_MS), timer_ruedas_callback));
 
     executor = rclc_executor_get_zero_initialized_executor();
     RCRET(rclc_executor_init(&executor, &support.context, 7, &allocator));  // 2 timers + 5 suscripciones

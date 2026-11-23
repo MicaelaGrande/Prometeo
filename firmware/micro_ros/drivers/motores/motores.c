@@ -309,7 +309,7 @@ static void lazo_velocidad(void)
         lazo_pulsos[m] += dp;
         if (lazo_acum_ms[m] >= LAZO_VENTANA_MS) {
             float seg = lazo_acum_ms[m] / 1000.0f;
-            float medida = (float)lazo_pulsos[m] / PPR * LAZO_RUEDA_M / seg;   // m/s de esta rueda
+            float medida = (float)lazo_pulsos[m] / ENC_PPR * LAZO_RUEDA_M / seg;   // m/s de esta rueda
             float error = (vel_obj[m] - medida) / VEL_MAX_MPS;
             // PID discreto, una vez por ventana. I con tope (anti-windup); P y D se mantienen
             // hasta la proxima medicion. En la primera ventana no hay error previo: D = 0.
