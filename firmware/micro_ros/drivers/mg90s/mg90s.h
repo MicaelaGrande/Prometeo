@@ -17,8 +17,8 @@ void  servos_init(void);                     // configura PWM, deja cada servo e
 
 // ===== MOVIMIENTO =====
 void  servo_set_angulo(servo_id_t s, float grados);           // salto inmediato a esa posición
-void  servo_mover(servo_id_t s, float grados, float vel_gps); // con rampa, en grados por segundo (<= 0 -> inmediato)
-void  servos_mover_sincronizado(const float grados[], uint32_t tiempo_ms); // todos llegan a la vez (0 -> inmediato)
+void  servo_mover(servo_id_t s, float grados, float vel_gps); // con rampa, en grados por segundo (<= 0 -> inmediato); se limita a la velocidad maxima de ese servo (mg90s.c, cfg[].vel)
+void  servos_mover_sincronizado(const float grados[], uint32_t tiempo_ms); // todos llegan a la vez (0 -> inmediato); si algun servo no llega sin pasar su velocidad maxima, tarda mas
 void  servos_home(float vel_gps);            // vuelve cada servo a su posición home con rampa
 void  servos_detener(void);                  // congela cada servo donde está (objetivo = actual)
 

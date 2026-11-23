@@ -204,12 +204,21 @@ void servos_mover_sincronizado(const float grados[], uint32_t tiempo_ms)
     for (int s = 0; s < CANT_SERVOS; s++) meta[s] = limitar_angulo(s, grados[s]);
 
     portENTER_CRITICAL(&cerrojo);
+    // Misma duracion para todos. Si el servo que tiene que hacer mas camino no llega en
+    // tiempo_ms sin pasarse de su velocidad maxima, la duracion se alarga (para que todos
+    // sigan llegando a la vez).
+    float dur_s = tiempo_ms / 1000.0f;
+    for (int s = 0; s < CANT_SERVOS && tiempo_ms > 0; s++) {
+        float dist = meta[s] - actual[s];
+        if (dist < 0) dist = -dist;
+        float min_s = dist / cfg[s].vel;
+        if (min_s > dur_s) dur_s = min_s;
+    }
     for (int s = 0; s < CANT_SERVOS; s++) {
         float dist = meta[s] - actual[s];
         if (dist < 0) dist = -dist;
         objetivo[s] = meta[s];
-        // misma duración para todos: cada uno con su velocidad (0 = inmediato)
-        vel_gps[s] = (tiempo_ms == 0) ? 0 : dist / (tiempo_ms / 1000.0f);
+        vel_gps[s] = (tiempo_ms == 0) ? 0 : dist / dur_s;   // 0 = inmediato
         us_crudo[s] = 0;
     }
     portEXIT_CRITICAL(&cerrojo);

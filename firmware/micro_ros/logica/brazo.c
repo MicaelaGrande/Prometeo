@@ -10,11 +10,13 @@
 #define SERVO_CODO    SERVO_4
 #define SERVO_GARRA   SERVO_5
 
-// Velocidad de cada servo, en grados por segundo (AJUSTAR probando)
+// Velocidad de cada servo, en grados por segundo (AJUSTAR probando).
+// El driver (mg90s.c, cfg[].vel) las limita a la maxima de cada servo: base, hombro y codo
+// no pasan de 45, por eso se piden 45 (pedir mas no los hace ir mas rapido).
 #define SERVO_CAMARA_VEL  180
-#define SERVO_BASE_VEL    90
-#define SERVO_HOMBRO_VEL  90
-#define SERVO_CODO_VEL    90
+#define SERVO_BASE_VEL    45
+#define SERVO_HOMBRO_VEL  45
+#define SERVO_CODO_VEL    45
 #define SERVO_GARRA_VEL   90
 
 static const servo_id_t juntas[BRAZO_JUNTAS] = {
