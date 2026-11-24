@@ -10,13 +10,11 @@
 # Escucha:
 #   /vision/detections   lo que ve la camara             -> logica.ver()
 #   /navegacion/lugar    llego a curva/bifurcacion/...   -> logica.llegar_a_lugar()
-#   /prometeo/modo_actual     'auto' o 'manual', del selector del panel
-#   /prometeo/freno_operador  true si apretaron PARAR
-#   /prometeo/pedido_operador 'abandonar' (boton del panel) -> logica.abandonar_color()
-#                             vale tambien en manual
+#   /prometeo/modo_actual el modo de la llave (prometeo_interfaces/msg/Modo.msg). Es de
+#                        una sola via: MANUAL -> AUTO -> TERMINADO.
 #
-# Solo decide en modo 'auto' y sin PARAR. Mientras tanto ignora la camara y los
-# lugares, porque el robot lo esta manejando una persona.
+# Solo decide en AUTO. En MANUAL lo esta manejando una persona (lo trae a la
+# largada), y en TERMINADO ya termino: en los dos ignora la camara y los lugares.
 #
 # Manda:
 #   /mover               accion: ir a una salida o acercarse al cubo
@@ -32,6 +30,8 @@
 #   /decision/retomar    timbre: abandono el color, Navegacion vuelve al ultimo lugar
 #   /prometeo/seguridad_habilitada  false = modo recoger (sin freno) para acercarse al cubo
 #   /decision/estado     en que anda Decision, para mirar desde la terminal
+#   /prometeo/modo       cuando la logica TERMINA (no queda ningun color), le pide
+#                        PEDIR_PARAR a la llave: el robot queda quieto, fin de la ronda
 
 import rclpy
 from rclpy.action import ActionClient
@@ -42,12 +42,12 @@ from std_msgs.msg import Bool, Empty, String
 
 from huggin_vision_msgs.msg import DetectionArray
 from prometeo_interfaces.action import Brazo, Mover, Volver
-from prometeo_interfaces.msg import Lugar
+from prometeo_interfaces.msg import Lugar, Modo
 
 from prometeo_decision.logica import (
     ACERCARSE, AGARRAR, DISTANCIA_MAX_CUBO, DISTANCIA_MIN_CUBO, Decision, EXPLORAR,
     IMAGENES_CUBO, IR_A_SALIDA, MINIMO_CUBO, RETOMAR,
-    SEGUIR, SOLTAR, VOLVER, VOLVIENDO,
+    SEGUIR, SOLTAR, TERMINADO, VOLVER, VOLVIENDO,
 )
 
 
@@ -76,7 +76,7 @@ class NodoDecision(Node):
         topic_seguridad = self.declare_parameter(
             'topic_seguridad', '/prometeo/seguridad_habilitada').value
 
-        # Si es false, decide siempre, sin esperar al selector de modo del panel.
+        # Si es false, decide siempre, sin esperar a que la llave pase a automatico.
         # Sirve para probar a mano con navegacion_falsa: -p usar_selector:=false
         self.usar_selector = self.declare_parameter('usar_selector', True).value
 
@@ -95,9 +95,10 @@ class NodoDecision(Node):
         self.reloj_brazo = None
         self.numero_brazo = 0   # igual que numero_acercarse, para el brazo
 
-        # Hasta que el selector avise, supone lo seguro: manual y frenado.
-        self.modo = 'manual'
-        self.freno = True
+        # Hasta que la llave avise, supone lo seguro: manual (no decide nada).
+        self.modo = Modo.MANUAL
+        # Si ya le pidio a la llave que pare (para pedirlo una sola vez)
+        self.parada_pedida = False
 
         self.logica = Decision(confianza_minima=confianza, imagenes_cubo=imagenes_cubo,
                                minimo_cubo=minimo_cubo,
@@ -108,14 +109,10 @@ class NodoDecision(Node):
         self.create_subscription(DetectionArray, '/vision/detections', self.al_ver, 10)
         self.create_subscription(Lugar, '/navegacion/lugar', self.al_llegar_a_lugar, 10)
 
-        # El selector repite el modo y el freno, y los guarda para el que se
-        # conecta tarde (TRANSIENT_LOCAL). Hay que escucharlos igual.
+        # La llave repite el modo y lo guarda para el que se conecta tarde
+        # (TRANSIENT_LOCAL). Hay que escucharlo igual.
         guardado = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(String, '/prometeo/modo_actual', self.cambio_de_modo, guardado)
-        self.create_subscription(Bool, '/prometeo/freno_operador', self.cambio_de_freno, guardado)
-        # Botones del panel (Capturar / Abandonar). Abandonar vale tambien en manual:
-        # se aprieta con el robot frente al cubo, mientras prueban la garra a mano.
-        self.create_subscription(String, '/prometeo/pedido_operador', self.al_pedir_operador, 10)
 
         # Lo que manda
         self.pub_explorar = self.create_publisher(Empty, '/decision/explorar', 10)
@@ -123,6 +120,8 @@ class NodoDecision(Node):
         self.pub_retomar = self.create_publisher(Empty, '/decision/retomar', 10)
         self.pub_seguridad = self.create_publisher(Bool, topic_seguridad, 10)
         self.pub_estado = self.create_publisher(String, '/decision/estado', 10)
+        # Para pedirle a la llave que termine la ronda (PEDIR_PARAR)
+        self.pub_modo = self.create_publisher(String, '/prometeo/modo', 10)
         self.mover = ActionClient(self, Mover, '/mover')
         self.volver = ActionClient(self, Volver, '/volver')
         self.brazo = ActionClient(self, Brazo, '/brazo')
@@ -138,36 +137,16 @@ class NodoDecision(Node):
     # -----------------------------------------------------------------------
 
     def puede_decidir(self):
-        """True si esta en automatico y nadie apreto PARAR."""
+        """True si la llave esta en automatico."""
         if not self.usar_selector:
             return True
-        return self.modo == 'auto' and not self.freno
+        return self.modo == Modo.AUTO
 
     def cambio_de_modo(self, msg):
         if msg.data == self.modo:
-            return
+            return   # la llave repite el modo una vez por segundo
         self.get_logger().info(f'Modo: {msg.data}')
         self.modo = msg.data
-        if msg.data != 'auto':
-            self.olvidar_lo_visto()
-
-    def cambio_de_freno(self, msg):
-        if msg.data == self.freno:
-            return
-        self.get_logger().info(f'PARAR: {"puesto" if msg.data else "suelto"}')
-        self.freno = msg.data
-        if msg.data:
-            self.olvidar_lo_visto()
-
-    def olvidar_lo_visto(self):
-        """Cuando lo manejan a mano, el robot se mueve y lo que vio ya no sirve.
-
-        Se olvida de la flecha guardada y de las ultimas imagenes, para no usar
-        una flecha vieja en una bifurcacion equivocada. El color que sigue y los
-        cubos que ya deposito no se tocan.
-        """
-        self.logica.flecha_pendiente = None
-        self.logica.ultimas.clear()
 
     def al_ver(self, msg):
         if not self.puede_decidir():
@@ -179,11 +158,6 @@ class NodoDecision(Node):
             return
         self.get_logger().info(f'Lugar: {msg.tipo} con salidas {list(msg.salidas)}')
         self.hacer(self.logica.llegar_a_lugar(msg.tipo, list(msg.salidas)))
-
-    def al_pedir_operador(self, msg):
-        if msg.data == 'abandonar':
-            self.get_logger().info('El operador abandona el color')
-            self.hacer(self.logica.abandonar_color())
 
     # -----------------------------------------------------------------------
     # Lo que manda: traduce cada Orden de la logica a un mensaje de ROS
@@ -360,9 +334,22 @@ class NodoDecision(Node):
             else:
                 self.hacer(self.logica.cubo_no_soltado())
 
+    def terminar_si_no_queda_nada(self):
+        """Si la logica ya no tiene ningun color por buscar, le pide a la llave que pare.
+
+        Es el fin de la ronda: la llave pasa a TERMINADO y el robot queda quieto. Se
+        pide una sola vez (se revisa cada vez que se publica el estado).
+        """
+        if self.logica.estado != TERMINADO or self.parada_pedida:
+            return
+        self.parada_pedida = True
+        self.get_logger().warn('No queda ningun color: termino la ronda')
+        self.pub_modo.publish(String(data=Modo.PEDIR_PARAR))
+
     def publicar_estado(self):
+        self.terminar_si_no_queda_nada()
         l = self.logica
-        decide = 'si' if self.puede_decidir() else 'no (manual o PARAR)'
+        decide = 'si' if self.puede_decidir() else f'no (modo {self.modo})'
         texto = (f'estado={l.estado} color={l.color_actual} '
                  f'faltan={sorted(l.cubos_faltantes)} decide={decide} '
                  f'cubos_descartados={l.cubos_descartados}')

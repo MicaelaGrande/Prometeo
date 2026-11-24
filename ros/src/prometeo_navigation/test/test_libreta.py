@@ -9,7 +9,7 @@ import math
 from prometeo_interfaces.action import Mover
 from prometeo_interfaces.msg import Lugar as AvisoLugar
 from prometeo_navigation.libreta import (
-    ESTE, LARGADA, Libreta, Lugar, NORTE, OESTE, PENDIENTE, PROBADA, Salida, SUR, TRABADA,
+    ESTE, LARGADA, Libreta, Lugar, NORTE, OESTE, PENDIENTE, PROBADA, Salida, SUR,
     direccion_de_salida,
     rumbo_de,
     salida_hacia)
@@ -176,15 +176,17 @@ def test_si_hay_dos_parecidos_elige_el_mas_cercano():
 
 # ===== Tomar una salida y unir los lugares =====
 
-def test_tomar_salida_la_marca_probada():
+def test_tomar_salida_no_la_marca_probada_hasta_llegar():
     libreta = Libreta()
     hoja, _ = libreta.anotar('bifurcacion', 0.0, 0.0, 0.0,
                              [AvisoLugar.IZQUIERDA, AvisoLugar.DERECHA])
     camino = libreta.tomar_salida(0.0, AvisoLugar.IZQUIERDA)
     assert camino.direccion == OESTE
-    assert camino.estado == PROBADA
+    assert camino.estado == PENDIENTE   # salio, pero todavia no llego a ningun lado
+    libreta.anotar('curva', 0.0, 1.0, math.pi / 2, [AvisoLugar.DERECHA])
+    assert camino.estado == PROBADA     # llego al lugar siguiente: ahora si
     este = [s for s in hoja.salidas if s.direccion == ESTE][0]
-    assert este.estado == PENDIENTE   # la otra sigue sin probar
+    assert este.estado == PENDIENTE     # la otra sigue sin probar
 
 
 def test_al_llegar_al_siguiente_quedan_unidos_en_los_dos_sentidos():
@@ -239,22 +241,48 @@ def test_rodear_una_isla_marca_probado_el_camino_de_vuelta():
     assert oeste.lleva_a == 4   # D
 
 
-# ===== Manual (T11) =====
+# ===== La largada (lugar 0) =====
 
-def test_pasar_a_manual_traba_la_salida_que_estaba_recorriendo():
+def test_arranca_en_la_largada_saliendo_hacia_el_norte():
     libreta = Libreta()
-    libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
-    camino = libreta.tomar_salida(0.0, AvisoLugar.IZQUIERDA)
-    libreta.pasar_a_manual()
-    assert camino.estado == TRABADA
-    assert libreta.actual is None
+    assert libreta.actual is libreta.largada
+    assert libreta.largada.numero == LARGADA
+    assert libreta.saliendo_por is libreta.largada.salidas[0]
+    assert libreta.saliendo_por.direccion == NORTE
+    assert libreta.lugares == []          # la largada no es un lugar del detector
 
 
-def test_despues_de_manual_el_lugar_siguiente_no_se_une_al_anterior():
+def test_el_primer_lugar_queda_unido_a_la_largada_con_su_tiempo():
     libreta = Libreta()
-    libreta.anotar('curva', 0.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
-    camino = libreta.tomar_salida(0.0, AvisoLugar.IZQUIERDA)
-    libreta.pasar_a_manual()
-    b, _ = libreta.anotar('curva', -2.0, 0.0, math.pi / 2, [AvisoLugar.DERECHA])
-    assert camino.lleva_a is None
-    assert all(s.lleva_a is None for s in b.salidas)
+    libreta.arrancar(ahora_s=10.0)
+    primero, _ = libreta.anotar('curva', 1.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA], ahora_s=14.0)
+    sur = [s for s in primero.salidas if s.direccion == SUR][0]
+    assert sur.lleva_a == LARGADA and sur.segundos == 4.0
+    norte = libreta.largada.salidas[0]
+    assert norte.lleva_a == primero.numero and norte.segundos == 4.0
+
+
+def test_una_curva_cerca_del_arranque_no_se_confunde_con_la_largada():
+    libreta = Libreta()
+    hoja, es_nuevo = libreta.anotar('curva', 0.05, 0.0, 0.0, [AvisoLugar.IZQUIERDA])
+    assert es_nuevo and hoja.numero == 1
+
+
+def test_ida_y_vuelta_a_la_largada_no_rompe_la_libreta():
+    # Arranca mirando al norte y llega al primer lugar: por el sur se va a la largada
+    libreta = Libreta()
+    libreta.arrancar(ahora_s=0.0)
+    primero, _ = libreta.anotar('curva', 1.0, 0.0, 0.0, [AvisoLugar.IZQUIERDA], ahora_s=4.0)
+    # Vuelve con el cubo: sale del primer lugar hacia la largada (mirando al sur)
+    libreta.tomar_salida(math.pi, AvisoLugar.ADELANTE, ahora_s=50.0)
+    # Mapeo avisa que llego a la largada
+    assert libreta.llegar_a_la_largada(ahora_s=54.0) is libreta.largada
+    assert libreta.actual is libreta.largada
+    # Da media vuelta (mirando al sur, "vuelta" es el norte) y vuelve a entrar
+    libreta.tomar_salida(math.pi, Mover.Goal.VUELTA, ahora_s=55.0)
+    otra_vez, es_nuevo = libreta.anotar(
+        'curva', 1.02, 0.0, 0.0, [AvisoLugar.IZQUIERDA], ahora_s=59.0)
+    assert not es_nuevo and otra_vez is primero
+    sur = [s for s in primero.salidas if s.direccion == SUR][0]
+    assert sur.lleva_a == LARGADA
+    assert libreta.largada.salidas[0].lleva_a == primero.numero

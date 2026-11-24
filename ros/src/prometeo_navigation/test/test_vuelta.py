@@ -71,7 +71,9 @@ def test_libreta_partida_no_tiene_camino():
     libreta = Libreta()
     libreta.anotar('curva', 0.0, 0.0, NORTE, [AvisoLugar.IZQUIERDA])
     libreta.tomar_salida(NORTE, AvisoLugar.IZQUIERDA)
-    libreta.pasar_a_manual()
+    # Como si el detector no hubiera avisado un lugar: el tramo no se une a nada
+    libreta.saliendo_por = None
+    libreta.actual = None
     c, _ = libreta.anotar('curva', -3.0, 2.0, OESTE, [AvisoLugar.DERECHA])
     assert camino_a_la_largada(libreta, c) is None
 

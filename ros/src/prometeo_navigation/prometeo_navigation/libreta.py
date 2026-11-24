@@ -17,12 +17,21 @@ from prometeo_interfaces.msg import Lugar as AvisoLugar
 # Los dos estados posibles de una salida.
 # Se guardan en constantes para no escribir el texto a mano cada vez:
 # un error de tipeo en una constante da error, y en un texto pasa de largo.
-PENDIENTE = 'pendiente'  # todavia no la recorrimos
-PROBADA = 'probada'      # ya pasamos por ahi
+PENDIENTE = 'pendiente'  # todavia no la recorrimos entera
+PROBADA = 'probada'      # la recorrimos entera: llegamos al lugar de la otra punta
+# Una salida pasa a PROBADA recien al llegar al lugar siguiente (_unir), nunca antes.
+# Si el robot sale y no llega (el giro fallo, o entro a buscar un cubo y volvio), sigue
+# PENDIENTE: no sabemos que hay del otro lado. En una zona abierta, despues del cubo
+# puede haber mas laberinto (incluso otro cubo). El costo es que a veces vuelve a
+# entrar a un callejon que ya vio; la otra opcion (cerrarla) podria dejar una zona
+# entera sin explorar, y eso no se corrige nunca.
 
-# lleva_a de la salida por donde arranco el robot: el inicio, donde estan los contenedores
+# La largada (de donde parte el robot y donde estan los contenedores) es un lugar mas
+# de la libreta, con el numero 0. No la avisa el detector (no tiene una forma que se
+# reconozca: es donde ponen al robot): la libreta la crea sola, y Mapeo avisa cuando
+# llega (llegar_a_la_largada).
 LARGADA = 0
-TRABADA = 'trabada'      # la estaba recorriendo y pasaron a manual (T11): no se sabe adonde va
+TIPO_LARGADA = 'largada'
 
 # ===================== Puntos cardinales =====================
 # La libreta anota las salidas en norte, sur, este y oeste, no en izquierda o derecha:
@@ -97,7 +106,7 @@ class Salida:
     estado: str = PENDIENTE
 
     # El numero del lugar al que lleva. None significa que todavia no lo sabemos.
-    # LARGADA (0) = es el camino por donde arranco el robot: por ahi se vuelve al inicio.
+    # LARGADA (0) = lleva a la largada: por ahi se vuelve al inicio.
     lleva_a: Optional[int] = None
 
     # Cuantos segundos tardo el robot en recorrer este tramo (para Dijkstra al volver).
@@ -109,14 +118,14 @@ class Salida:
 class Lugar:
     """Un punto del laberinto que vale la pena recordar. Es una hoja de la libreta."""
 
-    # Su identificacion: 1, 2, 3... Es lo que se guarda en Salida.lleva_a.
+    # Su identificacion: 0 (la largada), 1, 2, 3... Es lo que se guarda en Salida.lleva_a.
     numero: int
 
     # Donde esta, en metros, medido desde donde arranco el robot. Sale de /odom.
     x: float
     y: float
 
-    # Que clase de lugar es: 'curva', 'bifurcacion' o 'callejon'.
+    # Que clase de lugar es: 'curva', 'bifurcacion', 'callejon' o 'largada'.
     tipo: str
 
     # Los caminos que salen de aca. Es una lista de objetos Salida.
@@ -128,31 +137,62 @@ class Lugar:
 # ===================== La libreta =====================
 
 class Libreta:
-    """Todas las hojas (Lugar) del recorrido. Empieza vacia en cada ronda.
+    """Todas las hojas (Lugar) del recorrido. Empieza en cada ronda solo con la largada.
 
     anotar() recibe cada aviso del detector y hace una de dos cosas:
     - si el robot ya estuvo ahi, devuelve esa misma hoja (no la repite);
     - si no, agrega una hoja nueva.
     tomar_salida() anota por donde sale el robot. En el anotar() siguiente, esa
     salida y la del lugar al que llego quedan unidas (lleva_a), en los dos sentidos.
+
+    La largada es la hoja 0, en (0, 0), con una sola salida: al norte (hacia donde
+    mira el robot al arrancar). La libreta arranca "saliendo de la largada por el
+    norte", asi el primer lugar queda unido a la largada como cualquier otro tramo.
     """
 
     def __init__(self, margen_m=0.30):
         # Cuanto se puede equivocar /odom: dos avisos a menos de esto pueden ser el
         # mismo lugar. Se ajusta probando (el robot real patina al girar).
         self.margen_m = margen_m
+        # La largada: no esta en self.lugares, porque esos son los que avisa el
+        # detector y los que se buscan por posicion (buscar). Si estuviera, una curva
+        # cerca del arranque se podria confundir con la largada.
+        self.largada = Lugar(LARGADA, 0.0, 0.0, TIPO_LARGADA, [Salida(NORTE)])
         self.lugares = []
         self.actual = None          # la hoja del lugar donde esta el robot
         self.saliendo_por = None    # la Salida que tomo y todavia no llego a otro lugar
         self.hora_salida = None     # cuando la tomo (para medir el tramo)
+        self.arrancar()
+
+    def todas_las_hojas(self):
+        """La largada y todos los lugares (para dibujar la libreta o recorrerla)."""
+        return [self.largada] + self.lugares
+
+    def arrancar(self, ahora_s=None):
+        """Arranca la ronda: el robot sale de la largada hacia el norte.
+
+        ahora_s: la hora (segundos), para medir cuanto tarda hasta el primer lugar.
+        """
+        self.actual = self.largada
+        self.saliendo_por = self.largada.salidas[0]
+        self.hora_salida = ahora_s
+
+    def llegar_a_la_largada(self, ahora_s=None):
+        """Mapeo avisa que el robot llego a la largada (el detector no la reconoce).
+
+        Es como anotar() para la largada: une el tramo por el que vino (por el norte de
+        la largada) y la largada pasa a ser el lugar actual. Devuelve la hoja.
+        """
+        self._unir(self.largada, NORTE, ahora_s)
+        self.actual = self.largada
+        return self.largada
 
     def anotar(self, tipo, x, y, orientacion, salidas, ahora_s=None):
         """Recibe un aviso del detector. Devuelve (hoja, es_nuevo).
 
         salidas: como las manda el detector (izquierda, adelante, derecha). Se pasan
         a puntos cardinales. Tambien se anota por donde vino (atras), ya PROBADA:
-        es una salida mas de ese lugar, y por ahi se vuelve. En el primer lugar de la
-        ronda, por donde vino lleva a la LARGADA.
+        es una salida mas de ese lugar, y por ahi se vuelve.
         ahora_s: la hora (segundos) para medir cuanto tardo el tramo desde tomar_salida.
         """
         direcciones = [direccion_de_salida(orientacion, s) for s in salidas]
@@ -162,8 +202,6 @@ class Libreta:
         es_nuevo = hoja is None
         if es_nuevo:
             atras = Salida(de_donde_vino, PROBADA)
-            if not self.lugares:
-                atras.lleva_a = LARGADA     # el primer lugar: por ahi se vuelve al inicio
             hoja = Lugar(len(self.lugares) + 1, x, y, tipo,
                          [Salida(d) for d in direcciones] + [atras])
             self.lugares.append(hoja)
@@ -174,7 +212,7 @@ class Libreta:
     def tomar_salida(self, orientacion, salida, ahora_s=None):
         """El robot sale del lugar actual por esa salida (izquierda, adelante...).
 
-        La marca PROBADA y se acuerda de ella hasta llegar al lugar siguiente.
+        Se acuerda de ella hasta llegar al lugar siguiente: recien ahi queda PROBADA.
         Devuelve esa Salida, o None si no hay lugar actual o no tiene esa salida.
         """
         if self.actual is None:
@@ -182,22 +220,10 @@ class Libreta:
         direccion = direccion_de_salida(orientacion, salida)
         for camino in self.actual.salidas:
             if camino.direccion == direccion:
-                camino.estado = PROBADA
                 self.saliendo_por = camino
                 self.hora_salida = ahora_s
                 return camino
         return None
-
-    def pasar_a_manual(self):
-        """Pasaron a manual (T11): la libreta no se borra, pero el tramo a mano no se anota.
-
-        La salida que estaba recorriendo queda TRABADA: no se sabe adonde lleva.
-        Sin lugar actual, el proximo aviso (al volver a automatico) no se une a nada.
-        """
-        if self.saliendo_por is not None:
-            self.saliendo_por.estado = TRABADA
-        self.saliendo_por = None
-        self.actual = None
 
     def _unir(self, hoja, de_donde_vino, ahora_s=None):
         """Une la salida que tomo en el lugar anterior con la de este lugar por donde llego.
@@ -212,6 +238,7 @@ class Libreta:
         segundos = None
         if ahora_s is not None and self.hora_salida is not None:
             segundos = ahora_s - self.hora_salida
+        self.saliendo_por.estado = PROBADA     # ahora si: la recorrio entera
         self.saliendo_por.lleva_a = hoja.numero
         self.saliendo_por.segundos = segundos
         for camino in hoja.salidas:

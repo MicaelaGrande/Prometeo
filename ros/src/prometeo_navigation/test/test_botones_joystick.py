@@ -1,16 +1,17 @@
-# Pruebas de los botones del joystick que cambian de modo (T11).
+# Pruebas de los botones del joystick que le hablan a la llave de modo.
 #
 # Se corren desde la carpeta ros/src/prometeo_navigation con:
 #   python3 -m pytest test/test_botones_joystick.py -v
 
 from prometeo_navigation.botones_joystick import BotonesJoystick
+from prometeo_navigation.modos import PEDIR_AUTO, PEDIR_PARAR
 
-PARAR, SOLTAR, MANUAL, AUTO = 1, 3, 4, 6
+PARAR, AUTO = 1, 6
 
 
 def nuevos():
-    return BotonesJoystick({PARAR: 'parar', MANUAL: 'manual', AUTO: 'auto'},
-                           boton_soltar=SOLTAR, tiempo_soltar_s=1.0)
+    return BotonesJoystick({PARAR: PEDIR_PARAR}, boton_mantener=AUTO,
+                           pedido_mantener=PEDIR_AUTO, tiempo_mantener_s=1.0)
 
 
 def apretados(*numeros):
@@ -25,36 +26,34 @@ def test_sin_botones_no_pide_nada():
 def test_apretar_parar_pide_parar_una_sola_vez():
     botones = nuevos()
 
-    assert botones.actualizar(apretados(PARAR), ahora_s=0.0) == ['parar']
-    assert botones.actualizar(apretados(PARAR), ahora_s=0.1) == []  # sigue apretado
+    assert botones.actualizar(apretados(PARAR), ahora_s=0.0) == [PEDIR_PARAR]
+    # Sigue apretado: no lo repite
+    assert botones.actualizar(apretados(PARAR), ahora_s=0.1) == []
+    # Lo suelta y lo vuelve a apretar: lo pide de nuevo
     assert botones.actualizar(apretados(), ahora_s=0.2) == []
-    assert botones.actualizar(apretados(PARAR), ahora_s=0.3) == ['parar']  # otra vez
+    assert botones.actualizar(apretados(PARAR), ahora_s=0.3) == [PEDIR_PARAR]
 
 
-def test_manual_y_auto():
+def test_automatico_hay_que_mantenerlo():
     botones = nuevos()
 
-    assert botones.actualizar(apretados(MANUAL), ahora_s=0.0) == ['manual']
-    assert botones.actualizar(apretados(), ahora_s=0.1) == []
-    assert botones.actualizar(apretados(AUTO), ahora_s=0.2) == ['auto']
+    assert botones.actualizar(apretados(AUTO), ahora_s=0.0) == []
+    assert botones.actualizar(apretados(AUTO), ahora_s=0.5) == []
+    assert botones.actualizar(apretados(AUTO), ahora_s=1.0) == [PEDIR_AUTO]
+    # Sigue apretado: no lo repite
+    assert botones.actualizar(apretados(AUTO), ahora_s=2.0) == []
 
 
-def test_soltar_hay_que_mantenerlo():
+def test_automatico_apretado_corto_no_hace_nada():
     botones = nuevos()
 
-    assert botones.actualizar(apretados(SOLTAR), ahora_s=0.0) == []
-    assert botones.actualizar(apretados(SOLTAR), ahora_s=0.5) == []
-    assert botones.actualizar(apretados(SOLTAR), ahora_s=1.0) == ['soltar']
-    assert botones.actualizar(apretados(SOLTAR), ahora_s=2.0) == []  # una sola vez
-
-
-def test_soltar_apretado_corto_no_hace_nada():
-    botones = nuevos()
-    botones.actualizar(apretados(SOLTAR), ahora_s=0.0)
-    botones.actualizar(apretados(), ahora_s=0.5)  # lo solto antes del segundo
-
-    assert botones.actualizar(apretados(SOLTAR), ahora_s=0.9) == []  # empieza de nuevo
+    assert botones.actualizar(apretados(AUTO), ahora_s=0.0) == []
+    assert botones.actualizar(apretados(), ahora_s=0.5) == []       # lo solto antes
+    assert botones.actualizar(apretados(AUTO), ahora_s=0.6) == []   # empieza de cero
+    assert botones.actualizar(apretados(AUTO), ahora_s=1.2) == []
 
 
 def test_joystick_con_menos_botones_no_falla():
-    assert nuevos().actualizar([0, 1], ahora_s=0.0) == ['parar']
+    botones = nuevos()
+
+    assert botones.actualizar([1, 1], ahora_s=0.0) == [PEDIR_PARAR]

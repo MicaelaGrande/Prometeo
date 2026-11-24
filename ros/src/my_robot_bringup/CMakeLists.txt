@@ -13,6 +13,7 @@ install(
 install(
   PROGRAMS scripts/hcsr04_sim.py scripts/modelo_hcsr04.py scripts/motor_test.py
     scripts/camara_panel.py scripts/buscar_camara.py
+    scripts/monitor_topicos.py scripts/estado_camara.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

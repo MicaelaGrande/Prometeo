@@ -12,7 +12,9 @@ NORTE, OESTE, SUR, ESTE = 0.0, math.pi / 2, math.pi, -math.pi / 2   # orientacio
 
 
 def test_sin_lugar_actual_no_elige():
-    assert elegir_salida(Libreta(), NORTE) is None
+    libreta = Libreta()
+    libreta.actual = None     # al arrancar, el lugar actual es la largada
+    assert elegir_salida(libreta, NORTE) is None
 
 
 def test_elige_una_salida_sin_probar():
@@ -25,8 +27,18 @@ def test_no_elige_una_salida_ya_probada():
     libreta = Libreta()
     libreta.anotar('bifurcacion', 0.0, 0.0, NORTE, [AvisoLugar.IZQUIERDA, AvisoLugar.DERECHA])
     libreta.tomar_salida(NORTE, AvisoLugar.DERECHA)
+    libreta.anotar('curva', 1.0, 0.0, ESTE, [AvisoLugar.IZQUIERDA])   # llego: PROBADA
     libreta.actual = libreta.lugares[0]          # volvio a estar ahi
     assert elegir_salida(libreta, NORTE) == AvisoLugar.IZQUIERDA
+
+
+def test_si_salio_y_volvio_sin_llegar_a_otro_lugar_la_salida_sigue_pendiente():
+    # Por ejemplo: entro a buscar un cubo y volvio. No sabe que hay mas alla.
+    libreta = Libreta()
+    libreta.anotar('bifurcacion', 0.0, 0.0, NORTE, [AvisoLugar.IZQUIERDA, AvisoLugar.DERECHA])
+    libreta.tomar_salida(NORTE, AvisoLugar.DERECHA)
+    libreta.saliendo_por = None                  # media vuelta en el tramo
+    assert elegir_salida(libreta, NORTE) == AvisoLugar.DERECHA
 
 
 def test_en_un_callejon_da_media_vuelta_hacia_la_bifurcacion():

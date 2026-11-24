@@ -1,24 +1,29 @@
-# La logica de los botones del joystick que cambian de modo (T11), sin ROS.
+# La logica de los botones del joystick que le hablan a la llave de modo, sin ROS.
 # El nodo que la usa esta en joystick_modo.py.
 #
-# Un boton dispara su pedido una sola vez, cuando se aprieta (no mientras se mantiene).
-# El de soltar el freno hay que mantenerlo apretado un rato, para no soltarlo sin querer.
+# Dos clases de boton:
+#   - instantaneos: disparan su pedido una sola vez, al apretarlos (no mientras se
+#     mantienen). Es el caso de PARAR: tiene que actuar enseguida.
+#   - el de mantener: hay que tenerlo apretado un rato. Es el de pasar a automatico,
+#     porque no tiene vuelta atras: asi no se pasa sin querer por rozarlo.
 
 
 class BotonesJoystick:
-    """Convierte los botones apretados en pedidos para el selector ("parar", "auto", etc.)."""
+    """Convierte los botones apretados en pedidos para la llave ("parar", "auto")."""
 
-    def __init__(self, botones, boton_soltar, tiempo_soltar_s):
+    def __init__(self, botones, boton_mantener, pedido_mantener, tiempo_mantener_s):
         """botones: {numero_de_boton: pedido} que se disparan al apretar.
 
-        boton_soltar: numero del boton que suelta el freno al mantenerlo tiempo_soltar_s.
+        boton_mantener: numero del boton que dispara pedido_mantener si se lo
+        mantiene apretado tiempo_mantener_s segundos.
         """
         self.botones = botones
-        self.boton_soltar = boton_soltar
-        self.tiempo_soltar_s = tiempo_soltar_s
-        self.antes = []              # botones de la lectura anterior
-        self.soltar_desde_s = None   # cuando se empezo a mantener el boton de soltar
-        self.soltar_disparado = False
+        self.boton_mantener = boton_mantener
+        self.pedido_mantener = pedido_mantener
+        self.tiempo_mantener_s = tiempo_mantener_s
+        self.antes = []                # botones de la lectura anterior
+        self.mantener_desde_s = None   # cuando se empezo a mantener el boton
+        self.mantener_disparado = False
 
     @staticmethod
     def _apretado(lista, numero):
@@ -31,16 +36,16 @@ class BotonesJoystick:
             if self._apretado(botones_ahora, numero) and not self._apretado(self.antes, numero):
                 pedidos.append(pedido)
 
-        if self._apretado(botones_ahora, self.boton_soltar):
-            if self.soltar_desde_s is None:
-                self.soltar_desde_s = ahora_s
-            mantenido = ahora_s - self.soltar_desde_s >= self.tiempo_soltar_s
-            if mantenido and not self.soltar_disparado:
-                pedidos.append('soltar')
-                self.soltar_disparado = True
+        if self._apretado(botones_ahora, self.boton_mantener):
+            if self.mantener_desde_s is None:
+                self.mantener_desde_s = ahora_s
+            mantenido = ahora_s - self.mantener_desde_s >= self.tiempo_mantener_s
+            if mantenido and not self.mantener_disparado:
+                pedidos.append(self.pedido_mantener)
+                self.mantener_disparado = True
         else:
-            self.soltar_desde_s = None
-            self.soltar_disparado = False
+            self.mantener_desde_s = None
+            self.mantener_disparado = False
 
         self.antes = list(botones_ahora)
         return pedidos

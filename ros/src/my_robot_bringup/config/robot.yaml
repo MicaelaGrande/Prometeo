@@ -1,0 +1,47 @@
+# Medidas FIJAS del robot Prometeo: un solo lugar para todos los nodos.
+#
+# Aca van SOLO las medidas del robot. Las de la pista (ancho del pasillo, ancho de
+# la salida, punto de giro) NO van aca: el robot las aprende mientras recorre,
+# porque en la competencia la pista no respeto las medidas del reglamento.
+#
+# Todavia ningun nodo lee este archivo. Cuando se use, los launch lo cargan como
+# parameters (parameters=[ruta_a_robot.yaml]) y cada nodo declara solo los que usa.
+#
+# "/**" quiere decir "para cualquier nodo": asi el mismo archivo sirve para todos.
+#
+# Unidades: centimetros, igual que el resto de navegacion (lugares.py, mover.py).
+#
+# Origen de cada medida:
+#   [medido]  medido en el robot real (2026-11-23)
+#   [xacro]   copiado del modelo de Gazebo (robot_description/urdf), SIN medir todavia
+#
+# "Centro" = el centro de giro del robot (4 ruedas, gira derrapando: el medio del
+# rectangulo que forman las ruedas). PENDIENTE: confirmar que las medidas [medido]
+# se tomaron desde ese punto (prueba: girarlo en el lugar y ver que punto queda quieto).
+
+/**:
+  ros__parameters:
+
+    # --- Cuerpo --------------------------------------------------------------
+    robot_largo_cm: 27.0                 # [xacro] de punta a punta
+    robot_ancho_cm: 16.0                 # [xacro] con ruedas
+
+    # --- Ultrasonido de adelante ---------------------------------------------
+    # Del centro a la cara del sensor, hacia adelante.
+    sensor_frente_adelante_cm: 14.25     # [medido] entre 14 y 14,5
+
+    # --- Ultrasonidos de los costados ----------------------------------------
+    # Montados de costado y en vertical (un ojito arriba del otro).
+    # Los dos estan en la misma posicion, uno de cada lado (espejados).
+    sensor_costado_al_costado_cm: 7.25   # [medido] entre 7 y 7,5: del centro a la cara del sensor
+    sensor_costado_adelante_cm: 10.25    # [medido] entre 10 y 10,5: cuanto estan adelante del centro
+
+    # --- HC-SR04 ---------------------------------------------------------------
+    sensor_sin_eco_cm: 400.0             # [hoja de datos] mas lejos de esto el HC-SR04 no devuelve eco
+
+    # --- Ruedas (4, sin direccion: gira derrapando) ------------------------------
+    rueda_diametro_cm: 6.5               # [xacro] dice "diametro real", falta confirmar
+    ruedas_separacion_cm: 13.5           # [xacro] izquierda a derecha, centro a centro
+                                         #  (OJO: el Kconfig del firmware dice 135 mm pero su
+                                         #   comentario dice 0.1605 m: hay que medirla)
+    ruedas_entre_ejes_cm: 12.5           # [xacro] eje de adelante a eje de atras

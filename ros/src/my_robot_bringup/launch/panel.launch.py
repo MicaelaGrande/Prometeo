@@ -62,16 +62,19 @@ def generate_launch_description():
             description='calibracion de la ESP32-CAM (copia de firmware/esp32_cam/calibracion)'),
         DeclareLaunchArgument('cam_port', default_value='8083',
                               description='puerto del video para el panel'),
+        DeclareLaunchArgument('camara_estado_url', default_value='http://192.168.4.1:81/status',
+                              description='pagina de estado de la ESP32-CAM (hotspot)'),
     ]
 
     topics = PythonExpression([
         "'[' + ','.join(['", prefijo, "' + t for t in ['/modo', '/modo_actual', '/cmd_vel_manual',"
-        " '/orden_enviada', '/estado_selector', '/pedido_operador', '/seguridad_habilitada',"
+        " '/orden_enviada', '/estado_selector', '/seguridad_habilitada', '/reiniciar',"
         " '/distancias', '/odom', '/navegacion/aviso', '/mapeo/libreta',"
         " '/estado_motores', '/velocidad', '/velocidad_ruedas', '/freno_emergencia',"
         " '/brazo/cmd', '/joy', '/freno_asistencia', '/motores/liberar',"
-        " '/camara/cmd']]"
-        " + ['/vision/detections']) + ']'",
+        " '/camara/cmd', '/imu/angulo']]"
+        " + ['/vision/detections', '/navegacion/lugar', '/navegacion/salida_tomada',"
+        " '/decision/estado', '/camara/estado', '/monitor/topicos']) + ']'",
     ])
 
     rosbridge = Node(
@@ -171,6 +174,15 @@ def generate_launch_description():
         ),
     ]
 
+    # Monitor: mira todos los topics y le manda un resumen al panel (/monitor/topicos)
+    monitor = Node(package='my_robot_bringup', executable='monitor_topicos.py',
+                   name='monitor_topicos', output='screen')
+    # Estado del hotspot de la ESP32-CAM: si responde y cuantos estan conectados (/camara/estado)
+    estado_camara = Node(
+        package='my_robot_bringup', executable='estado_camara.py', name='estado_camara',
+        parameters=[{'url': LaunchConfiguration('camara_estado_url')}],
+        output='screen', condition=con_camara)
+
     # Servidor de la pagina. La raiz redirige al panel con el namespace y el puerto.
     servidor = (
         'import sys, functools, http.server as h\n'
@@ -193,5 +205,5 @@ def generate_launch_description():
     aviso = LogInfo(msg=['Panel: http://localhost:', LaunchConfiguration('web_port'),
                          '/  (namespace "', ns, '")'])
 
-    return LaunchDescription(arguments + [rosbridge, web, aviso] + selector + asistencia
-                             + camara + joystick)
+    return LaunchDescription(arguments + [rosbridge, web, aviso, monitor, estado_camara]
+                             + selector + asistencia + camara + joystick)

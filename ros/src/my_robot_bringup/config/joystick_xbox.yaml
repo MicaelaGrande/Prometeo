@@ -33,11 +33,9 @@
 # Botones de modo (nodo joystick_modo)
 /**/joystick_modo:
   ros__parameters:
-    boton_parar: 1      # B: freno puesto
-    boton_soltar: 3     # Y: mantener 1 segundo para soltar el freno
-    boton_manual: 4     # View / Back
-    boton_auto: 6       # Menu / Start
-    tiempo_soltar_s: 1.0
+    boton_parar: 1      # B: PARAR, termina la corrida (para volver a empezar, relanzar)
+    boton_auto: 6       # Menu / Start: mantener para pasar a automatico (una sola vez)
+    tiempo_auto_s: 1.0  # cuanto hay que mantenerlo
 
 /**/game_controller_node:
   ros__parameters:

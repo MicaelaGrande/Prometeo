@@ -1,12 +1,10 @@
-# Nodo que usa los botones del joystick para cambiar de modo y poner el freno (T11).
+# Nodo que usa los botones del joystick para hablarle a la llave de modo.
 # Manejar con el joystick lo hace teleop_twist_joy (ver panel.launch.py); este nodo
-# solo mira los botones de modo y le manda los pedidos al selector por "modo".
+# solo mira dos botones y le manda los pedidos a la llave por "modo".
 #
 # Botones por defecto, joystick Xbox leido con game_controller_node (numeracion estandar):
-#   B (1)               PARAR: poner el freno
-#   Y (3), mantener 1 s soltar el freno
-#   View / Back (4)     modo manual
-#   Menu / Start (6)    modo automatico
+#   B (1)                        PARAR: termina la corrida (para volver a empezar, relanzar)
+#   Menu / Start (6), mantener 1 s  pasar a automatico (una sola vez, no tiene vuelta)
 # Si un boton no responde, mirar los numeros con:  ros2 topic echo /prometeo/joy
 # y cambiarlos en my_robot_bringup/config/joystick_xbox.yaml.
 
@@ -17,6 +15,7 @@ from sensor_msgs.msg import Joy
 from std_msgs.msg import String
 
 from prometeo_navigation.botones_joystick import BotonesJoystick
+from prometeo_navigation.modos import PEDIR_AUTO, PEDIR_PARAR
 
 
 class JoystickModo(Node):
@@ -24,16 +23,15 @@ class JoystickModo(Node):
     def __init__(self):
         super().__init__('joystick_modo')
         p = {nombre: self.declare_parameter(nombre, valor).value for nombre, valor in [
-            ('boton_parar', 1), ('boton_soltar', 3), ('boton_manual', 4), ('boton_auto', 6),
-            ('tiempo_soltar_s', 1.0)]}
+            ('boton_parar', 1), ('boton_auto', 6), ('tiempo_auto_s', 1.0)]}
         self.botones = BotonesJoystick(
-            {p['boton_parar']: 'parar', p['boton_manual']: 'manual', p['boton_auto']: 'auto'},
-            p['boton_soltar'], p['tiempo_soltar_s'])
+            {p['boton_parar']: PEDIR_PARAR},
+            p['boton_auto'], PEDIR_AUTO, p['tiempo_auto_s'])
         self.pub = self.create_publisher(String, 'modo', 10)
         self.create_subscription(Joy, 'joy', self.leer, 10)
         self.get_logger().info(
-            f'Joystick: B({p["boton_parar"]}) parar, Y({p["boton_soltar"]}) mantener para '
-            f'soltar, {p["boton_manual"]} manual, {p["boton_auto"]} auto')
+            f'Joystick: B({p["boton_parar"]}) PARAR, mantener {p["boton_auto"]} '
+            f'{p["tiempo_auto_s"]} s para pasar a automatico')
 
     def leer(self, mensaje):
         ahora_s = self.get_clock().now().nanoseconds / 1e9

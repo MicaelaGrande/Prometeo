@@ -6,6 +6,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Lugar.msg"
+  "msg/Modo.msg"
   "action/Mover.action"
   "action/Volver.action"
   "action/Brazo.action"

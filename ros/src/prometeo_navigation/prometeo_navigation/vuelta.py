@@ -21,11 +21,11 @@ def camino_a_la_largada(libreta, desde):
     """Los pasos para volver al inicio: [(numero de lugar, direccion), ...].
 
     En cada lugar de la lista hay que salir por esa direccion (punto cardinal). El
-    ultimo paso es en el primer lugar, por donde arranco el robot.
-    None si no hay camino conocido (por ejemplo, la libreta quedo partida por un
-    tramo en manual).
+    ultimo paso es en el lugar que esta unido a la largada (la hoja LARGADA).
+    None si no hay camino conocido (por ejemplo, la libreta quedo partida porque
+    no se aviso un lugar).
     """
-    por_numero = {hoja.numero: hoja for hoja in libreta.lugares}
+    por_numero = {hoja.numero: hoja for hoja in libreta.todas_las_hojas()}
     mejor = {desde.numero: 0.0}
     de_donde = {}            # lugar -> (lugar anterior, direccion por la que se salio)
     cola = [(0.0, desde.numero)]
