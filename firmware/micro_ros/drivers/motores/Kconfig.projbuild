@@ -1,28 +1,8 @@
-menu "Prometeo - Pines GPIO"
+# Opciones de la libreria de motores (motores.c + encoder.c).
+# Se usan igual en el firmware completo y en el proyecto de ejemplo (ejemplo/).
+menu "Prometeo - Pines de motores y encoders"
 
     comment "======== Concentrador Delantero ========"
-
-    comment "== Sensores HC-SR04 =="
-
-    config PROMETEO_SENSOR_TRIG_PIN
-        int "Sensores (izq, der, frente) - pin TRIG compartido"
-        range 0 33
-        default 4
-
-    config PROMETEO_SENSOR_IZQ_ECHO_PIN
-        int "Sensor izquierdo - pin ECHO"
-        range 0 39
-        default 34
-
-    config PROMETEO_SENSOR_DER_ECHO_PIN
-        int "Sensor derecho - pin ECHO"
-        range 0 39
-        default 32
-
-    config PROMETEO_SENSOR_FRENTE_ECHO_PIN
-        int "Sensor frontal - pin ECHO"
-        range 0 39
-        default 35
 
     comment "== Encoders =="
 
@@ -45,45 +25,6 @@ menu "Prometeo - Pines GPIO"
         int "Encoder rueda trasera izquierda - pin"
         range 0 39
         default 13
-
-    comment "======== Control Brazo ========"
-
-    config PROMETEO_SERVO_1_PIN
-        int "Servo 1 (camara) - pin"
-        range 0 33
-        default 0
-
-    config PROMETEO_SERVO_2_PIN
-        int "Servo 2 (base) - pin"
-        range 0 33
-        default 33
-
-    config PROMETEO_SERVO_3_PIN
-        int "Servo 3 (hombro) - pin"
-        range 0 33
-        default 26
-
-    config PROMETEO_SERVO_4_PIN
-        int "Servo 4 (codo) - pin"
-        range 0 33
-        default 27
-
-    config PROMETEO_SERVO_5_PIN
-        int "Servo 5 (garra) - pin"
-        range 0 33
-        default 12
-
-    comment "======== Camara ========"
-
-    config PROMETEO_CAMARA_UART_TX_PIN
-        int "Camara UART - pin TX"
-        range 0 33
-        default 1
-
-    config PROMETEO_CAMARA_UART_RX_PIN
-        int "Camara UART - pin RX"
-        range 0 33
-        default 3
 
     comment "======== Placa Motor ========"
 
@@ -248,95 +189,6 @@ menu "Prometeo - Cinematica"
 
 endmenu
 
-menu "Prometeo - Busqueda del agente micro-ROS"
-
-    config PROMETEO_AGENTE_AUTO
-        bool "Buscar el agente en la red (sin conocer su IP)"
-        default y
-        help
-            Si el agente no responde en MICRO_ROS_AGENT_IP, recorre las direcciones de la
-            red /24 de la ESP32 probando el puerto del agente, y usa la primera que
-            responde. Al perder el agente vuelve a buscar (la IP de la compu puede cambiar
-            al reconectarse al hotspot de la camara).
-
-    config PROMETEO_AGENTE_PING_MS
-        int "Espera por direccion al buscar (ms)"
-        depends on PROMETEO_AGENTE_AUTO
-        range 20 500
-        default 60
-        help
-            Tiempo que se espera la respuesta de cada IP en la barrida completa (cada intento
-            real tarda ~2 veces este valor). En las primeras IP se espera el triple.
-
-    config PROMETEO_AGENTE_HOSTS_RAPIDOS
-        int "Cantidad de IP a probar primero (desde .2)"
-        depends on PROMETEO_AGENTE_AUTO
-        range 1 50
-        default 8
-        help
-            El DHCP de la camara reparte las IP en orden desde .2, asi que la compu y el
-            cuerpo estan en las primeras. Se prueban estas en cada intento (rapido).
-
-    config PROMETEO_AGENTE_BARRIDO_CADA
-        int "Cada cuantos intentos hacer la barrida completa de la red"
-        depends on PROMETEO_AGENTE_AUTO
-        range 1 100
-        default 6
-        help
-            Si el agente no esta entre las primeras IP, se recorre el resto de la red /24
-            (lento, ~25 s) cada tantos intentos.
-
-endmenu
-
-menu "Prometeo - Test de motores"
-
-    config PROMETEO_BUILD_MOTOR_TEST
-        bool "Compilar el firmware de TEST DE MOTORES (en vez del normal)"
-        default n
-        help
-            Compila main/main_test_motores.c: recorre los 4 motores (adelante y atras),
-            publica su estado por micro-ROS y acepta comandos. No inicia servos ni
-            sensores. Para volver al firmware normal, desactivar esta opcion.
-
-    config PROMETEO_TEST_AUTOSTART
-        bool "Arrancar el ciclo solo, unos segundos despues de iniciar"
-        depends on PROMETEO_BUILD_MOTOR_TEST
-        default n
-        help
-            Si esta desactivado el test arranca en pausa y espera el comando "auto".
-
-    config PROMETEO_TEST_AUTOSTART_DELAY_S
-        int "Segundos de espera antes de arrancar solo"
-        depends on PROMETEO_TEST_AUTOSTART
-        range 1 60
-        default 10
-
-    config PROMETEO_TEST_DUTY_MAX_PCT
-        int "Potencia maxima del test (%)"
-        depends on PROMETEO_BUILD_MOTOR_TEST
-        range 10 100
-        default 60
-
-    config PROMETEO_TEST_RAMP_MS
-        int "Duracion de la subida de potencia (ms)"
-        depends on PROMETEO_BUILD_MOTOR_TEST
-        range 200 10000
-        default 1500
-
-    config PROMETEO_TEST_HOLD_MS
-        int "Tiempo a potencia maxima (ms)"
-        depends on PROMETEO_BUILD_MOTOR_TEST
-        range 100 10000
-        default 800
-
-    config PROMETEO_TEST_PAUSE_MS
-        int "Pausa entre pasos (ms)"
-        depends on PROMETEO_BUILD_MOTOR_TEST
-        range 100 10000
-        default 700
-
-endmenu
-
 menu "Prometeo - Seguridad motores"
 
     config PROMETEO_MOTORES_STOP_ALL
@@ -396,5 +248,10 @@ menu "Prometeo - Seguridad motores"
         int "Constante de tiempo del esfuerzo (s)"
         range 1 600
         default 10
+
+    config PROMETEO_DIAMETRO_RUEDA_M
+        float "Diametro de la rueda en metros"
+        range 0 10
+        default 0.065
 
 endmenu

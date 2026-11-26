@@ -8,4 +8,4 @@ endif()
 
 idf_component_register(SRCS ${main_srcs}
                        INCLUDE_DIRS "."
-                       PRIV_REQUIRES logica drivers esp_wifi micro_ros_espidf_component)
+                       PRIV_REQUIRES logica motores mg90s esp_wifi micro_ros_espidf_component)

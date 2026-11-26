@@ -1,0 +1,25 @@
+# Opciones de la libreria hcsr04 (ultrasonidos). Se usan igual en el firmware completo
+# y en el proyecto de ejemplo (ejemplo/).
+menu "Prometeo - Pines de ultrasonidos HC-SR04"
+
+    config PROMETEO_SENSOR_TRIG_PIN
+        int "Sensores (izq, der, frente) - pin TRIG compartido"
+        range 0 33
+        default 4
+
+    config PROMETEO_SENSOR_IZQ_ECHO_PIN
+        int "Sensor izquierdo - pin ECHO"
+        range 0 39
+        default 34
+
+    config PROMETEO_SENSOR_DER_ECHO_PIN
+        int "Sensor derecho - pin ECHO"
+        range 0 39
+        default 32
+
+    config PROMETEO_SENSOR_FRENTE_ECHO_PIN
+        int "Sensor frontal - pin ECHO"
+        range 0 39
+        default 35
+
+endmenu

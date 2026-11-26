@@ -1,0 +1,30 @@
+# Opciones de la libreria mg90s (servos). Se usan igual en el firmware completo
+# y en el proyecto de ejemplo (ejemplo/).
+menu "Prometeo - Pines de servos"
+
+    config PROMETEO_SERVO_1_PIN
+        int "Servo 1 (camara) - pin"
+        range 0 33
+        default 0
+
+    config PROMETEO_SERVO_2_PIN
+        int "Servo 2 (base) - pin"
+        range 0 33
+        default 33
+
+    config PROMETEO_SERVO_3_PIN
+        int "Servo 3 (hombro) - pin"
+        range 0 33
+        default 26
+
+    config PROMETEO_SERVO_4_PIN
+        int "Servo 4 (codo) - pin"
+        range 0 33
+        default 27
+
+    config PROMETEO_SERVO_5_PIN
+        int "Servo 5 (garra) - pin"
+        range 0 33
+        default 12
+
+endmenu
