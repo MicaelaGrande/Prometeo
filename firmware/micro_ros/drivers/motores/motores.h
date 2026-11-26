@@ -24,11 +24,14 @@ typedef enum {
     CANT_MOTORES
 } motor_id_t;
 
+// Duty maximo del PWM (segun PROMETEO_PWM_RES_BIT)
+#define MOTORES_PWM_MAX  ((1 << CONFIG_PROMETEO_PWM_RES_BIT) - 1)
+
 // ===== Settings del ramp =====
 #define RAMP_PERIOD_MS   20     // CONFIG_PROMETEO_RAMP_PERIOD_MS
 #define ACCEL_STEP       45     // CONFIG_PROMETEO_ACCEL_STEP    // ~450 ms 0->full
 #define DECEL_STEP       100    // CONFIG_PROMETEO_DECEL_STEP    // ~200 ms full->0
-#define MIN_DUTY         280    // CONFIG_PROMETEO_MIN_DUTY      // measure on your robot
+#define MIN_DUTY         0   //280    // CONFIG_PROMETEO_MIN_DUTY      // measure on your robot
 
 // ===== FALLAS DE SEGURIDAD (bits de motores_get_fallas) =====
 #define MOTORES_FALLA_STALL(m)      (1u << (m))        // motor m: el encoder no da la velocidad minima
@@ -38,7 +41,7 @@ typedef enum {
 
 // ===== FUNCIONES =====
 void motores_init(void);                       // configura PWM y arranca frenado
-void motores_single_set_ramp(motor_id_t m, float velocidad); // -1.0 atrás ... 0 ... +1.0 adelante
+void motores_ramp_step(motor_id_t m, float velocidad); // -1.0 atrás ... 0 ... +1.0 adelante
 
 void motores_unlock(void);                  // alimenta el failsafe sin cambiar objetivos (para usar motor_set suelto)
 void motores_lock(bool falla);                     // freno de emergencia inmediato
@@ -51,4 +54,9 @@ int  motores_get_sentido(motor_id_t m);
 /*
  * @brief Devuelve la velocidad del motor (0..1) según el último duty aplicado.
  */
-int  motores_get_duty(motor_id_t m);
+float  motores_get_duty(motor_id_t m);
+
+/*
+ * @brief Duty real de cada pin del puente (IA, IB), leido del periferico LEDC. 0..MOTORES_PWM_MAX.
+ */
+void motores_get_pwm(motor_id_t m, uint32_t *ia, uint32_t *ib);

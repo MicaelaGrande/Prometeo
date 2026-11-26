@@ -10,9 +10,6 @@ set(
   EXTRA_COMPONENT_DIRS
     drivers/encoders
     drivers/motores
-    drivers/hcsr04
-    drivers/mg90s
-    logica
     "$ENV{HOME}/esp_components"
 )
 
@@ -22,5 +19,13 @@ else()
     add_compile_definitions(MICROROS_NAMESPACE="")
 endif()
 
+# PROMETEO_MINIMAL=1 idf.py build: compila solo main y lo que main pide (el firmware de test de
+# motores no necesita logica/, que mientras se porta al driver nuevo no compila).
+# Tiene que ir ANTES de incluir project.cmake.
+if(DEFINED ENV{PROMETEO_MINIMAL})
+    set(COMPONENTS main)
+endif()
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+
 project(prometeo)

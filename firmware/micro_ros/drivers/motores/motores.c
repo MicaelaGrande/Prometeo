@@ -12,7 +12,7 @@
 
 static const char *TAG = "motores";
 
-typedef struct { ledc_channel_t ia, ib; float trim; float speed;} motor_t;
+typedef struct { ledc_channel_t ia, ib; float trim; float speed; int last_dir; } motor_t;
 
 // {pin IA, pin IB} de cada motor
 static const int pines[CANT_MOTORES][2] = {
@@ -24,22 +24,15 @@ static const int pines[CANT_MOTORES][2] = {
 
 // {IA, IB, trim} de cada motor
 static motor_t motors[CANT_MOTORES] = {
-    {LEDC_CHANNEL_0, LEDC_CHANNEL_1, 1.0f, 0.0f},  // front-left
-    {LEDC_CHANNEL_2, LEDC_CHANNEL_3, 1.0f, 0.0f},  // rear-left
-    {LEDC_CHANNEL_4, LEDC_CHANNEL_5, 1.0f, 0.0f},  // front-right
-    {LEDC_CHANNEL_6, LEDC_CHANNEL_7, 1.0f, 0.0f},  // rear-right
+    {LEDC_CHANNEL_0, LEDC_CHANNEL_1, 1.0f, 0.0f, 1},  // front-left
+    {LEDC_CHANNEL_2, LEDC_CHANNEL_3, 1.0f, 0.0f, 1},  // rear-left
+    {LEDC_CHANNEL_4, LEDC_CHANNEL_5, 1.0f, 0.0f, 1},  // front-right
+    {LEDC_CHANNEL_6, LEDC_CHANNEL_7, 1.0f, 0.0f, 1},  // rear-right
 };
 static volatile bool en_falla = true;   // arranca frenado hasta la primera orden
 
-// Qué motores van de cada lado (AJUSTAR según el chasis)
-// A = delantero izq, B = trasero izq, C = delantero der, D = trasero der (igual que en menuconfig)
-static const motor_id_t lado_izq[] = { MOTOR_A, MOTOR_B };
-static const motor_id_t lado_der[] = { MOTOR_C, MOTOR_D };
-
 #define PWM_FREC_HZ CONFIG_PROMETEO_PWM_FREQ_HZ
 #define PWM_RES_BIT CONFIG_PROMETEO_PWM_RES_BIT
-#define PWM_MAX     ((1 << PWM_RES_BIT) - 1)
-
 
 static void _set_duty(ledc_channel_t canal, uint32_t valor)
 {
@@ -55,8 +48,8 @@ static float _quick_set(motor_t * mot_s, int new_speed)
 {
     new_speed = (int)(new_speed * mot_s->trim);
     // Clamps
-    if (new_speed >  PWM_MAX) new_speed =  PWM_MAX;
-    if (new_speed < -PWM_MAX) new_speed = -PWM_MAX;
+    if (new_speed >  MOTORES_PWM_MAX) new_speed =  MOTORES_PWM_MAX;
+    if (new_speed < -MOTORES_PWM_MAX) new_speed = -MOTORES_PWM_MAX;
     // Ramp (OLD)
     // int abs_diff = fabsf(new_speed - mot_s->speed);
     // new_speed = (abs_diff > RAMPA_PASO) ? mot_s->speed + RAMPA_PASO * ((new_speed > mot_s->speed) ? 1 : -1) : new_speed;
@@ -68,6 +61,8 @@ static float _quick_set(motor_t * mot_s, int new_speed)
         _set_duty(mot_s->ia, 0);
         _set_duty(mot_s->ib, -new_speed);
     }
+    if (new_speed > 0) mot_s->last_dir = 1;
+    if (new_speed < 0) mot_s->last_dir = -1;
     mot_s->speed = new_speed;
     return new_speed;
 }
@@ -134,11 +129,14 @@ void motores_init(void)
 /*
  * @brief funcion que setea un duty en un motor particular
  */
-void motores_single_set_ramp(motor_id_t m, float v)
+void motores_ramp_step(motor_id_t m, float v)
 {
     if (en_falla) return;
     if (m < 0 || m >= CANT_MOTORES) return;
-    _ramp_set(&(motors[m]), (int)(v * PWM_MAX));
+    if (!(v == v)) v = 0.0f;              // NaN -> parado
+    if (v >  1.0f) v =  1.0f;
+    if (v < -1.0f) v = -1.0f;
+    _ramp_set(&(motors[m]), (int)(v * MOTORES_PWM_MAX));
     en_falla = false;
 }
 
@@ -162,10 +160,22 @@ void motores_lock(bool falla)
 
 bool motores_get_falla(void) { return en_falla; }
 
-int motores_get_sentido(motor_id_t m) {
-    if (m >= CANT_MOTORES) return 1;
-    int speed = motors[m].speed;
-    return (speed > 0) ? speed/abs(speed) : 1;
+int motores_get_sentido(motor_id_t m)
+{
+    if ((int)m < 0 || m >= CANT_MOTORES) return 1;
+    return motors[m].last_dir;   // ultimo sentido pedido: sigue valiendo con el motor frenado (la rueda gira por inercia)
 }
 
-int motores_get_duty(motor_id_t m) { return (m < CANT_MOTORES) ? motors[m].speed/PWM_MAX : 1; }
+float motores_get_duty(motor_id_t m)
+{
+    if ((int)m < 0 || m >= CANT_MOTORES) return 0.0f;
+    return (float)motors[m].speed / (float)MOTORES_PWM_MAX;
+}
+
+// Duty REAL de cada pin (lo que lee el periferico LEDC): para tests, no depende de las variables del driver
+void motores_get_pwm(motor_id_t m, uint32_t *ia, uint32_t *ib)
+{
+    if ((int)m < 0 || m >= CANT_MOTORES) { *ia = *ib = 0; return; }
+    *ia = ledc_get_duty(LEDC_LOW_SPEED_MODE, motors[m].ia);
+    *ib = ledc_get_duty(LEDC_LOW_SPEED_MODE, motors[m].ib);
+}

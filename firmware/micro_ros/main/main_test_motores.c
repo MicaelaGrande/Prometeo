@@ -1,52 +1,37 @@
 /*
- * FIRMWARE DE TEST DE MOTORES (reemplaza a main.c cuando PROMETEO_BUILD_MOTOR_TEST=y).
+ * FIRMWARE DE TEST DEL DRIVER DE MOTORES (reemplaza a main.c cuando PROMETEO_BUILD_MOTOR_TEST=y).
  *
- * Ciclo automático: cada motor A, B, C, D se prueba adelante y atrás, con rampa de
- * potencia hasta PROMETEO_TEST_DUTY_MAX_PCT. Al terminar los 4, el ciclo se pausa.
- *
- * En el ciclo automático "probado" significa que el motor FUE ACCIONADO; quien mira el
- * robot confirma si giró y marca el resultado con los comandos "ok X" / "fallo X".
- * Los encoders se leen siempre: el estado publica las RPM medidas de cada rueda.
- *
- * Modo RPM (lazo cerrado): "rpm X v" pide v rpm y un control PI ajusta el duty hasta que
- * el encoder de esa rueda mida v. La velocidad se mide por tiempo entre pulsos
- * (encoder_get_rpm_lenta). OJO: motores.c tiene una zona muerta (cualquier duty != 0 sale
- * como >= 40 % de PWM), así que hay una velocidad mínima real; si se pide menos, el motor
- * queda girando a esa mínima. En modo rpm la potencia está limitada a RPM_DUTY_MAX.
- * El encoder tiene un solo canal: mide la magnitud, el signo es el del sentido pedido.
- *
- * PROTECCIÓN (todos los modos, se apaga con "proteccion off"): si un motor tiene potencia
- * y el encoder de su rueda no da pulsos por TRABADA_MS, se frena todo y el estado publica
- * una "alarma" (rueda trabada, encoder desconectado o cables de encoder cruzados).
- * Así un driver no queda empujando un motor trabado (o el control de rpm a fondo porque
- * "no ve" la rueda), que es lo que recalienta/quema el driver.
- * El estado también publica los pulsos crudos de cada encoder ("pulsos", "enc_pin"),
- * para identificar a mano qué cable va a qué rueda.
+ * Prueba drivers/motores (LEDC + rampa) por micro-ROS: no hace falta puerto serie.
+ * El driver solo avanza la rampa UN paso por cada llamada a motores_single_set_ramp(), asi que
+ * este firmware llama cada RAMP_PERIOD_MS (20 ms) con el objetivo vigente de cada motor, que es
+ * lo que tiene que hacer cualquier usuario real del driver.
  *
  * micro-ROS (namespace prometeo, nodo motor_test):
- *   publica      /prometeo/motores_test/estado  std_msgs/String  (JSON, cada 250 ms)
- *   se suscribe  /prometeo/motores_test/cmd     std_msgs/String  (comandos de texto)
+ *   publica      /prometeo/motores_test/estado      std_msgs/String  (JSON, cada 250 ms)
+ *   publica      /prometeo/motores_test/rpm         std_msgs/Float32MultiArray (best effort, 50 ms)
+ *                [rpm_med A..D (con signo del sentido), duty A..D, modo, alarma]
+ *   publica      /prometeo/motores_test/resultados  std_msgs/String  (JSON, un test cada 200 ms, en ciclo)
+ *   se suscribe  /prometeo/motores_test/cmd         std_msgs/String  (comandos de texto)
  *
- * Comandos (X = A|B|C|D, duty = -1..1):
- *   auto               arranca/continúa el ciclo automático (desde el motor actual)
- *   reset              borra resultados y arranca el ciclo desde el motor A
- *   pausa | parar      frena todo y queda en pausa
- *   siguiente          salta al siguiente motor (en auto)
- *   liberar            suelta las fallas latcheadas (atasco / sobreesfuerzo) de motores.c
- *   setall a b c d [ms]  manual: los 4 motores a la vez, cada uno con SU duty (A B C D, -1..1)
- *   set X duty [ms]    manual: motor X (o "all") a ese duty durante ms (def. 2000, máx. 10000)
- *   vmax v             potencia máxima (0.1..1.0) del ciclo automático, de los 4 motores
- *   vmax X v           idem, solo del motor X (cada motor tiene la suya)
- *   ok X | fallo X     marca el resultado del motor X
- *   rpm X v [ms]       lazo cerrado: motor X (o "all") a v rpm (signo = sentido, |v| <= 200)
- *                      durante ms (def. 10000, máx. 30000)
- *   pi kp ki           ganancias del control de rpm (duty/rpm y duty/(rpm*s))
- *   proteccion on|off  corte por rueda sin pulsos (arranca en on)
+ * Comandos (X = A|B|C|D|all, duty = -1..1):
+ *   set X duty [ms]       manual: motor X (o "all") a ese duty durante ms (def. 2000, máx. 10000)
+ *   setall a b c d [ms]   manual: cada motor con SU duty
+ *   pausa | parar | stop  frena todo (motores_lock) y queda en pausa
+ *   unlock | liberar      motores_unlock() sin mover nada (para ver el estado de falla a mano)
+ *   ext on                modo EXT: el lazo de control corre en la PC (nodo motor_test_pi.py)
+ *   ext a b c d           (solo en modo EXT) duty de cada motor. Sin duties nuevos en EXT_MS se frena.
+ *   ext off               sale del modo EXT y frena
+ *   selftest              corre la secuencia de pruebas del driver (levantar las ruedas del piso)
+ *   selftest abort        la aborta (también "pausa")
  *
- * Motores (igual que menuconfig):
- *   A delantero izq, B trasero izq, C delantero der, D trasero der
- * Encoders: A -> DEL_IZQ, B -> TRAS_IZQ, C -> DEL_DER, D -> TRAS_DER
+ * Resultados del selftest: topic /resultados (un mensaje por test) y contadores en /estado
+ * (t_ok, t_fallo, t_total, fase). resultado: pendiente | ok | fallo | medida (solo mide, sin criterio).
+ *   T01-T11  pruebas con criterio (leen el duty REAL de cada pin con motores_get_pwm)
+ *   M01-M03  mediciones con los encoders (zona muerta, rpm vs duty, signo)
+ *
+ * Motores (igual que menuconfig): A delantero izq, B trasero izq, C delantero der, D trasero der
  */
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,6 +42,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "sdkconfig.h"
 
@@ -70,40 +56,32 @@
 #include <rclc/executor.h>
 #include <rmw_microros/rmw_microros.h>
 #include <std_msgs/msg/string.h>
+#include <std_msgs/msg/float32_multi_array.h>
 
 #define MICRO_ROS_TASK_STACK 16000
 #define MICRO_ROS_TASK_PRIO  5
-#define TEST_TASK_STACK      4096
+#define TEST_TASK_STACK      6144
 #define TEST_TASK_PRIO       6
-#define TICK_MS              50
+#define TICK_MS              RAMP_PERIOD_MS      // el driver rampea un paso por llamada
 #define PING_PERIODO_MS      1000
 #define ENTIDAD_TIMEOUT_MS   5000    // espera máxima del agente al crear cada entidad (WiFi)
 #define ESTADO_PERIODO_MS    250
+#define RPM_PERIODO_MS       50      // topic rapido de rpm para el lazo en la PC
+#define RES_PERIODO_MS       200     // un test por mensaje, en ciclo
+#define EXT_MS               300     // modo EXT: sin duties nuevos en este tiempo -> frena
+#define RPM_MSG_LEN          10
 #define MANUAL_MS_DEF        2000
 #define MANUAL_MS_MAX        10000
-#define RAMPA_BAJA_MS        400
 #define CMD_LEN              64
 #define JSON_LEN             1024
+#define RES_LEN              320
 
-// Control de velocidad (modo rpm)
-#define RPM_MAX              200.0f
-#define RPM_MS_DEF           10000
-#define RPM_MS_MAX           30000
-#define KP_DEF               0.003f  // duty por rpm de error
-#define KI_DEF               0.02f   // duty por rpm de error por segundo
-#define RPM_DUTY_MAX         0.40f   // tope de potencia en modo rpm (con la zona muerta = 64 % PWM)
-#define RPM_DUTY_MIN         0.01f   // piso con objetivo: gira al mínimo estable en vez de prender/apagar
-
-// Protección: motor con potencia y su encoder sin pulsos
-#define TRABADA_MS           1500    // tiempo máximo con potencia y sin pulsos
-#define DUTY_CON_POTENCIA    0.001f  // "tiene potencia": por la zona muerta de motores.c,
-                                     // cualquier duty != 0 ya sale como >= 40 % de PWM
-#define PULSOS_CRUCE         4       // pulsos en OTRA rueda (sin potencia) para sospechar cables cruzados
-#define ALARMA_LEN           128
+#define RPM_ARRANQUE         3.0f    // por encima de esto la rueda se considera girando
+#define JITTER_MAX_US        15000   // T11: desvio maximo aceptado del periodo del lazo (el tick de FreeRTOS es 10 ms)
 
 static const char *TAG = "test_motores";
 
-static const char NOMBRES[CANT_MOTORES]   = { 'A', 'B', 'C', 'D' };
+static const char NOMBRES[CANT_MOTORES] = { 'A', 'B', 'C', 'D' };
 static const char *DESCRIPCION[CANT_MOTORES] = {
     "delantero izquierdo", "trasero izquierdo", "delantero derecho", "trasero derecho",
 };
@@ -116,45 +94,60 @@ static const encoder_id_t ENCODER_DE[CANT_MOTORES] = {
 // =========================================================
 // ESTADO COMPARTIDO (lo escribe la tarea de test, lo lee micro-ROS)
 // =========================================================
-typedef enum { MODO_PAUSA, MODO_AUTO, MODO_MANUAL, MODO_RPM } modo_t;
-typedef enum { R_PENDIENTE, R_PROBANDO, R_PROBADO, R_OK, R_FALLO } resultado_t;
-static const char *R_TXT[]    = { "pendiente", "probando", "probado", "ok", "fallo" };
-static const char *MODO_TXT[] = { "pausa", "auto", "manual", "rpm" };
+// Los valores numericos de modo coinciden con motor_test_relay.py / motor_test_pi.py (EXT = 4)
+typedef enum { MODO_PAUSA = 0, MODO_SELFTEST = 1, MODO_MANUAL = 2, MODO_EXT = 4 } modo_t;
+static const char *MODO_TXT[] = { "pausa", "selftest", "manual", "rpm", "ext" };
 
 typedef struct {
-    modo_t      modo;
-    int         motor;          // motor en prueba (-1 = ninguno / varios)
-    int         dir;            // +1 adelante, -1 atrás, 0 detenido
-    float       duty;           // potencia del motor en prueba (-1..1)
-    float       duties[CANT_MOTORES]; // potencia que se está aplicando a cada motor
-    float       vmax[CANT_MOTORES]; // potencia máxima del ciclo automático, de cada motor
-    int         ciclo;          // ciclos completados
-    resultado_t resultado[CANT_MOTORES];
-    float       rpm_obj[CANT_MOTORES]; // velocidad pedida en modo rpm (0 = sin objetivo)
-    float       rpm_med[CANT_MOTORES]; // velocidad medida por el encoder (signo = sentido del duty)
-    float       kp, ki;         // ganancias del control de rpm
-    bool        proteccion;     // corte por rueda sin pulsos activo
-    char        alarma[ALARMA_LEN]; // "" = sin alarma
+    modo_t   modo;
+    bool     falla;                     // motores_get_falla()
+    float    pedido[CANT_MOTORES];      // objetivo que se le pasa al driver
+    float    duty[CANT_MOTORES];        // motores_get_duty(): lo que aplica el driver (-1..1)
+    uint32_t pwm[CANT_MOTORES][2];      // duty real de los pines IA, IB (motores_get_pwm)
+    int      sentido[CANT_MOTORES];     // motores_get_sentido()
+    float    rpm_med[CANT_MOTORES];     // rpm del encoder con el signo del sentido
+    int      ramp_ms;                   // ultima subida 0 -> objetivo medida (T05)
+    char     fase[40];                  // que esta haciendo el selftest
 } estado_t;
 
 static estado_t estado;
 static portMUX_TYPE estado_mux = portMUX_INITIALIZER_UNLOCKED;
 
+// Resultados del selftest
+typedef enum { R_PEND, R_OK, R_FALLO, R_MEDIDA } res_t;
+static const char *R_TXT[] = { "pendiente", "ok", "fallo", "medida" };
+enum { T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, M01, M02, M03, N_TESTS };
+typedef struct { const char *id; const char *nombre; res_t r; char det[96]; } test_t;
+static test_t tests[N_TESTS] = {
+    [T01] = { "T01", "bloqueado: pines en 0 y rechaza ordenes" },
+    [T02] = { "T02", "unlock: sin falla, pines en 0" },
+    [T03] = { "T03", "pines IA/IB segun el signo, en cada motor" },
+    [T04] = { "T04", "nunca IA e IB a la vez, nunca sobre el maximo" },
+    [T05] = { "T05", "rampa de subida monotona, pasos <= ACCEL_STEP" },
+    [T06] = { "T06", "rampa de bajada monotona, pasos <= DECEL_STEP" },
+    [T07] = { "T07", "inversion: un tick en 0, sin saltar de signo" },
+    [T08] = { "T08", "get_sentido y get_duty (ultimo sentido al frenar)" },
+    [T09] = { "T09", "lock en plena rampa: pines en 0 al instante" },
+    [T10] = { "T10", "duty fuera de rango y NaN" },
+    [T11] = { "T11", "4 motores a la vez y periodo del lazo" },
+    [M01] = { "M01", "zona muerta: menor duty que arranca la rueda" },
+    [M02] = { "M02", "rpm vs duty 30/50/70/100 %" },
+    [M03] = { "M03", "signo del encoder al frenar (inercia)" },
+};
+
 // =========================================================
 // COMANDOS (callback de micro-ROS -> cola -> tarea de test)
 // =========================================================
 typedef enum {
-    C_AUTO, C_RESET, C_PAUSA, C_SIGUIENTE, C_SET, C_SETALL, C_VMAX, C_OK, C_FALLO,
-    C_RPM, C_PI, C_PROT, C_LIBERAR
+    C_SET, C_SETALL, C_PAUSA, C_UNLOCK, C_EXT_ON, C_EXT, C_SELFTEST, C_ABORT
 } cmd_tipo_t;
 
 typedef struct {
     cmd_tipo_t tipo;
     int        motor;     // 0..3, -1 = todos
-    float      valor;     // duty (set), vmax, rpm (rpm) o kp (pi)
-    float      valor2;    // ki (pi)
-    float      duties[CANT_MOTORES]; // duty de cada motor (setall)
-    int        ms;        // duración (set)
+    float      valor;     // duty (set)
+    float      duties[CANT_MOTORES];   // setall / ext
+    int        ms;        // duración (set / setall)
 } cmd_t;
 
 static QueueHandle_t cola_cmd;
@@ -169,6 +162,9 @@ static int motor_de(const char *t)
     return -2;   // inválido
 }
 
+static float limitar1(float d) { return d > 1.0f ? 1.0f : d < -1.0f ? -1.0f : d; }
+static int limitar_ms(int ms) { return ms < 100 ? 100 : ms > MANUAL_MS_MAX ? MANUAL_MS_MAX : ms; }
+
 static bool parsear(const char *txt, cmd_t *c)
 {
     char buf[CMD_LEN];
@@ -181,31 +177,12 @@ static bool parsear(const char *txt, cmd_t *c)
     if (n < 1) return false;
     *c = (cmd_t){ .motor = -1, .ms = MANUAL_MS_DEF };
 
-    if (!strcmp(w[0], "auto"))      { c->tipo = C_AUTO;      return true; }
-    if (!strcmp(w[0], "reset"))     { c->tipo = C_RESET;     return true; }
     if (!strcmp(w[0], "pausa") || !strcmp(w[0], "parar") || !strcmp(w[0], "stop")) {
         c->tipo = C_PAUSA; return true;
     }
-    if (!strcmp(w[0], "siguiente")) { c->tipo = C_SIGUIENTE; return true; }
-    if (!strcmp(w[0], "liberar"))   { c->tipo = C_LIBERAR;   return true; }
-
-    if (!strcmp(w[0], "vmax") && n >= 2) {
-        // "vmax v" (todos) o "vmax X v" (un motor)
-        const char *num = w[1];
-        if (n >= 3) {
-            c->motor = motor_de(w[1]);
-            if (c->motor == -2) return false;
-            num = w[2];
-        }
-        char *fin;
-        float v = strtof(num, &fin);
-        if (fin == num || !(v >= 0.1f && v <= 1.0f)) return false;
-        c->tipo = C_VMAX; c->valor = v; return true;
-    }
-    if ((!strcmp(w[0], "ok") || !strcmp(w[0], "fallo")) && n >= 2) {
-        c->motor = motor_de(w[1]);
-        if (c->motor < 0) return false;
-        c->tipo = !strcmp(w[0], "ok") ? C_OK : C_FALLO;
+    if (!strcmp(w[0], "unlock") || !strcmp(w[0], "liberar")) { c->tipo = C_UNLOCK; return true; }
+    if (!strcmp(w[0], "selftest")) {
+        c->tipo = (n >= 2 && !strcmp(w[1], "abort")) ? C_ABORT : C_SELFTEST;
         return true;
     }
     if (!strcmp(w[0], "setall")) {
@@ -215,40 +192,22 @@ static bool parsear(const char *txt, cmd_t *c)
         if (k < CANT_MOTORES) return false;
         for (int i = 0; i < CANT_MOTORES; i++) {
             if (!isfinite(d[i])) return false;
-            c->duties[i] = d[i] > 1.0f ? 1.0f : d[i] < -1.0f ? -1.0f : d[i];
+            c->duties[i] = limitar1(d[i]);
         }
-        if (ms < 100) ms = 100;
-        if (ms > MANUAL_MS_MAX) ms = MANUAL_MS_MAX;
-        c->tipo = C_SETALL; c->ms = ms;
+        c->tipo = C_SETALL; c->ms = limitar_ms(ms);
         return true;
     }
-    if (!strcmp(w[0], "rpm") && n >= 3) {
-        int ms = RPM_MS_DEF;
-        sscanf(buf, "%*s %*s %*s %d", &ms);   // "rpm X v [ms]"
-        c->motor = motor_de(w[1]);
-        if (c->motor == -2) return false;
-        char *fin;
-        float v = strtof(w[2], &fin);
-        if (fin == w[2] || !isfinite(v)) return false;
-        if (v > RPM_MAX) v = RPM_MAX;
-        if (v < -RPM_MAX) v = -RPM_MAX;
-        if (ms < 100) ms = 100;
-        if (ms > RPM_MS_MAX) ms = RPM_MS_MAX;
-        c->tipo = C_RPM; c->valor = v; c->ms = ms;
+    if (!strcmp(w[0], "ext") && n >= 2) {
+        if (!strcmp(w[1], "on"))  { c->tipo = C_EXT_ON; return true; }
+        if (!strcmp(w[1], "off")) { c->tipo = C_PAUSA;  return true; }
+        float d[CANT_MOTORES];
+        if (sscanf(buf, "%*s %f %f %f %f", &d[0], &d[1], &d[2], &d[3]) < CANT_MOTORES) return false;
+        for (int i = 0; i < CANT_MOTORES; i++) {
+            if (!isfinite(d[i])) return false;
+            c->duties[i] = limitar1(d[i]);
+        }
+        c->tipo = C_EXT;
         return true;
-    }
-    if (!strcmp(w[0], "pi") && n >= 3) {
-        char *f1, *f2;
-        float kp = strtof(w[1], &f1), ki = strtof(w[2], &f2);
-        if (f1 == w[1] || f2 == w[2] || !isfinite(kp) || !isfinite(ki)) return false;
-        if (kp < 0 || ki < 0 || kp > 1.0f || ki > 1.0f) return false;
-        c->tipo = C_PI; c->valor = kp; c->valor2 = ki;
-        return true;
-    }
-    if (!strcmp(w[0], "proteccion") && n >= 2) {
-        if (!strcmp(w[1], "on"))  { c->tipo = C_PROT; c->valor = 1; return true; }
-        if (!strcmp(w[1], "off")) { c->tipo = C_PROT; c->valor = 0; return true; }
-        return false;
     }
     if (!strcmp(w[0], "set") && n >= 3) {
         int ms = MANUAL_MS_DEF;
@@ -258,11 +217,7 @@ static bool parsear(const char *txt, cmd_t *c)
         char *fin;
         float d = strtof(w[2], &fin);
         if (fin == w[2] || !isfinite(d)) return false;
-        if (d > 1.0f) d = 1.0f;
-        if (d < -1.0f) d = -1.0f;
-        if (ms < 100) ms = 100;
-        if (ms > MANUAL_MS_MAX) ms = MANUAL_MS_MAX;
-        c->tipo = C_SET; c->valor = d; c->ms = ms;
+        c->tipo = C_SET; c->valor = limitar1(d); c->ms = limitar_ms(ms);
         return true;
     }
     return false;
@@ -271,375 +226,525 @@ static bool parsear(const char *txt, cmd_t *c)
 // =========================================================
 // TAREA DE TEST: dueña de los motores
 // =========================================================
-#define N_PASOS (CANT_MOTORES * 2)   // cada motor: adelante y atrás
+// Objetivo vigente de cada motor: se vuelve a pasar al driver en CADA tick (la rampa avanza un
+// paso por llamada). Solo lo toca la tarea de test.
+static float tgt[CANT_MOTORES];
+static int   ms_manual = 0, ms_ext = 0;
+static bool  en_selftest = false, abortar = false, pedir_selftest = false;
 
-typedef enum { F_SUBE, F_MANTIENE, F_BAJA, F_PAUSA } fase_t;
+// Ultima muestra (solo la lee la tarea de test)
+static uint32_t s_pwm[CANT_MOTORES][2];
+static float    s_rpm[CANT_MOTORES];          // rpm del encoder, siempre >= 0
+static int      viol_ambos = 0;               // ticks con IA e IB a la vez en algun motor (T04)
+static uint32_t MOTORES_PWM_MAX_visto = 0;            // mayor duty de pin visto (T04)
+static int      jitter_us = 0;                // mayor desvio del periodo del lazo
+static int64_t  t_prev_us = 0;
+static TickType_t t_ultimo;
 
-// Único lugar donde se manda duty a los motores: también lo deja en el estado publicado
-static void aplicar_duties(const float d[CANT_MOTORES])
+static void set_modo(modo_t m)
 {
+    taskENTER_CRITICAL(&estado_mux);
+    estado.modo = m;
+    taskEXIT_CRITICAL(&estado_mux);
+}
+
+static void set_fase(const char *txt)
+{
+    taskENTER_CRITICAL(&estado_mux);
+    strncpy(estado.fase, txt, sizeof(estado.fase) - 1);
+    estado.fase[sizeof(estado.fase) - 1] = 0;
+    taskEXIT_CRITICAL(&estado_mux);
+}
+
+static void todos(float v) { for (int m = 0; m < CANT_MOTORES; m++) tgt[m] = v; }
+
+// Lee driver + encoders y lo deja en el estado publicado
+static void muestrear(void)
+{
+    float duty[CANT_MOTORES], rpm_signo[CANT_MOTORES], pedido[CANT_MOTORES];
+    int sent[CANT_MOTORES];
     for (int m = 0; m < CANT_MOTORES; m++) {
-        motor_set((motor_id_t)m, d[m]);
+        motores_get_pwm((motor_id_t)m, &s_pwm[m][0], &s_pwm[m][1]);
+        if (s_pwm[m][0] && s_pwm[m][1]) viol_ambos++;
+        if (s_pwm[m][0] > MOTORES_PWM_MAX_visto) MOTORES_PWM_MAX_visto = s_pwm[m][0];
+        if (s_pwm[m][1] > MOTORES_PWM_MAX_visto) MOTORES_PWM_MAX_visto = s_pwm[m][1];
+        duty[m] = motores_get_duty((motor_id_t)m);
+        sent[m] = motores_get_sentido((motor_id_t)m);
+        s_rpm[m] = encoder_get_rpm(ENCODER_DE[m]);
+        rpm_signo[m] = s_rpm[m] * (float)sent[m];
+        pedido[m] = (tgt[m] == tgt[m]) ? tgt[m] : 0.0f;   // NaN no es JSON valido
     }
-    motores_alimentar();
+    bool falla = motores_get_falla();
     taskENTER_CRITICAL(&estado_mux);
-    memcpy(estado.duties, d, sizeof(estado.duties));
+    estado.falla = falla;
+    memcpy(estado.duty, duty, sizeof(duty));
+    memcpy(estado.pedido, pedido, sizeof(pedido));
+    memcpy(estado.sentido, sent, sizeof(sent));
+    memcpy(estado.rpm_med, rpm_signo, sizeof(rpm_signo));
+    for (int m = 0; m < CANT_MOTORES; m++) { estado.pwm[m][0] = s_pwm[m][0]; estado.pwm[m][1] = s_pwm[m][1]; }
     taskEXIT_CRITICAL(&estado_mux);
 }
 
-// motor 0..3 = solo ese; -1 = los 4 al mismo duty (los demás, 0)
-static void aplicar_duty(int motor, float duty)
+// Un tick del lazo: objetivo -> driver, muestra, espera el proximo periodo
+static void tick(void)
 {
-    float d[CANT_MOTORES];
-    for (int m = 0; m < CANT_MOTORES; m++) {
-        d[m] = (motor == -1 || m == motor) ? duty : 0.0f;
+    for (int m = 0; m < CANT_MOTORES; m++) motores_ramp_step((motor_id_t)m, tgt[m]);
+    muestrear();
+    vTaskDelayUntil(&t_ultimo, pdMS_TO_TICKS(TICK_MS));
+    int64_t ahora = esp_timer_get_time();
+    if (t_prev_us) {
+        int64_t e = ahora - t_prev_us - (int64_t)TICK_MS * 1000;
+        if (e < 0) e = -e;
+        if (e > jitter_us) jitter_us = (int)e;
     }
-    aplicar_duties(d);
+    t_prev_us = ahora;
 }
 
-static void publicar_estado(modo_t modo, int motor, int dir, float duty)
+static void pausar(void)
 {
-    taskENTER_CRITICAL(&estado_mux);
-    estado.modo = modo; estado.motor = motor; estado.dir = dir; estado.duty = duty;
-    if (modo == MODO_PAUSA) memset(estado.duties, 0, sizeof(estado.duties));   // pausa = frenados
-    taskEXIT_CRITICAL(&estado_mux);
+    todos(0);
+    motores_lock(true);
+    ms_manual = ms_ext = 0;
+    set_modo(MODO_PAUSA);
 }
 
-static void marcar(int motor, resultado_t r)
+static void atender_cmds(void)
 {
-    taskENTER_CRITICAL(&estado_mux);
-    estado.resultado[motor] = r;
-    taskEXIT_CRITICAL(&estado_mux);
-}
-
-static resultado_t leer_resultado(int motor)
-{
-    taskENTER_CRITICAL(&estado_mux);
-    resultado_t r = estado.resultado[motor];
-    taskEXIT_CRITICAL(&estado_mux);
-    return r;
-}
-
-// Copia al estado publicado los objetivos de rpm
-static void publicar_rpm_obj(const float obj[CANT_MOTORES])
-{
-    taskENTER_CRITICAL(&estado_mux);
-    memcpy(estado.rpm_obj, obj, sizeof(estado.rpm_obj));
-    taskEXIT_CRITICAL(&estado_mux);
-}
-
-// Lee los 4 encoders y los deja en el estado (con el signo del duty que se aplica)
-static void medir_rpm(void)
-{
-    float med[CANT_MOTORES];
-    taskENTER_CRITICAL(&estado_mux);
-    float d[CANT_MOTORES];
-    memcpy(d, estado.duties, sizeof(d));
-    taskEXIT_CRITICAL(&estado_mux);
-    for (int m = 0; m < CANT_MOTORES; m++) {
-        float r = encoder_get_rpm_lenta(ENCODER_DE[m]);
-        med[m] = d[m] < 0 ? -r : r;
-    }
-    taskENTER_CRITICAL(&estado_mux);
-    memcpy(estado.rpm_med, med, sizeof(med));
-    taskEXIT_CRITICAL(&estado_mux);
-}
-
-static void poner_alarma(const char *txt)
-{
-    taskENTER_CRITICAL(&estado_mux);
-    strncpy(estado.alarma, txt, ALARMA_LEN - 1);
-    estado.alarma[ALARMA_LEN - 1] = 0;
-    taskEXIT_CRITICAL(&estado_mux);
-}
-
-// ---- Protección: motor con potencia y su encoder quieto ----
-// Por motor: cuánto lleva con potencia sin pulsos y los pulsos de los 4 encoders al empezar
-// esa ventana (para ver si en ese tiempo se movió OTRA rueda: cables cruzados).
-static int      sin_pulsos_ms[CANT_MOTORES];
-static uint32_t base[CANT_MOTORES][CANT_MOTORES];   // [motor][motor dueño del encoder]
-static uint32_t pulsos_ant[CANT_MOTORES];
-
-static void proteccion_reiniciar(void)
-{
-    for (int m = 0; m < CANT_MOTORES; m++) {
-        sin_pulsos_ms[m] = 0;
-        pulsos_ant[m] = encoder_get_pulsos(ENCODER_DE[m]);
-    }
-    for (int m = 0; m < CANT_MOTORES; m++) memcpy(base[m], pulsos_ant, sizeof(pulsos_ant));
-}
-
-// Devuelve el motor que disparó (-1 = todo bien) y arma el texto de la alarma
-static int proteccion_revisar(const float d[CANT_MOTORES], char *alarma, size_t len)
-{
-    uint32_t p[CANT_MOTORES];
-    for (int m = 0; m < CANT_MOTORES; m++) p[m] = encoder_get_pulsos(ENCODER_DE[m]);
-
-    int disparo = -1;
-    for (int m = 0; m < CANT_MOTORES; m++) {
-        bool potencia = fabsf(d[m]) >= DUTY_CON_POTENCIA;
-        if (!potencia || p[m] != pulsos_ant[m]) {   // sin potencia o girando: ventana nueva
-            sin_pulsos_ms[m] = 0;
-            memcpy(base[m], p, sizeof(p));
+    cmd_t c;
+    while (xQueueReceive(cola_cmd, &c, 0) == pdTRUE) {
+        if (en_selftest) {   // durante el selftest solo se acepta abortar
+            if (c.tipo == C_PAUSA || c.tipo == C_ABORT) abortar = true;
             continue;
         }
-        sin_pulsos_ms[m] += TICK_MS;
-        if (sin_pulsos_ms[m] >= TRABADA_MS && disparo < 0) disparo = m;
+        switch (c.tipo) {
+        case C_SET:
+            if (motores_get_falla()) motores_unlock();
+            for (int m = 0; m < CANT_MOTORES; m++) tgt[m] = (c.motor == -1 || c.motor == m) ? c.valor : 0.0f;
+            ms_manual = c.ms; ms_ext = 0;
+            set_modo(MODO_MANUAL);
+            break;
+        case C_SETALL:
+            if (motores_get_falla()) motores_unlock();
+            memcpy(tgt, c.duties, sizeof(tgt));
+            ms_manual = c.ms; ms_ext = 0;
+            set_modo(MODO_MANUAL);
+            break;
+        case C_PAUSA:
+            pausar();
+            break;
+        case C_UNLOCK:
+            motores_unlock();
+            break;
+        case C_EXT_ON:
+            if (motores_get_falla()) motores_unlock();
+            todos(0);
+            ms_ext = EXT_MS; ms_manual = 0;
+            set_modo(MODO_EXT);
+            break;
+        case C_EXT: {   // solo vale dentro del modo EXT (un "pausa" del usuario no se pisa)
+            taskENTER_CRITICAL(&estado_mux);
+            bool ext = (estado.modo == MODO_EXT);
+            taskEXIT_CRITICAL(&estado_mux);
+            if (ext) { memcpy(tgt, c.duties, sizeof(tgt)); ms_ext = EXT_MS; }
+            break;
+        }
+        case C_SELFTEST:
+            pedir_selftest = true;
+            break;
+        case C_ABORT:
+            break;
+        }
+    }
+}
+
+// ---------------------------------------------------------
+// SELFTEST
+// ---------------------------------------------------------
+static void poner(int i, res_t r, const char *fmt, ...)
+{
+    char b[sizeof(tests[0].det)];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(b, sizeof(b), fmt, ap);
+    va_end(ap);
+    taskENTER_CRITICAL(&estado_mux);
+    tests[i].r = r;
+    memcpy(tests[i].det, b, sizeof(b));
+    taskEXIT_CRITICAL(&estado_mux);
+}
+
+static bool paso(void) { atender_cmds(); tick(); return !abortar; }
+
+static bool esperar(int ms)
+{
+    for (int n = (ms + TICK_MS - 1) / TICK_MS; n > 0; n--) {
+        if (!paso()) return false;
+    }
+    return true;
+}
+
+static int  firmado(int m) { return (int)s_pwm[m][0] - (int)s_pwm[m][1]; }   // duty de pin con signo
+static bool pines_cero(void)
+{
+    for (int m = 0; m < CANT_MOTORES; m++) if (s_pwm[m][0] || s_pwm[m][1]) return false;
+    return true;
+}
+static int pwm_de(float v) { return (int)(v * (float)MOTORES_PWM_MAX); }   // igual que motores_single_set_ramp (trim = 1)
+
+#define TRAZA_MAX 90
+static int16_t traza[TRAZA_MAX];
+
+// Corre ticks hasta que el motor m llegue a 'objetivo' (duty de pin con signo) o se acaben los ticks.
+// Deja el duty de cada tick en traza[]; devuelve cuantos ticks corrieron.
+static int correr_hasta(int m, int objetivo, int max_ticks)
+{
+    int n = 0;
+    while (n < max_ticks && n < TRAZA_MAX) {
+        if (!paso()) { traza[n++] = (int16_t)firmado(m); break; }
+        traza[n++] = (int16_t)firmado(m);
+        if (firmado(m) == objetivo) break;
+    }
+    return n;
+}
+
+static void selftest(void)
+{
+    char txt[40];
+    en_selftest = true; abortar = false;
+    taskENTER_CRITICAL(&estado_mux);
+    for (int i = 0; i < N_TESTS; i++) { tests[i].r = R_PEND; tests[i].det[0] = 0; }
+    estado.ramp_ms = 0;
+    taskEXIT_CRITICAL(&estado_mux);
+    set_modo(MODO_SELFTEST);
+    viol_ambos = 0; MOTORES_PWM_MAX_visto = 0;
+    ms_manual = ms_ext = 0;
+    todos(0);
+    motores_lock(true);
+    ESP_LOGW(TAG, "SELFTEST: levantar las ruedas del piso");
+
+    // ---- T01 bloqueado ----
+    set_fase("T01 bloqueado");
+    if (!esperar(100)) goto fin;
+    {
+        bool cero0 = pines_cero();
+        bool falla = motores_get_falla();
+        tgt[0] = 0.5f;
+        if (!esperar(200)) goto fin;
+        bool rechaza = pines_cero();
+        tgt[0] = 0;
+        poner(T01, (cero0 && falla && rechaza) ? R_OK : R_FALLO,
+              "pines0=%d falla=%d rechaza=%d", cero0, falla, rechaza);
     }
 
-    if (disparo >= 0) {
-        // ¿Se movió en ese tiempo el encoder de otro motor que no tenía potencia?
-        int otro = -1;
-        uint32_t mas = 0;
-        for (int k = 0; k < CANT_MOTORES; k++) {
-            if (k == disparo || fabsf(d[k]) >= DUTY_CON_POTENCIA) continue;
-            uint32_t dk = p[k] - base[disparo][k];
-            if (dk >= PULSOS_CRUCE && dk > mas) { mas = dk; otro = k; }
-        }
-        if (otro >= 0) {
-            snprintf(alarma, len, "%c con potencia sin pulsos; se movio el encoder de %c "
-                     "(cables de encoder cruzados?)", NOMBRES[disparo], NOMBRES[otro]);
-        } else {
-            snprintf(alarma, len, "%c con potencia sin pulsos: rueda trabada o encoder "
-                     "desconectado", NOMBRES[disparo]);
-        }
+    // ---- T02 unlock ----
+    set_fase("T02 unlock");
+    motores_unlock();
+    if (!esperar(100)) goto fin;
+    {
+        bool falla = motores_get_falla();
+        bool cero = pines_cero();
+        poner(T02, (!falla && cero) ? R_OK : R_FALLO, "falla=%d pines0=%d", falla, cero);
     }
-    memcpy(pulsos_ant, p, sizeof(p));
-    return disparo;
+
+    // ---- T03 pines por motor ----
+    {
+        char det[sizeof(tests[0].det)];
+        int len = 0;
+        bool ok = true;
+        det[0] = 0;
+        for (int m = 0; m < CANT_MOTORES; m++) {
+            snprintf(txt, sizeof(txt), "T03 pines motor %c", NOMBRES[m]);
+            set_fase(txt);
+            tgt[m] = 0.5f;
+            if (!esperar(500)) goto fin;
+            bool fwd = s_pwm[m][0] > 0 && s_pwm[m][1] == 0;
+            bool otros = true;
+            float otra_rpm = 0;
+            for (int k = 0; k < CANT_MOTORES; k++) {
+                if (k == m) continue;
+                if (s_pwm[k][0] || s_pwm[k][1]) otros = false;
+                if (s_rpm[k] > otra_rpm) otra_rpm = s_rpm[k];
+            }
+            int rpm_propia = (int)(s_rpm[m] + 0.5f);
+            int rpm_otra = (int)(otra_rpm + 0.5f);
+            tgt[m] = 0;
+            if (!esperar(400)) goto fin;
+            tgt[m] = -0.5f;
+            if (!esperar(500)) goto fin;
+            bool rev = s_pwm[m][1] > 0 && s_pwm[m][0] == 0;
+            tgt[m] = 0;
+            if (!esperar(400)) goto fin;
+            bool bien = fwd && rev && otros;
+            ok = ok && bien;
+            // rpm propia / mayor rpm de otra rueda: si la otra es mayor, cables de encoder cruzados
+            if (len < (int)sizeof(det))
+                len += snprintf(det + len, sizeof(det) - len, "%c:%s r=%d/%d ", NOMBRES[m],
+                                bien ? "ok" : (!fwd ? "fwd?" : !rev ? "rev?" : "otros?"), rpm_propia, rpm_otra);
+        }
+        poner(T03, ok ? R_OK : R_FALLO, "%s", det);
+    }
+
+    // ---- T05 rampa de subida (motor A) ----
+    set_fase("T05 rampa de subida A");
+    {
+        int obj = pwm_de(0.5f);
+        tgt[0] = 0.5f;
+        int n = correr_hasta(0, obj, TRAZA_MAX);
+        if (abortar) goto fin;
+        bool llego = n > 0 && traza[n - 1] == obj;
+        bool mono = true, pasos = true;
+        int prev = 0;
+        for (int i = 0; i < n; i++) {
+            int d = traza[i] - prev;
+            if (d < 0) mono = false;
+            int lim = (prev == 0 ? MIN_DUTY : 0) + ACCEL_STEP;
+            if (d > lim) pasos = false;
+            prev = traza[i];
+        }
+        taskENTER_CRITICAL(&estado_mux); estado.ramp_ms = n * TICK_MS; taskEXIT_CRITICAL(&estado_mux);
+        poner(T05, (llego && mono && pasos) ? R_OK : R_FALLO,
+              "llego=%d mono=%d pasos=%d %d ticks %d ms obj=%d", llego, mono, pasos, n, n * TICK_MS, obj);
+    }
+
+    // ---- T06 rampa de bajada ----
+    set_fase("T06 rampa de bajada A");
+    if (!esperar(200)) goto fin;
+    {
+        tgt[0] = 0;
+        int n = correr_hasta(0, 0, TRAZA_MAX);
+        if (abortar) goto fin;
+        bool llego = n > 0 && traza[n - 1] == 0;
+        bool mono = true, pasos = true, zona = true;
+        int prev = pwm_de(0.5f);
+        for (int i = 0; i < n; i++) {
+            int d = prev - traza[i];
+            if (d < 0) mono = false;
+            if (d > DECEL_STEP) pasos = false;
+            if (traza[i] > 0 && traza[i] < MIN_DUTY) zona = false;
+            prev = traza[i];
+        }
+        poner(T06, (llego && mono && pasos && zona) ? R_OK : R_FALLO,
+              "llego=%d mono=%d pasos=%d zona=%d %d ticks", llego, mono, pasos, zona, n);
+    }
+
+    // ---- T07 inversion ----
+    set_fase("T07 inversion A");
+    {
+        int obj = pwm_de(0.5f);
+        tgt[0] = 0.5f;
+        correr_hasta(0, obj, TRAZA_MAX);
+        if (abortar || !esperar(200)) goto fin;
+        tgt[0] = -0.5f;
+        int n = correr_hasta(0, -obj, TRAZA_MAX);
+        if (abortar) goto fin;
+        bool llego = n > 0 && traza[n - 1] == -obj;
+        int ceros = 0;
+        bool salto = false;
+        int prev = obj;
+        for (int i = 0; i < n; i++) {
+            if (traza[i] == 0) ceros++;
+            if ((prev > 0 && traza[i] < 0) || (prev < 0 && traza[i] > 0)) salto = true;
+            prev = traza[i];
+        }
+        poner(T07, (llego && ceros == 1 && !salto) ? R_OK : R_FALLO,
+              "llego=%d ceros=%d salto=%d %d ticks", llego, ceros, salto, n);
+    }
+
+    // ---- T08 sentido y duty (motor A queda en -0.5) ----
+    set_fase("T08 sentido y duty");
+    {
+        float d = motores_get_duty(MOTOR_A);
+        bool duty_ok = fabsf(d + 0.5f) < 0.02f;                 // ~ -0.5, con decimales
+        bool s_rev = motores_get_sentido(MOTOR_A) == -1;
+        tgt[0] = 0;
+        if (!esperar(500)) goto fin;
+        bool s_mantiene = motores_get_sentido(MOTOR_A) == -1 && pines_cero();   // frenado: sigue -1
+        tgt[0] = 0.5f;
+        if (!esperar(500)) goto fin;
+        bool s_fwd = motores_get_sentido(MOTOR_A) == 1;
+        tgt[0] = 0;
+        if (!esperar(500)) goto fin;
+        bool s_mantiene2 = motores_get_sentido(MOTOR_A) == 1;
+        bool ok = duty_ok && s_rev && s_mantiene && s_fwd && s_mantiene2;
+        poner(T08, ok ? R_OK : R_FALLO, "duty=%d/100 rev=%d mant=%d fwd=%d mant=%d",
+              (int)(d * 100.0f), s_rev, s_mantiene, s_fwd, s_mantiene2);
+    }
+
+    // ---- T09 lock en plena rampa ----
+    set_fase("T09 lock en rampa");
+    {
+        tgt[0] = 0.8f;
+        if (!esperar(100)) goto fin;
+        int antes = firmado(0);
+        motores_lock(true);
+        uint32_t ia, ib;
+        motores_get_pwm(MOTOR_A, &ia, &ib);
+        bool inmediato = ia == 0 && ib == 0 && motores_get_falla() && motores_get_duty(MOTOR_A) == 0.0f;
+        if (!esperar(100)) goto fin;      // el objetivo sigue en 0.8: el driver bloqueado lo tiene que ignorar
+        bool ignora = pines_cero();
+        tgt[0] = 0;
+        motores_unlock();
+        poner(T09, (antes > 0 && inmediato && ignora) ? R_OK : R_FALLO,
+              "antes=%d inmediato=%d ignora=%d", antes, inmediato, ignora);
+    }
+
+    // ---- T10 fuera de rango y NaN (motor B) ----
+    set_fase("T10 rango y NaN");
+    {
+        tgt[1] = 1.5f;
+        if (!esperar(800)) goto fin;
+        bool max_pos = s_pwm[1][0] == (uint32_t)MOTORES_PWM_MAX && s_pwm[1][1] == 0;
+        tgt[1] = -1.5f;
+        if (!esperar(1200)) goto fin;
+        bool max_neg = s_pwm[1][1] == (uint32_t)MOTORES_PWM_MAX && s_pwm[1][0] == 0;
+        tgt[1] = NAN;
+        if (!esperar(600)) goto fin;
+        bool nan_cero = s_pwm[1][0] == 0 && s_pwm[1][1] == 0;
+        tgt[1] = 0;
+        poner(T10, (max_pos && max_neg && nan_cero) ? R_OK : R_FALLO,
+              "+1.5=%d -1.5=%d nan=%d max=%d", max_pos, max_neg, nan_cero, MOTORES_PWM_MAX);
+    }
+
+    // ---- T11 los 4 a la vez + periodo del lazo ----
+    set_fase("T11 cuatro motores");
+    {
+        jitter_us = 0;
+        todos(0.5f);
+        if (!esperar(800)) goto fin;
+        bool todos_fwd = true;
+        for (int m = 0; m < CANT_MOTORES; m++) {
+            if (!(s_pwm[m][0] == (uint32_t)pwm_de(0.5f) && s_pwm[m][1] == 0)) todos_fwd = false;
+        }
+        int jit = jitter_us;
+        todos(0);
+        if (!esperar(500)) goto fin;
+        poner(T11, (todos_fwd && jit < JITTER_MAX_US) ? R_OK : R_FALLO,
+              "todos=%d jitter=%d us (max %d)", todos_fwd, jit, JITTER_MAX_US);
+    }
+
+    // ---- M01 zona muerta ----
+    {
+        char det[sizeof(tests[0].det)];
+        int len = 0;
+        det[0] = 0;
+        for (int m = 0; m < CANT_MOTORES; m++) {
+            snprintf(txt, sizeof(txt), "M01 zona muerta %c", NOMBRES[m]);
+            set_fase(txt);
+            int umbral = 0;
+            for (int paso_pct = 5; paso_pct <= 40; paso_pct += 5) {
+                tgt[m] = paso_pct / 100.0f;
+                if (!esperar(1000)) goto fin;
+                if (s_rpm[m] > RPM_ARRANQUE) { umbral = paso_pct; break; }
+            }
+            tgt[m] = 0;
+            if (!esperar(600)) goto fin;
+            if (len < (int)sizeof(det)) {
+                if (umbral) len += snprintf(det + len, sizeof(det) - len, "%c=%d%% ", NOMBRES[m], umbral);
+                else        len += snprintf(det + len, sizeof(det) - len, "%c=>40%% ", NOMBRES[m]);
+            }
+        }
+        poner(M01, R_MEDIDA, "%s", det);
+    }
+
+    // ---- M02 rpm vs duty ----
+    {
+        static const int NIVELES[4] = { 30, 50, 70, 100 };
+        char det[sizeof(tests[0].det)];
+        int len = 0;
+        det[0] = 0;
+        for (int m = 0; m < CANT_MOTORES; m++) {
+            snprintf(txt, sizeof(txt), "M02 rpm vs duty %c", NOMBRES[m]);
+            set_fase(txt);
+            int r[4];
+            bool mono = true;
+            for (int k = 0; k < 4; k++) {
+                tgt[m] = NIVELES[k] / 100.0f;
+                if (!esperar(1500)) goto fin;
+                r[k] = (int)(s_rpm[m] + 0.5f);
+                if (k > 0 && (float)r[k] < 0.9f * (float)r[k - 1]) mono = false;
+            }
+            tgt[m] = 0;
+            if (!esperar(700)) goto fin;
+            if (len < (int)sizeof(det))
+                len += snprintf(det + len, sizeof(det) - len, "%c%s:%d/%d/%d/%d ", NOMBRES[m],
+                                mono ? "" : "!", r[0], r[1], r[2], r[3]);
+        }
+        poner(M02, R_MEDIDA, "%s", det);
+    }
+
+    // ---- M03 signo del encoder al frenar (motor A) ----
+    set_fase("M03 signo al frenar A");
+    {
+        tgt[0] = 0.5f;
+        if (!esperar(1200)) goto fin;
+        int rpm_f = (int)(s_rpm[0] + 0.5f);
+        tgt[0] = 0;
+        if (!esperar(140)) goto fin;
+        int inercia_f = (int)(s_rpm[0] + 0.5f);
+        int sent_f = motores_get_sentido(MOTOR_A);
+        if (!esperar(800)) goto fin;
+        tgt[0] = -0.5f;
+        if (!esperar(1200)) goto fin;
+        int rpm_r = (int)(s_rpm[0] + 0.5f);
+        tgt[0] = 0;
+        if (!esperar(140)) goto fin;
+        int inercia_r = (int)(s_rpm[0] + 0.5f);
+        int sent_r = motores_get_sentido(MOTOR_A);
+        poner(M03, R_MEDIDA, "fwd %d->%d s=%d | rev %d->%d s=%d", rpm_f, inercia_f, sent_f, rpm_r, inercia_r, sent_r);
+    }
+
+    // ---- T04 se evalua al final: cubre todas las fases ----
+    poner(T04, (viol_ambos == 0 && MOTORES_PWM_MAX_visto <= (uint32_t)MOTORES_PWM_MAX) ? R_OK : R_FALLO,
+          "ticks con IA e IB a la vez=%d, duty max=%u/%d", viol_ambos, (unsigned)MOTORES_PWM_MAX_visto, MOTORES_PWM_MAX);
+    set_fase("terminado");
+    goto cierre;
+
+fin:
+    set_fase("abortado");
+    ESP_LOGW(TAG, "SELFTEST abortado");
+cierre:
+    todos(0);
+    motores_lock(true);
+    en_selftest = false; abortar = false;
+    set_modo(MODO_PAUSA);
 }
 
 static void test_task(void *arg)
 {
-    modo_t modo = MODO_PAUSA;
-    int paso = 0;                 // 0..N_PASOS-1
-    fase_t fase = F_SUBE;
-    int t_fase = 0;               // ms en la fase actual
-    int ms_manual = 0;            // ms que le quedan al comando manual
-    float vmax[CANT_MOTORES];
-    for (int m = 0; m < CANT_MOTORES; m++) vmax[m] = CONFIG_PROMETEO_TEST_DUTY_MAX_PCT / 100.0f;
+    (void)arg;
     int ms_arranque = 0;
-
-    // Control de rpm
-    float rpm_obj[CANT_MOTORES] = {0};
-    float integ[CANT_MOTORES]   = {0};
-    float kp = KP_DEF, ki = KI_DEF;
-    int ms_rpm = 0;
-    bool proteccion = true;
-    proteccion_reiniciar();
-
-    taskENTER_CRITICAL(&estado_mux);
-    memcpy(estado.vmax, vmax, sizeof(vmax));
-    estado.kp = kp; estado.ki = ki;
-    estado.proteccion = proteccion;
-    taskEXIT_CRITICAL(&estado_mux);
-
 #ifdef CONFIG_PROMETEO_TEST_AUTOSTART
     ms_arranque = CONFIG_PROMETEO_TEST_AUTOSTART_DELAY_S * 1000;
-    ESP_LOGW(TAG, "Arranque automático en %d s: levantar las ruedas", CONFIG_PROMETEO_TEST_AUTOSTART_DELAY_S);
+    ESP_LOGW(TAG, "Selftest automático en %d s: levantar las ruedas", CONFIG_PROMETEO_TEST_AUTOSTART_DELAY_S);
 #endif
-
-    TickType_t t = xTaskGetTickCount();
+    t_ultimo = xTaskGetTickCount();
+    set_fase("en espera");
     while (1) {
-        // ---- comandos ----
-        cmd_t c;
-        while (xQueueReceive(cola_cmd, &c, 0) == pdTRUE) {
-            // Cualquier comando que cambie de modo saca al control de rpm
-            // Un comando de movimiento nuevo borra la alarma anterior
-            if (c.tipo == C_AUTO || c.tipo == C_RESET || c.tipo == C_SET ||
-                c.tipo == C_SETALL || c.tipo == C_RPM) {
-                poner_alarma("");
-            }
-            if (modo == MODO_RPM && c.tipo != C_RPM && c.tipo != C_PI && c.tipo != C_VMAX &&
-                c.tipo != C_OK && c.tipo != C_FALLO && c.tipo != C_PROT &&
-                c.tipo != C_LIBERAR) {
-                memset(rpm_obj, 0, sizeof(rpm_obj));
-                memset(integ, 0, sizeof(integ));
-                publicar_rpm_obj(rpm_obj);
-                if (c.tipo == C_SIGUIENTE) {   // "siguiente" solo tiene sentido en auto: frena
-                    modo = MODO_PAUSA; motores_frenar(); publicar_estado(MODO_PAUSA, -1, 0, 0);
-                }
-            }
-            switch (c.tipo) {
-            case C_AUTO:
-                if (paso >= N_PASOS) paso = 0;
-                modo = MODO_AUTO; fase = F_SUBE; t_fase = 0;
-                break;
-            case C_RESET:
-                for (int m = 0; m < CANT_MOTORES; m++) marcar(m, R_PENDIENTE);
-                paso = 0; modo = MODO_AUTO; fase = F_SUBE; t_fase = 0;
-                break;
-            case C_PAUSA:
-                modo = MODO_PAUSA; motores_frenar(); publicar_estado(MODO_PAUSA, -1, 0, 0);
-                break;
-            case C_SIGUIENTE:
-                if (modo == MODO_AUTO) {
-                    int m = paso / 2;
-                    if (leer_resultado(m) == R_PROBANDO) marcar(m, R_PENDIENTE);
-                    paso = (m + 1) * 2; fase = F_SUBE; t_fase = 0; aplicar_duty(-1, 0);
-                    if (paso >= N_PASOS) {   // era el último motor: ciclo terminado
-                        modo = MODO_PAUSA; motores_frenar(); publicar_estado(MODO_PAUSA, -1, 0, 0);
-                        taskENTER_CRITICAL(&estado_mux); estado.ciclo++; taskEXIT_CRITICAL(&estado_mux);
-                    }
-                }
-                break;
-            case C_SET:
-                modo = MODO_MANUAL; ms_manual = c.ms;
-                aplicar_duty(c.motor, c.valor);
-                publicar_estado(MODO_MANUAL, c.motor, c.valor > 0 ? 1 : c.valor < 0 ? -1 : 0, c.valor);
-                break;
-            case C_SETALL:
-                modo = MODO_MANUAL; ms_manual = c.ms;
-                aplicar_duties(c.duties);
-                publicar_estado(MODO_MANUAL, -1, 0, 0);
-                break;
-            case C_VMAX:
-                for (int m = 0; m < CANT_MOTORES; m++) {
-                    if (c.motor == -1 || c.motor == m) vmax[m] = c.valor;
-                }
-                taskENTER_CRITICAL(&estado_mux); memcpy(estado.vmax, vmax, sizeof(vmax)); taskEXIT_CRITICAL(&estado_mux);
-                break;
-            case C_RPM:
-                if (modo != MODO_RPM) {   // entrar al modo rpm: arrancan todos sin objetivo
-                    memset(rpm_obj, 0, sizeof(rpm_obj));
-                    memset(integ, 0, sizeof(integ));
-                    aplicar_duty(-1, 0);
-                }
-                for (int m = 0; m < CANT_MOTORES; m++) {
-                    if (c.motor != -1 && c.motor != m) continue;
-                    // integrador en 0 si recién arranca o cambia de sentido
-                    // (la zona muerta de motores.c ya da el empujón de arranque)
-                    if (rpm_obj[m] == 0 || (rpm_obj[m] > 0) != (c.valor > 0)) integ[m] = 0;
-                    rpm_obj[m] = c.valor;
-                    if (c.valor == 0) integ[m] = 0;
-                }
-                modo = MODO_RPM; ms_rpm = c.ms;
-                publicar_rpm_obj(rpm_obj);
-                publicar_estado(MODO_RPM, c.motor, c.valor > 0 ? 1 : c.valor < 0 ? -1 : 0, 0);
-                ESP_LOGI(TAG, "rpm %c -> %.1f durante %d ms",
-                         c.motor < 0 ? '*' : NOMBRES[c.motor], c.valor, c.ms);
-                break;
-            case C_PI:
-                kp = c.valor; ki = c.valor2;
-                taskENTER_CRITICAL(&estado_mux); estado.kp = kp; estado.ki = ki; taskEXIT_CRITICAL(&estado_mux);
-                ESP_LOGI(TAG, "PI: kp=%.4f ki=%.4f", kp, ki);
-                break;
-            case C_LIBERAR:
-                if (motores_liberar_fallas()) ESP_LOGI(TAG, "Fallas liberadas");
-                else                          ESP_LOGW(TAG, "Liberar rechazado: un puente sigue caliente");
-                break;
-            case C_PROT:
-                proteccion = c.valor > 0.5f;
-                proteccion_reiniciar();
-                taskENTER_CRITICAL(&estado_mux); estado.proteccion = proteccion; taskEXIT_CRITICAL(&estado_mux);
-                if (proteccion) ESP_LOGI(TAG, "Proteccion por rueda sin pulsos: ACTIVADA");
-                else            ESP_LOGW(TAG, "Proteccion por rueda sin pulsos: DESACTIVADA");
-                break;
-            case C_OK:    marcar(c.motor, R_OK);    break;
-            case C_FALLO: marcar(c.motor, R_FALLO); break;
-            }
-        }
+        atender_cmds();
 
-        // ---- arranque automático diferido ----
         if (ms_arranque > 0) {
             ms_arranque -= TICK_MS;
-            if (ms_arranque <= 0 && modo == MODO_PAUSA) {
-                modo = MODO_AUTO; paso = 0; fase = F_SUBE; t_fase = 0;
-            }
+            if (ms_arranque <= 0) pedir_selftest = true;
         }
 
-        // ---- manual: mantiene el duty hasta que se acabe el tiempo ----
-        if (modo == MODO_MANUAL) {
-            ms_manual -= TICK_MS;
-            if (ms_manual <= 0) {
-                modo = MODO_PAUSA; motores_frenar(); publicar_estado(MODO_PAUSA, -1, 0, 0);
-            } else {
-                motores_alimentar();   // sin esto el failsafe frena a los 300 ms
-            }
-        }
-
-        // ---- rpm: control PI con realimentación de los encoders ----
-        if (modo == MODO_RPM) {
-            ms_rpm -= TICK_MS;
-            if (ms_rpm <= 0) {
-                memset(rpm_obj, 0, sizeof(rpm_obj));
-                memset(integ, 0, sizeof(integ));
-                publicar_rpm_obj(rpm_obj);
-                modo = MODO_PAUSA; motores_frenar(); publicar_estado(MODO_PAUSA, -1, 0, 0);
-            } else {
-                const float dt = TICK_MS / 1000.0f;
-                float d[CANT_MOTORES];
-                for (int m = 0; m < CANT_MOTORES; m++) {
-                    if (rpm_obj[m] == 0) { d[m] = 0; continue; }
-                    float med = encoder_get_rpm_lenta(ENCODER_DE[m]);   // magnitud
-                    float err = fabsf(rpm_obj[m]) - med;
-                    float tope = fminf(RPM_DUTY_MAX, vmax[m]);
-                    integ[m] = fminf(fmaxf(integ[m] + ki * err * dt, 0.0f), tope);   // anti-windup
-                    float u = fminf(fmaxf(kp * err + integ[m], RPM_DUTY_MIN), tope);
-                    d[m] = rpm_obj[m] > 0 ? u : -u;
-                }
-                aplicar_duties(d);
-            }
-        }
-
-        // ---- ciclo automático ----
-        if (modo == MODO_AUTO) {
-            int motor = paso / 2;
-            int dir = (paso % 2 == 0) ? +1 : -1;
-            float duty = 0.0f;
-            t_fase += TICK_MS;
-
-            if (fase == F_SUBE) {
-                if (leer_resultado(motor) == R_PENDIENTE) marcar(motor, R_PROBANDO);
-                duty = dir * vmax[motor] * fminf((float)t_fase / CONFIG_PROMETEO_TEST_RAMP_MS, 1.0f);
-                if (t_fase >= CONFIG_PROMETEO_TEST_RAMP_MS) { fase = F_MANTIENE; t_fase = 0; }
-            } else if (fase == F_MANTIENE) {
-                duty = dir * vmax[motor];
-                if (t_fase >= CONFIG_PROMETEO_TEST_HOLD_MS) { fase = F_BAJA; t_fase = 0; }
-            } else if (fase == F_BAJA) {
-                duty = dir * vmax[motor] * fmaxf(1.0f - (float)t_fase / RAMPA_BAJA_MS, 0.0f);
-                if (t_fase >= RAMPA_BAJA_MS) { fase = F_PAUSA; t_fase = 0; }
-            } else {   // F_PAUSA
-                if (t_fase >= CONFIG_PROMETEO_TEST_PAUSE_MS) {
-                    // terminó adelante y atrás de este motor
-                    if (dir == -1 && leer_resultado(motor) == R_PROBANDO) marcar(motor, R_PROBADO);
-                    paso++; fase = F_SUBE; t_fase = 0;
-                    if (paso >= N_PASOS) {   // ciclo completo
-                        modo = MODO_PAUSA; motores_frenar();
-                        taskENTER_CRITICAL(&estado_mux); estado.ciclo++; taskEXIT_CRITICAL(&estado_mux);
-                        ESP_LOGI(TAG, "Ciclo completo. 'auto' para repetir, 'ok X'/'fallo X' para marcar");
-                    }
-                }
-            }
-
-            if (modo == MODO_AUTO) {
-                aplicar_duty(motor, duty);
-                publicar_estado(MODO_AUTO, motor, fase == F_PAUSA ? 0 : dir, duty);
-            } else {
-                publicar_estado(MODO_PAUSA, -1, 0, 0);
-            }
-        }
-
-        // ---- protección: motor con potencia y su rueda quieta -> frenar todo ----
-        float d_act[CANT_MOTORES];
+        // Los comandos mantenidos vencen solos: el driver no tiene failsafe propio
         taskENTER_CRITICAL(&estado_mux);
-        memcpy(d_act, estado.duties, sizeof(d_act));
+        modo_t modo = estado.modo;
         taskEXIT_CRITICAL(&estado_mux);
-        char alarma[ALARMA_LEN];
-        int disparo = proteccion_revisar(d_act, alarma, sizeof(alarma));
-        if (proteccion && disparo >= 0) {
-            modo = MODO_PAUSA; motores_frenar();
-            memset(rpm_obj, 0, sizeof(rpm_obj));
-            memset(integ, 0, sizeof(integ));
-            publicar_rpm_obj(rpm_obj);
-            publicar_estado(MODO_PAUSA, -1, 0, 0);
-            marcar(disparo, R_FALLO);
-            poner_alarma(alarma);
-            proteccion_reiniciar();
-            ESP_LOGE(TAG, "FRENO: %s", alarma);
+        if (modo == MODO_MANUAL && (ms_manual -= TICK_MS) <= 0) pausar();
+        if (modo == MODO_EXT && (ms_ext -= TICK_MS) <= 0) {
+            ESP_LOGW(TAG, "EXT: sin duties de la PC en %d ms -> pausa", EXT_MS);
+            pausar();
         }
 
-        medir_rpm();
-        vTaskDelayUntil(&t, pdMS_TO_TICKS(TICK_MS));
+        tick();
+
+        if (pedir_selftest) {
+            pedir_selftest = false;
+            selftest();
+            t_ultimo = xTaskGetTickCount();
+            t_prev_us = 0;
+        }
     }
 }
 
@@ -651,14 +756,16 @@ static rcl_init_options_t init_options;
 static rmw_init_options_t *rmw_options;
 static rclc_support_t support;
 static rcl_node_t node;
-static rcl_publisher_t pub_estado;
+static rcl_publisher_t pub_estado, pub_rpm, pub_res;
 static rcl_subscription_t sub_cmd;
-static rcl_timer_t timer;
+static rcl_timer_t timer, timer_rpm, timer_res;
 static rclc_executor_t executor;
-static std_msgs__msg__String msg_estado;
-static std_msgs__msg__String msg_cmd;
+static std_msgs__msg__String msg_estado, msg_cmd, msg_res;
+static std_msgs__msg__Float32MultiArray msg_rpm;
 static char buf_json[JSON_LEN];
 static char buf_cmd[CMD_LEN];
+static char buf_res[RES_LEN];
+static float buf_rpm[RPM_MSG_LEN];
 
 #define RCRET(fn) { rcl_ret_t temp_rc = fn; if (temp_rc != RCL_RET_OK) { \
     ESP_LOGE(TAG, "Fallo en linea %d: rc=%d", __LINE__, (int)temp_rc); return false; } }
@@ -683,7 +790,7 @@ static void cmd_callback(const void *msgin)
     }
 }
 
-static void timer_callback(rcl_timer_t *t, int64_t last_call_time)
+static void timer_rpm_callback(rcl_timer_t *t, int64_t last_call_time)
 {
     (void)last_call_time;
     if (t == NULL) return;
@@ -693,45 +800,81 @@ static void timer_callback(rcl_timer_t *t, int64_t last_call_time)
     e = estado;
     taskEXIT_CRITICAL(&estado_mux);
 
-    const char *accion = e.dir > 0 ? "adelante" : e.dir < 0 ? "atras" : "detenido";
-    char motor[8];
-    if (e.motor >= 0 && e.motor < CANT_MOTORES) snprintf(motor, sizeof(motor), "\"%c\"", NOMBRES[e.motor]);
-    else                                         snprintf(motor, sizeof(motor), "null");
-
-    // La alarma solo tiene letras, números y signos simples (sin comillas): va directo al JSON
-    char alarma[ALARMA_LEN + 2];
-    if (e.alarma[0]) snprintf(alarma, sizeof(alarma), "\"%s\"", e.alarma);
-    else             snprintf(alarma, sizeof(alarma), "null");
-
-    // Encoders crudos, en orden de rueda (DEL_IZQ, DEL_DER, TRAS_IZQ, TRAS_DER)
-    unsigned long pul[ENC_CANTIDAD];
-    int pin[ENC_CANTIDAD];
-    for (int i = 0; i < ENC_CANTIDAD; i++) {
-        pul[i] = (unsigned long)encoder_get_pulsos((encoder_id_t)i);
-        pin[i] = encoder_get_pin((encoder_id_t)i);
+    for (int m = 0; m < CANT_MOTORES; m++) {
+        buf_rpm[m] = e.rpm_med[m];
+        buf_rpm[CANT_MOTORES + m] = e.duty[m];
     }
+    buf_rpm[8] = (float)e.modo;
+    buf_rpm[9] = 0.0f;                  // sin alarma: el driver nuevo no tiene proteccion propia
+    msg_rpm.data.size = RPM_MSG_LEN;
+    RCSOFTCHECK(rcl_publish(&pub_rpm, &msg_rpm, NULL));
+}
 
+static void timer_callback(rcl_timer_t *t, int64_t last_call_time)
+{
+    (void)last_call_time;
+    if (t == NULL) return;
+
+    estado_t e;
+    int t_ok = 0, t_fallo = 0;
+    taskENTER_CRITICAL(&estado_mux);
+    e = estado;
+    for (int i = 0; i < N_TESTS; i++) {
+        if (tests[i].r == R_OK) t_ok++;
+        if (tests[i].r == R_FALLO) t_fallo++;
+    }
+    taskEXIT_CRITICAL(&estado_mux);
+
+    // Las claves "viejas" (duties, rpm_med, ...) se mantienen para el panel web y el relay de PlotJuggler.
+    // duties = lo que aplica el driver; el resto son campos nuevos del driver nuevo.
     int n = snprintf(buf_json, sizeof(buf_json),
-        "{\"modo\":\"%s\",\"motor\":%s,\"accion\":\"%s\",\"duty\":%.2f,\"duties\":[%.2f,%.2f,%.2f,%.2f],\"vmax\":{\"A\":%.2f,\"B\":%.2f,\"C\":%.2f,\"D\":%.2f},\"ciclo\":%d,"
-        "\"resultados\":{\"A\":\"%s\",\"B\":\"%s\",\"C\":\"%s\",\"D\":\"%s\"},"
-        "\"rpm_obj\":[%.1f,%.1f,%.1f,%.1f],\"rpm_med\":[%.1f,%.1f,%.1f,%.1f],\"pi\":{\"kp\":%.4f,\"ki\":%.4f},"
-        "\"proteccion\":%s,\"alarma\":%s,\"pulsos\":[%lu,%lu,%lu,%lu],\"enc_pin\":[%d,%d,%d,%d],"
-        "\"failsafe\":%s}",
-        MODO_TXT[e.modo], motor, accion, e.duty,
-        e.duties[0], e.duties[1], e.duties[2], e.duties[3],
-        e.vmax[0], e.vmax[1], e.vmax[2], e.vmax[3], e.ciclo,
-        R_TXT[e.resultado[0]], R_TXT[e.resultado[1]], R_TXT[e.resultado[2]], R_TXT[e.resultado[3]],
-        e.rpm_obj[0], e.rpm_obj[1], e.rpm_obj[2], e.rpm_obj[3],
-        e.rpm_med[0], e.rpm_med[1], e.rpm_med[2], e.rpm_med[3], e.kp, e.ki,
-        e.proteccion ? "true" : "false", alarma,
-        pul[0], pul[1], pul[2], pul[3], pin[0], pin[1], pin[2], pin[3],
-        motores_en_falla() ? "true" : "false");
+        "{\"modo\":\"%s\",\"motor\":null,\"accion\":\"detenido\",\"duty\":0.00,"
+        "\"duties\":[%.3f,%.3f,%.3f,%.3f],"
+        "\"vmax\":{\"A\":1.00,\"B\":1.00,\"C\":1.00,\"D\":1.00},\"ciclo\":0,"
+        "\"resultados\":{\"A\":\"pendiente\",\"B\":\"pendiente\",\"C\":\"pendiente\",\"D\":\"pendiente\"},"
+        "\"rpm_obj\":[0,0,0,0],\"rpm_med\":[%.1f,%.1f,%.1f,%.1f],\"pi\":{\"kp\":0,\"ki\":0},"
+        "\"proteccion\":false,\"alarma\":null,\"failsafe\":%s,"
+        "\"falla\":%s,\"pedido\":[%.2f,%.2f,%.2f,%.2f],\"sentido\":[%d,%d,%d,%d],"
+        "\"pwm\":[[%u,%u],[%u,%u],[%u,%u],[%u,%u]],\"ramp_ms\":%d,\"fase\":\"%s\","
+        "\"t_ok\":%d,\"t_fallo\":%d,\"t_total\":%d}",
+        MODO_TXT[e.modo],
+        e.duty[0], e.duty[1], e.duty[2], e.duty[3],
+        e.rpm_med[0], e.rpm_med[1], e.rpm_med[2], e.rpm_med[3],
+        e.falla ? "true" : "false", e.falla ? "true" : "false",
+        e.pedido[0], e.pedido[1], e.pedido[2], e.pedido[3],
+        e.sentido[0], e.sentido[1], e.sentido[2], e.sentido[3],
+        (unsigned)e.pwm[0][0], (unsigned)e.pwm[0][1], (unsigned)e.pwm[1][0], (unsigned)e.pwm[1][1],
+        (unsigned)e.pwm[2][0], (unsigned)e.pwm[2][1], (unsigned)e.pwm[3][0], (unsigned)e.pwm[3][1],
+        e.ramp_ms, e.fase, t_ok, t_fallo, N_TESTS);
     if (n < 0 || n >= (int)sizeof(buf_json)) return;
 
     msg_estado.data.data = buf_json;
     msg_estado.data.size = (size_t)n;
     msg_estado.data.capacity = sizeof(buf_json);
     RCSOFTCHECK(rcl_publish(&pub_estado, &msg_estado, NULL));
+}
+
+// Un test por mensaje (en ciclo): mensajes chicos, entran en el MTU de micro-ROS
+static void timer_res_callback(rcl_timer_t *t, int64_t last_call_time)
+{
+    (void)last_call_time;
+    if (t == NULL) return;
+    static int idx = 0;
+
+    test_t tt;
+    taskENTER_CRITICAL(&estado_mux);
+    tt = tests[idx];
+    taskEXIT_CRITICAL(&estado_mux);
+
+    int n = snprintf(buf_res, sizeof(buf_res), "{\"i\":%d,\"id\":\"%s\",\"n\":\"%s\",\"r\":\"%s\",\"d\":\"%s\"}",
+                     idx, tt.id, tt.nombre, R_TXT[tt.r], tt.det);
+    idx = (idx + 1) % N_TESTS;
+    if (n < 0 || n >= (int)sizeof(buf_res)) return;
+
+    msg_res.data.data = buf_res;
+    msg_res.data.size = (size_t)n;
+    msg_res.data.capacity = sizeof(buf_res);
+    RCSOFTCHECK(rcl_publish(&pub_res, &msg_res, NULL));
 }
 
 static bool crear_entidades(void)
@@ -745,13 +888,21 @@ static bool crear_entidades(void)
     RCRET(rclc_node_init_default(&node, "motor_test", "prometeo", &support));
     RCRET(rclc_publisher_init_default(&pub_estado, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "motores_test/estado"));
+    RCRET(rclc_publisher_init_default(&pub_res, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "motores_test/resultados"));
+    RCRET(rclc_publisher_init_best_effort(&pub_rpm, &node,
+          ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "motores_test/rpm"));
     RCRET(rclc_subscription_init_default(&sub_cmd, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "motores_test/cmd"));
     RCRET(rclc_timer_init_default(&timer, &support, RCL_MS_TO_NS(ESTADO_PERIODO_MS), timer_callback));
+    RCRET(rclc_timer_init_default(&timer_rpm, &support, RCL_MS_TO_NS(RPM_PERIODO_MS), timer_rpm_callback));
+    RCRET(rclc_timer_init_default(&timer_res, &support, RCL_MS_TO_NS(RES_PERIODO_MS), timer_res_callback));
 
     executor = rclc_executor_get_zero_initialized_executor();
-    RCRET(rclc_executor_init(&executor, &support.context, 2, &allocator));   // timer + 1 suscripción
+    RCRET(rclc_executor_init(&executor, &support.context, 4, &allocator));   // 3 timers + 1 suscripción
     RCRET(rclc_executor_add_timer(&executor, &timer));
+    RCRET(rclc_executor_add_timer(&executor, &timer_rpm));
+    RCRET(rclc_executor_add_timer(&executor, &timer_res));
     RCRET(rclc_executor_add_subscription(&executor, &sub_cmd, &msg_cmd, &cmd_callback, ON_NEW_DATA));
     return true;
 }
@@ -763,7 +914,11 @@ static void destruir_entidades(void)
 
     (void) rcl_subscription_fini(&sub_cmd, &node);
     (void) rcl_publisher_fini(&pub_estado, &node);
+    (void) rcl_publisher_fini(&pub_res, &node);
+    (void) rcl_publisher_fini(&pub_rpm, &node);
     (void) rcl_timer_fini(&timer);
+    (void) rcl_timer_fini(&timer_rpm);
+    (void) rcl_timer_fini(&timer_res);
     (void) rclc_executor_fini(&executor);
     (void) rcl_node_fini(&node);
     (void) rclc_support_fini(&support);
@@ -784,9 +939,20 @@ static void micro_ros_task(void *arg)
     msg_cmd.data.data = buf_cmd;
     msg_cmd.data.size = 0;
     msg_cmd.data.capacity = sizeof(buf_cmd);
+    // Float32MultiArray sin layout: dim vacío, solo data (buffer fijo)
+    msg_rpm.layout.dim.data = NULL;
+    msg_rpm.layout.dim.size = 0;
+    msg_rpm.layout.dim.capacity = 0;
+    msg_rpm.layout.data_offset = 0;
+    msg_rpm.data.data = buf_rpm;
+    msg_rpm.data.size = 0;
+    msg_rpm.data.capacity = RPM_MSG_LEN;
     msg_estado.data.data = buf_json;
     msg_estado.data.size = 0;
     msg_estado.data.capacity = sizeof(buf_json);
+    msg_res.data.data = buf_res;
+    msg_res.data.size = 0;
+    msg_res.data.capacity = sizeof(buf_res);
 
     estado_uros_t st = ESPERANDO_AGENTE;
     int ms_desde_ping = 0;
@@ -806,7 +972,7 @@ static void micro_ros_task(void *arg)
 
         case AGENTE_DISPONIBLE:
             if (crear_entidades()) {
-                ESP_LOGI(TAG, "CONECTADO. Publicando /motores_test/estado, escuchando /motores_test/cmd");
+                ESP_LOGI(TAG, "CONECTADO. Publicando /motores_test/{estado,rpm,resultados}, escuchando /motores_test/cmd");
                 st = CONECTADO;
                 ms_desde_ping = 0;
             } else {
@@ -831,7 +997,7 @@ static void micro_ros_task(void *arg)
         case DESCONECTADO: {
             ESP_LOGE(TAG, "Agente PERDIDO -> motores en pausa y reconexion");
             cmd_t pausa = { .tipo = C_PAUSA };
-            xQueueSend(cola_cmd, &pausa, 0);     // sin comandos no se sigue probando
+            xQueueSend(cola_cmd, &pausa, 0);     // sin comandos no se sigue probando (aborta el selftest)
             destruir_entidades();
             st = ESPERANDO_AGENTE;
             break;
@@ -842,15 +1008,13 @@ static void micro_ros_task(void *arg)
 
 void app_main(void)
 {
-    ESP_LOGW(TAG, "=== FIRMWARE DE TEST DE MOTORES === (levantar las ruedas del piso)");
+    ESP_LOGW(TAG, "=== FIRMWARE DE TEST DEL DRIVER DE MOTORES === (levantar las ruedas del piso)");
 
     cola_cmd = xQueueCreate(8, sizeof(cmd_t));
     configASSERT(cola_cmd != NULL);
-    for (int m = 0; m < CANT_MOTORES; m++) estado.vmax[m] = CONFIG_PROMETEO_TEST_DUTY_MAX_PCT / 100.0f;
-    estado.motor = -1;
 
-    motores_init();     // arranca frenado
-    encoders_init();    // cuentan pulsos por interrupción desde ya
+    motores_init();     // arranca bloqueado (falla = true)
+    encoders_init();    // PCNT cuenta por hardware desde ya
     for (int m = 0; m < CANT_MOTORES; m++) {
         ESP_LOGI(TAG, "Motor %c = %s", NOMBRES[m], DESCRIPCION[m]);
     }

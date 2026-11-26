@@ -58,9 +58,11 @@ menu "Prometeo - Test de motores"
         bool "Compilar el firmware de TEST DE MOTORES (en vez del normal)"
         default n
         help
-            Compila main/main_test_motores.c: recorre los 4 motores (adelante y atras),
-            publica su estado por micro-ROS y acepta comandos. No inicia servos ni
-            sensores. Para volver al firmware normal, desactivar esta opcion.
+            Compila main/main_test_motores.c: prueba el driver de motores (selftest con
+            resultados por micro-ROS, control manual y modo EXT para el lazo en la PC).
+            No inicia servos ni sensores. Para volver al firmware normal, desactivar esta opcion.
+            (PROMETEO_TEST_DUTY_MAX_PCT / RAMP_MS / HOLD_MS / PAUSE_MS eran del ciclo automatico
+            anterior y este firmware ya no los usa; AUTOSTART ahora arranca el selftest.)
 
     config PROMETEO_TEST_AUTOSTART
         bool "Arrancar el ciclo solo, unos segundos despues de iniciar"
