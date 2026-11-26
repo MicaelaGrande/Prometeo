@@ -54,175 +54,40 @@ menu "Prometeo - Pines de motores"
 
 endmenu
 
-menu "Prometeo - Cinematica"
+menu "Prometeo - PWM"
 
-    config PROMETEO_WHEEL_SEPARATION_MM
-        int "Separacion entre ruedas izq/der (mm)"
-        range 50 1000
-        default 135
+    config PROMETEO_PWM_FREQ_HZ
+        int "Frecuencia del PWM (Hz)"
+        range 100 20000
+        default 10000
         help
-            Distancia entre el centro de las ruedas izquierdas y derechas
-            (URDF: wheel_separation = 0.1605 m).
+            Frecuencia del PWM de los motores. Mas alta = mas silencioso, pero menos torque.
+            Mas baja = mas torque, pero mas ruido y vibracion. Ajustar segun el driver de potencia.
 
-    config PROMETEO_VEL_MAX_MM_S
-        int "Velocidad lineal con motores al 100% (mm/s)"
-        range 50 5000
-        default 700
+    config PROMETEO_PWM_RES_BIT
+        int "Resolucion del PWM (bits)"
+        range 1 16
+        default 10
         help
-            Velocidad del robot en linea recta a duty 1.0. ESTIMADO: medir
-            cronometrando cuanto tarda en recorrer 1 m a fondo.
-            Tambien la usa el freno de emergencia (seguridad.c).
-
-    config PROMETEO_TURN_FACTOR_PCT
-        int "Factor de giro skid-steer (%)"
-        range 50 500
-        default 100
-        help
-            Multiplica la separacion entre ruedas para girar. Con 4 ruedas sin
-            direccion las ruedas patinan al girar y el ancho efectivo es mayor
-            que el real (tipico 150-250%). Ajustar girando en el lugar a una
-            velocidad angular conocida: si gira de menos, bajar el factor.
-
-    config PROMETEO_MOTORES_SPEED_LOOP
-        bool "Mantener la velocidad de cada rueda con su encoder (PID)"
-        default y
-        help
-            Solo para ordenes de motores_set_twist() / motores_set_ruedas() (/cmd_vel). Cada
-            rueda se mide con su encoder y su motor sube o baja el duty hasta girar a la
-            velocidad pedida, asi las 4 ruedas giran igual. Requiere encoders.
-
-    config PROMETEO_TURN_BOOST_PCT
-        int "Refuerzo de duty al girar (%)"
-        range 0 200
-        default 30
-        help
-            Al girar la velocidad angular pedida se multiplica por 1 + este valor: mas duty en las 4 ruedas
-            para vencer el patinaje. 0 = sin refuerzo. El giro real sale mas rapido que el pedido.
-
-    config PROMETEO_TURN_MIN_DUTY_PCT
-        int "Duty minimo al girar (%)"
-        range 0 100
-        default 70
-        help
-            Al girar, el lado mas rapido recibe al menos este duty (el otro en proporcion, para
-            conservar el radio de giro). Las 4 ruedas patinan y con un giro lento el duty
-            que sale de cmd_vel no alcanza para moverlas. 0 = sin minimo. Subir si no gira,
-            bajar si gira demasiado rapido.
-
-    config PROMETEO_MOTORES_SPEED_WINDOW_MS
-        int "Ventana de medicion de velocidad del lazo (ms)"
-        depends on PROMETEO_MOTORES_SPEED_LOOP
-        range 200 3000
-        default 500
-        help
-            Un pulso en 500 ms de UNA rueda son ~0,02 m/s. Mas ventana = mas preciso pero mas
-            lento para corregir.
-
-    config PROMETEO_MOTORES_SPEED_KP_X100
-        int "Ganancia proporcional del lazo (x100)"
-        depends on PROMETEO_MOTORES_SPEED_LOOP
-        range 0 1000
-        default 30
-        help
-            100 = 1,0: un error igual a VEL_MAX suma 1,0 de duty. Se aplica una vez por ventana
-            y se mantiene hasta la siguiente medicion. 0 = sin P.
-
-    config PROMETEO_MOTORES_SPEED_KI_X100
-        int "Ganancia integral del lazo (x100)"
-        depends on PROMETEO_MOTORES_SPEED_LOOP
-        range 1 1000
-        default 100
-        help
-            100 = 1,0: por cada segundo con un error igual a VEL_MAX, sube 1,0 de duty.
-            Subirla corrige mas rapido pero puede oscilar.
-
-    config PROMETEO_MOTORES_SPEED_KD_X100
-        int "Ganancia derivativa del lazo (x100)"
-        depends on PROMETEO_MOTORES_SPEED_LOOP
-        range 0 1000
-        default 0
-        help
-            Frena la correccion cuando el error baja rapido. Con la resolucion de los encoders
-            (1 pulso por ventana) la derivada es muy ruidosa: dejar en 0 salvo que se mida bien.
-
-    config PROMETEO_MOTORES_SPEED_BOOST_MAX_PCT
-        int "Refuerzo maximo de duty (%)"
-        depends on PROMETEO_MOTORES_SPEED_LOOP
-        range 0 100
-        default 50
-        help
-            Tope de la correccion total (P+I+D) que puede sumar el lazo, para que un encoder roto o una
-            VEL_MAX mal estimada no lleven los motores al maximo.
-
-    config PROMETEO_MOTORES_SPEED_REDUCE_MAX_PCT
-        int "Reduccion maxima de duty de una rueda rapida (%)"
-        depends on PROMETEO_MOTORES_SPEED_LOOP
-        range 0 100
-        default 30
-        help
-            Cuanto puede bajar el lazo el duty de una rueda que gira mas rapido que la pedida,
-            para igualarla con las demas. La zona muerta de motores.c sigue poniendo el minimo.
+            Resolucion del PWM de los motores. Mas bits = mas preciso, pero menos torque.
 
 endmenu
 
-menu "Prometeo - Seguridad motores"
+menu "Prometeo - Cinematica"
 
-    config PROMETEO_MOTORES_STOP_ALL
-        bool "Un atasco o sobreesfuerzo frena los 4 motores"
-        default y
+    config PROMETEO_RAMP_TIME_MS
+        int "Tiempo de rampa de velocidad (ms)"
+        range 0 10000
+        default 1000
         help
-            Aplica a motores.c. Si esta desactivado, solo se frena el motor atascado
-            o el puente sobrecargado. La falla queda latcheada hasta motores_liberar_fallas().
+            Tiempo de rampa de velocidad (ms). Al llamar a la funcion aplicar() este es el tiempo que tarda en llegar a la velocidad objetivo.
 
-    config PROMETEO_MOTORES_STALL_ENABLE
-        bool "Detectar rueda que no gira (velocidad minima del encoder)"
-        default n
+    config PROMETEO_RAMP_STEP
+        int "Step de rampa de velocidad (0 a 2^PWM_RES_BIT - 1 )"
+        range 0 255
+        default 40
         help
-            Requiere encoders_init() antes de motores_init(). Desactivar si el firmware
-            no usa encoders.
-            APAGADO POR DEFECTO (acordado el 6/11/2026): los encoders todavia no son
-            confiables, y un encoder que no cuenta parece una rueda trabada: frenaria los
-            4 motores en medio de la ronda. Prenderlo recien con los encoders probados.
-
-    config PROMETEO_MOTORES_STALL_DUTY_MIN_PCT
-        int "Duty desde el cual se vigila el atasco (%)"
-        depends on PROMETEO_MOTORES_STALL_ENABLE
-        range 0 100
-        default 70
-
-    config PROMETEO_MOTORES_STALL_WINDOW_MS
-        int "Ventana de medicion de velocidad (ms)"
-        depends on PROMETEO_MOTORES_STALL_ENABLE
-        range 100 10000
-        default 1500
-
-    config PROMETEO_MOTORES_STALL_MIN_PPS
-        int "Velocidad minima del encoder con el motor andando (pulsos/s)"
-        depends on PROMETEO_MOTORES_STALL_ENABLE
-        range 0 1000
-        default 2
-        help
-            20 pulsos = 1 vuelta, asi que 2 pulsos/s = 6 rpm. 0 = solo se falla si no hay
-            ningun pulso en la ventana. La resolucion es 1 pulso por ventana (0,67 pulsos/s
-            con 1,5 s). Medir la velocidad real con carga y dejar margen.
-
-    config PROMETEO_MOTORES_EFFORT_ENABLE
-        bool "Vigilar el esfuerzo de cada puente H (proteccion termica)"
-        default y
-
-    config PROMETEO_MOTORES_EFFORT_LIMIT_PCT
-        int "Limite de esfuerzo medio por puente (%)"
-        depends on PROMETEO_MOTORES_EFFORT_ENABLE
-        range 5 200
-        default 150
-        help
-            Sin sensor de corriente: se estima como duty^2 de los dos motores del puente,
-            promediado con la constante de tiempo. 100 = un motor a duty 1 sostenido
-            (o los dos a 0,71); el maximo es 200. Ajustar mirando la temperatura del driver.
-
-    config PROMETEO_MOTORES_EFFORT_TAU_S
-        int "Constante de tiempo del esfuerzo (s)"
-        range 1 600
-        default 10
+            Step maximo de rampa de velocidad (0 a 2^PWM_RES_BIT - 1 ).
+            Al llamar a la funcion aplicar() este es el maximo cambio permitido.
 
 endmenu

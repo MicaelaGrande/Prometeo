@@ -24,6 +24,12 @@ typedef enum {
     CANT_MOTORES
 } motor_id_t;
 
+// ===== Settings del ramp =====
+#define RAMP_PERIOD_MS   20     // CONFIG_PROMETEO_RAMP_PERIOD_MS
+#define ACCEL_STEP       45     // CONFIG_PROMETEO_ACCEL_STEP    // ~450 ms 0->full
+#define DECEL_STEP       100    // CONFIG_PROMETEO_DECEL_STEP    // ~200 ms full->0
+#define MIN_DUTY         280    // CONFIG_PROMETEO_MIN_DUTY      // measure on your robot
+
 // ===== FALLAS DE SEGURIDAD (bits de motores_get_fallas) =====
 #define MOTORES_FALLA_STALL(m)      (1u << (m))        // motor m: el encoder no da la velocidad minima
 #define MOTORES_FALLA_SOBRE(lado)   (1u << (4 + (lado)))   // puente del lado (0 = izq A+B, 1 = der C+D): esfuerzo maximo superado
@@ -32,26 +38,17 @@ typedef enum {
 
 // ===== FUNCIONES =====
 void motores_init(void);                       // configura PWM y arranca frenado
-void motor_set(motor_id_t m, float velocidad); // -1.0 atrás ... 0 ... +1.0 adelante
-void motores_alimentar(void);                  // alimenta el failsafe sin cambiar objetivos (para usar motor_set suelto)
-void motores_set(float izq, float der);        // lado izq y der (alimenta el failsafe)
-void motores_set_twist(float v_mps, float w_rads); // cinemática diferencial de 4 ruedas: m/s y rad/s (+ adelante, + izquierda)
-void motores_twist_a_ruedas(float v_mps, float w_rads, float v_rueda_mps[CANT_MOTORES]); // velocidad de cada rueda (m/s, con signo) para ese movimiento
-void motores_set_ruedas(const float v_rueda_mps[CANT_MOTORES]); // cada rueda por separado, en m/s (alimenta el failsafe); el lazo de encoders la mantiene
-void motores_frenar(void);                     // freno de emergencia inmediato
-void motores_get_velocidad(float *v_mps, float *w_rads); // velocidad ESTIMADA a lazo abierto (sin encoders): m/s y rad/s
-bool motores_en_falla(void);                   // true si frenó por falta de órdenes
-int  motor_get_sentido(motor_id_t m);          // +1 adelante / -1 atrás: último sentido aplicado (signo de los encoders)
+void motores_single_set_ramp(motor_id_t m, float velocidad); // -1.0 atrás ... 0 ... +1.0 adelante
 
-// ===== SEGURIDAD (valores en menuconfig: "Prometeo - Seguridad motores") =====
-// 1) ATASCO: con el motor andando (duty >= umbral) el encoder tiene que dar al menos N pulsos/s
-//    en cada ventana. Si no, falla de ese motor. Hay que haber llamado a encoders_init() antes de
-//    motores_init() (o desactivar PROMETEO_MOTORES_STALL_ENABLE).
-// 2) ESFUERZO: sin sensor de corriente se estima por puente H como duty^2 de sus 2 motores,
-//    promediado con constante de tiempo tau. Si pasa el limite, falla de ese puente.
-// Con PROMETEO_MOTORES_STOP_ALL, cualquier falla frena los 4 motores. La falla queda latcheada:
-// los motores siguen frenados aunque lleguen ordenes, hasta motores_liberar_fallas().
-uint32_t motores_get_fallas(void);                 // bits MOTORES_FALLA_*
-bool     motores_liberar_fallas(void);             // libera atascos y sobreesfuerzos; false si algun puente sigue
-                                                   // caliente (esfuerzo > 50 % del limite): reintentar en unos segundos
-float    motores_get_esfuerzo(int lado);           // esfuerzo medio del puente (0 = izq, 1 = der), 0..2
+void motores_unlock(void);                  // alimenta el failsafe sin cambiar objetivos (para usar motor_set suelto)
+void motores_lock(bool falla);                     // freno de emergencia inmediato
+
+bool motores_get_falla(void);                    // true si frenó por falta de órdenes
+/*
+ * @brief Devuelve el sentido del motor (1 adelante, -1 atrás) según el último duty aplicado.
+ */
+int  motores_get_sentido(motor_id_t m);
+/*
+ * @brief Devuelve la velocidad del motor (0..1) según el último duty aplicado.
+ */
+int  motores_get_duty(motor_id_t m);
