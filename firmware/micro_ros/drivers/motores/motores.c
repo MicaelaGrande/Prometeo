@@ -16,7 +16,7 @@ static const char *TAG = "motores";
 
 // ===== LÍMITE DE VELOCIDAD =====
 #define V_MOTOR       6.0f   // tensión máxima del motor TT
-#define V_BATERIA     6.0f   // CAMBIAR si cambian la batería
+#define V_BATERIA     5.0f   // CAMBIAR si cambian la batería
 #define VELOCIDAD_MAX (V_MOTOR / V_BATERIA)
 
 // ===== ZONA MUERTA =====
