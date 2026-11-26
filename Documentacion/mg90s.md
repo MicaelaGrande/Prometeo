@@ -114,7 +114,7 @@ Los comandos de movimiento sobre un servo soltado actualizan su estado pero **no
 
 ## 5. Uso
 
-`drivers/CMakeLists.txt` ya incluye `mg90s/mg90s.c`. En `main.c`:
+`drivers/mg90s/CMakeLists.txt` ya registra `mg90s.c` como componente propio. En `main.c`:
 
 ```c
 #include "mg90s.h"

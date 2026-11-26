@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Revisa conflictos de pines GPIO definidos en drivers/Kconfig.projbuild.
+"""Revisa conflictos de pines GPIO definidos en los Kconfig.projbuild del firmware
+(drivers/*, logica, main).
 
 Toma el valor de cada PROMETEO_*_PIN de sdkconfig si existe; si no, el default
 del Kconfig. Detecta:
@@ -7,7 +8,7 @@ del Kconfig. Detecta:
   - ERROR: pin fuera de rango, pines de flash (6-11), pin solo-entrada usado como salida
   - WARN : pines de arranque (0, 2, 12, 15), UART0 (1, 3)
 
-Uso: python3 firmware/scripts/check_pins.py [--kconfig RUTA] [--sdkconfig RUTA]
+Uso: python3 firmware/scripts/check_pins.py [--kconfig RUTA ...] [--sdkconfig RUTA]
 Sale con código 1 si hay errores (sirve en CI / pre-commit).
 """
 import argparse
@@ -41,6 +42,8 @@ def leer_kconfig(ruta):
             actual = m.group(1)
             pines[actual] = {"default": None, "rango": None, "desc": actual}
             continue
+        if re.match(r"(config|menu|endmenu|menuconfig)\b", s):
+            actual = None    # otra opcion (no es un pin): sus range/default no cuentan
         if actual is None:
             continue
         if (m := re.match(r'int\s+"(.*)"', s)):
@@ -64,13 +67,17 @@ def leer_sdkconfig(ruta):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--kconfig", type=Path, default=RAIZ / "drivers" / "Kconfig.projbuild")
+    ap.add_argument("--kconfig", type=Path, nargs="+",
+                    default=sorted(p for p in RAIZ.glob("**/Kconfig.projbuild")
+                                   if not {"build", "ejemplo", "managed_components"} & set(p.parts)))
     ap.add_argument("--sdkconfig", type=Path, default=RAIZ / "sdkconfig")
     args = ap.parse_args()
 
-    pines = leer_kconfig(args.kconfig)
+    pines = {}
+    for ruta in args.kconfig:
+        pines.update(leer_kconfig(ruta))
     if not pines:
-        print(f"No se encontraron PROMETEO_*_PIN en {args.kconfig}")
+        print(f"No se encontraron PROMETEO_*_PIN en {[str(r) for r in args.kconfig]}")
         return 2
     override = leer_sdkconfig(args.sdkconfig)
 
