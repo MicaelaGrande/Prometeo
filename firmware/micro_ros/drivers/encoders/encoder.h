@@ -16,6 +16,7 @@
 #define ENC_CUENTAS_VUELTA  (ENC_PPR * ENC_FLANCOS)
 #define ENC_VENTANA_MIN_MS  100     // menor ventana de medicion (si se pide mas seguido, devuelve el ultimo valor)
 #define ENC_TIMEOUT_MS      3000    // sin cuentas por mas de esto = rueda parada (RPM 0)
+#define ENC_FILTRO_TAU_MS   CONFIG_PROMETEO_ENC_FILTRO_TAU_MS   // constante de tiempo del pasa-bajos (0 = sin filtro)
 
 // ===== RUEDAS =====
 typedef enum {
@@ -29,6 +30,12 @@ typedef enum {
 // ===== FUNCIONES =====
 void  encoders_init(void);              // configura pines y las 4 unidades PCNT; empiezan a contar ya
 
-// Vueltas por minuto de la rueda (siempre >= 0: un solo canal, no sabe para que lado gira).
+// Vueltas por minuto de la rueda (siempre >= 0: un solo canal, no sabe para que lado gira),
+// FILTRADAS con un pasa-bajos de primer orden de constante ENC_FILTRO_TAU_MS: suaviza el escalon de
+// una cuenta por ventana, pero atrasa (llega al 63 % en tau). Con tau = 0 es igual a la cruda.
 // Llamar desde UNA sola tarea (no tiene candados: es lo que lo hace barato).
 float encoder_get_rpm(encoder_id_t e);
+
+// Igual pero SIN filtrar (la medida de la ventana). Usar donde no se puede tolerar el atraso
+// (arranque, deteccion de rueda quieta, tests).
+float encoder_get_rpm_raw(encoder_id_t e);

@@ -41,6 +41,16 @@ menu "Prometeo - Encoders"
             Con 2 hay el doble de cuentas por vuelta (mas resolucion).
             Puede introducir errores en el conteo.
 
+    config PROMETEO_ENC_FILTRO_TAU_MS
+        int "Filtro pasa-bajos de las rpm: constante de tiempo (ms)"
+        range 0 2000
+        default 300
+        help
+            encoder_get_rpm() devuelve las rpm pasadas por un filtro de primer orden con esta
+            constante de tiempo: llega al 63 % del cambio en tau y baja de 3 rpm unas 3,5 tau
+            despues de frenar. 0 = sin filtro. encoder_get_rpm_raw() siempre devuelve la medida cruda.
+            Mas tau = curva mas suave pero mas atraso (afecta a los lazos de control que usan la rpm).
+
     config PROMETEO_ENC_PPR
         int "Numero de ranuras del disco"
         range 0 100
