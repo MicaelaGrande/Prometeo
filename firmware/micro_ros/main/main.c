@@ -326,8 +326,8 @@ static bool crear_entidades(void)
     RCRET(rclc_subscription_init_default(&sub_brazo, &node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "brazo/cmd"));
 
-    RCRET(rclc_timer_init_default(&timer, &support, RCL_MS_TO_NS(500), timer_callback));
-    RCRET(rclc_timer_init_default(&timer_ruedas, &support, RCL_MS_TO_NS(ENC_PERIODO_MS), timer_ruedas_callback));
+    RCRET(rclc_timer_init_default2(&timer, &support, RCL_MS_TO_NS(500), timer_callback, true));
+    RCRET(rclc_timer_init_default2(&timer_ruedas, &support, RCL_MS_TO_NS(ENC_PERIODO_MS), timer_ruedas_callback, true));
 
     executor = rclc_executor_get_zero_initialized_executor();
     RCRET(rclc_executor_init(&executor, &support.context, 7, &allocator));  // 2 timers + 5 suscripciones
@@ -386,8 +386,8 @@ static void micro_ros_task(void * arg)
 {
     allocator = rcl_get_default_allocator();
     init_options = rcl_get_zero_initialized_init_options();
-    rcl_init_options_init(&init_options, allocator);
-    rcl_init_options_set_domain_id(&init_options, ROSDOMAIN_ID);   // mismo ROS_DOMAIN_ID que el agente y la PC
+    RCSOFTCHECK(rcl_init_options_init(&init_options, allocator));
+    RCSOFTCHECK(rcl_init_options_set_domain_id(&init_options, ROSDOMAIN_ID));   // mismo ROS_DOMAIN_ID que el agente y la PC
     rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
     rmw_uros_options_set_udp_address(micro_ros_agent_ip, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options);
 
