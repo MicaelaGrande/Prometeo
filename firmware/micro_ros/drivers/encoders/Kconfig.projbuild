@@ -29,7 +29,23 @@ menu "Prometeo - Encoders"
         int "Diametro de la rueda (mm)"
         range 10 500
         default 65
+
+    comment "== Misc =="
+
+    config PROMETEO_ENC_FLACOS
+        int "Conteo de Flancos por pulso"
+        range 1 2
+        default 2
         help
-            PENDIENTE: medir la rueda real. Se usa para pasar pulsos a m/s.
+            Flancos que se cuentan por pulso: 1 = solo subida, 2 = tambien bajada.
+            Con 2 hay el doble de cuentas por vuelta (mas resolucion).
+            Puede introducir errores en el conteo.
+
+    config PROMETEO_ENC_PPR
+        int "Numero de ranuras del disco"
+        range 0 100
+        default 20
+        help
+            Pulsos por revolucion
 
 endmenu

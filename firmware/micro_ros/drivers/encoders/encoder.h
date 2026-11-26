@@ -1,19 +1,21 @@
+// Encoders de las 4 ruedas con el contador de pulsos por hardware (PCNT).
+// Paso 1: solo RPM. El conteo lo hace el periferico: no hay interrupcion por pulso,
+// ni timer, ni tarea. El RPM se calcula al pedirlo, con los pulsos contados desde la
+// ultima vez.
 #pragma once
-#include "driver/gpio.h"
 #include "sdkconfig.h"
 
 // ===== PINES =====
-// Se eligen en menuconfig ("Prometeo - Pines GPIO" -> Encoders) y quedan en sdkconfig:
+// Se eligen en menuconfig ("Prometeo - Encoders") y quedan en sdkconfig:
 //   CONFIG_PROMETEO_ENCODER_DEL_IZQ_PIN, CONFIG_PROMETEO_ENCODER_DEL_DER_PIN,
 //   CONFIG_PROMETEO_ENCODER_TRAS_IZQ_PIN, CONFIG_PROMETEO_ENCODER_TRAS_DER_PIN
 
 // ===== DATOS DEL ENCODER =====
-#define ENC_PPR             20      // cantidad de ranuras del disco
-#define ENC_PERIODO_MS       100     // cada cuánto se calcula la velocidad
-#define TIMEOUT_PERIODO_US 3000000LL // sin pulsos por más de 3 s = rueda parada (mín. ~1 rpm)
-
-// ===== DATOS DE LA RUEDA =====
-#define DIAMETRO_RUEDA_M  (CONFIG_PROMETEO_DIAMETRO_RUEDA_MM / 1000.0f)
+#define ENC_PPR             CONFIG_PROMETEO_ENC_PPR
+#define ENC_FLANCOS         CONFIG_PROMETEO_ENC_FLACOS
+#define ENC_CUENTAS_VUELTA  (ENC_PPR * ENC_FLANCOS)
+#define ENC_VENTANA_MIN_MS  100     // menor ventana de medicion (si se pide mas seguido, devuelve el ultimo valor)
+#define ENC_TIMEOUT_MS      3000    // sin cuentas por mas de esto = rueda parada (RPM 0)
 
 // ===== RUEDAS =====
 typedef enum {
@@ -25,22 +27,8 @@ typedef enum {
 } encoder_id_t;
 
 // ===== FUNCIONES =====
-void  encoders_init(void);                  // configura pines, interrupciones y timer
+void  encoders_init(void);              // configura pines y las 4 unidades PCNT; empiezan a contar ya
 
-// Por rueda (siempre >= 0: un solo canal, no sabe para qué lado gira)
-float encoder_get_rpm(encoder_id_t e);      // vueltas por minuto
-float encoder_get_vel(encoder_id_t e);      // metros por segundo
-// RPM por tiempo entre pulsos: precisa a baja velocidad (la de arriba tiene
-// resolución de 30 rpm: 1 pulso en 100 ms). Se actualiza en cada pulso.
-float encoder_get_rpm_lenta(encoder_id_t e);
-
-// Pulsos contados desde el arranque (no se resetea; da la vuelta a los 2^32)
-uint32_t encoder_get_pulsos(encoder_id_t e);
-// GPIO de esa rueda (el de menuconfig)
-int      encoder_get_pin(encoder_id_t e);
-
-// Por lado: promedio de la rueda delantera y la trasera
-float encoder_get_rpm_der(void);
-float encoder_get_rpm_izq(void);
-float encoder_get_vel_der(void);
-float encoder_get_vel_izq(void);
+// Vueltas por minuto de la rueda (siempre >= 0: un solo canal, no sabe para que lado gira).
+// Llamar desde UNA sola tarea (no tiene candados: es lo que lo hace barato).
+float encoder_get_rpm(encoder_id_t e);
