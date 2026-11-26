@@ -9,7 +9,7 @@
  * micro-ROS (namespace prometeo, nodo motor_test):
  *   publica      /prometeo/motores_test/estado      std_msgs/String  (JSON, cada 250 ms)
  *   publica      /prometeo/motores_test/rpm         std_msgs/Float32MultiArray (best effort, 50 ms)
- *                [rpm_med A..D (con signo del sentido), duty A..D, modo, alarma]
+ *                [rpm_med A..D (filtradas, con signo del sentido), duty A..D, modo, alarma, rpm_raw A..D]
  *   publica      /prometeo/motores_test/resultados  std_msgs/String  (JSON, un test cada 200 ms, en ciclo)
  *   se suscribe  /prometeo/motores_test/cmd         std_msgs/String  (comandos de texto)
  *
@@ -69,7 +69,7 @@
 #define RPM_PERIODO_MS       50      // topic rapido de rpm para el lazo en la PC
 #define RES_PERIODO_MS       200     // un test por mensaje, en ciclo
 #define EXT_MS               300     // modo EXT: sin duties nuevos en este tiempo -> frena
-#define RPM_MSG_LEN          10
+#define RPM_MSG_LEN          14      // [0..3] rpm filtradas, [4..7] duty, [8] modo, [9] alarma, [10..13] rpm crudas
 #define MANUAL_MS_DEF        2000
 #define MANUAL_MS_MAX        10000
 #define CMD_LEN              64
@@ -105,7 +105,8 @@ typedef struct {
     float    duty[CANT_MOTORES];        // motores_get_duty(): lo que aplica el driver (-1..1)
     uint32_t pwm[CANT_MOTORES][2];      // duty real de los pines IA, IB (motores_get_pwm)
     int      sentido[CANT_MOTORES];     // motores_get_sentido()
-    float    rpm_med[CANT_MOTORES];     // rpm del encoder con el signo del sentido
+    float    rpm_med[CANT_MOTORES];     // rpm del encoder FILTRADAS (encoder_get_rpm) con el signo del sentido
+    float    rpm_raw[CANT_MOTORES];     // rpm del encoder sin filtrar, con el signo del sentido
     int      ramp_ms;                   // ultima subida 0 -> objetivo medida (T05)
     char     fase[40];                  // que esta haciendo el selftest
 } estado_t;
@@ -234,7 +235,7 @@ static bool  en_selftest = false, abortar = false, pedir_selftest = false;
 
 // Ultima muestra (solo la lee la tarea de test)
 static uint32_t s_pwm[CANT_MOTORES][2];
-static float    s_rpm[CANT_MOTORES];          // rpm del encoder, siempre >= 0
+static float    s_rpm[CANT_MOTORES];          // rpm del encoder SIN filtrar, siempre >= 0 (los tests no pueden tolerar el atraso)
 static int      viol_ambos = 0;               // ticks con IA e IB a la vez en algun motor (T04)
 static uint32_t MOTORES_PWM_MAX_visto = 0;            // mayor duty de pin visto (T04)
 static int      jitter_us = 0;                // mayor desvio del periodo del lazo
@@ -261,7 +262,7 @@ static void todos(float v) { for (int m = 0; m < CANT_MOTORES; m++) tgt[m] = v; 
 // Lee driver + encoders y lo deja en el estado publicado
 static void muestrear(void)
 {
-    float duty[CANT_MOTORES], rpm_signo[CANT_MOTORES], pedido[CANT_MOTORES];
+    float duty[CANT_MOTORES], rpm_signo[CANT_MOTORES], raw_signo[CANT_MOTORES], pedido[CANT_MOTORES];
     int sent[CANT_MOTORES];
     for (int m = 0; m < CANT_MOTORES; m++) {
         motores_get_pwm((motor_id_t)m, &s_pwm[m][0], &s_pwm[m][1]);
@@ -270,8 +271,9 @@ static void muestrear(void)
         if (s_pwm[m][1] > MOTORES_PWM_MAX_visto) MOTORES_PWM_MAX_visto = s_pwm[m][1];
         duty[m] = motores_get_duty((motor_id_t)m);
         sent[m] = motores_get_sentido((motor_id_t)m);
-        s_rpm[m] = encoder_get_rpm(ENCODER_DE[m]);
-        rpm_signo[m] = s_rpm[m] * (float)sent[m];
+        s_rpm[m] = encoder_get_rpm_raw(ENCODER_DE[m]);
+        raw_signo[m] = s_rpm[m] * (float)sent[m];
+        rpm_signo[m] = encoder_get_rpm(ENCODER_DE[m]) * (float)sent[m];
         pedido[m] = (tgt[m] == tgt[m]) ? tgt[m] : 0.0f;   // NaN no es JSON valido
     }
     bool falla = motores_get_falla();
@@ -281,6 +283,7 @@ static void muestrear(void)
     memcpy(estado.pedido, pedido, sizeof(pedido));
     memcpy(estado.sentido, sent, sizeof(sent));
     memcpy(estado.rpm_med, rpm_signo, sizeof(rpm_signo));
+    memcpy(estado.rpm_raw, raw_signo, sizeof(raw_signo));
     for (int m = 0; m < CANT_MOTORES; m++) { estado.pwm[m][0] = s_pwm[m][0]; estado.pwm[m][1] = s_pwm[m][1]; }
     taskEXIT_CRITICAL(&estado_mux);
 }
@@ -806,6 +809,7 @@ static void timer_rpm_callback(rcl_timer_t *t, int64_t last_call_time)
     }
     buf_rpm[8] = (float)e.modo;
     buf_rpm[9] = 0.0f;                  // sin alarma: el driver nuevo no tiene proteccion propia
+    for (int m = 0; m < CANT_MOTORES; m++) buf_rpm[10 + m] = e.rpm_raw[m];
     msg_rpm.data.size = RPM_MSG_LEN;
     RCSOFTCHECK(rcl_publish(&pub_rpm, &msg_rpm, NULL));
 }
@@ -832,7 +836,7 @@ static void timer_callback(rcl_timer_t *t, int64_t last_call_time)
         "\"duties\":[%.3f,%.3f,%.3f,%.3f],"
         "\"vmax\":{\"A\":1.00,\"B\":1.00,\"C\":1.00,\"D\":1.00},\"ciclo\":0,"
         "\"resultados\":{\"A\":\"pendiente\",\"B\":\"pendiente\",\"C\":\"pendiente\",\"D\":\"pendiente\"},"
-        "\"rpm_obj\":[0,0,0,0],\"rpm_med\":[%.1f,%.1f,%.1f,%.1f],\"pi\":{\"kp\":0,\"ki\":0},"
+        "\"rpm_obj\":[0,0,0,0],\"rpm_med\":[%.1f,%.1f,%.1f,%.1f],\"rpm_raw\":[%.1f,%.1f,%.1f,%.1f],\"pi\":{\"kp\":0,\"ki\":0},"
         "\"proteccion\":false,\"alarma\":null,\"failsafe\":%s,"
         "\"falla\":%s,\"pedido\":[%.2f,%.2f,%.2f,%.2f],\"sentido\":[%d,%d,%d,%d],"
         "\"pwm\":[[%u,%u],[%u,%u],[%u,%u],[%u,%u]],\"ramp_ms\":%d,\"fase\":\"%s\","
@@ -840,6 +844,7 @@ static void timer_callback(rcl_timer_t *t, int64_t last_call_time)
         MODO_TXT[e.modo],
         e.duty[0], e.duty[1], e.duty[2], e.duty[3],
         e.rpm_med[0], e.rpm_med[1], e.rpm_med[2], e.rpm_med[3],
+        e.rpm_raw[0], e.rpm_raw[1], e.rpm_raw[2], e.rpm_raw[3],
         e.falla ? "true" : "false", e.falla ? "true" : "false",
         e.pedido[0], e.pedido[1], e.pedido[2], e.pedido[3],
         e.sentido[0], e.sentido[1], e.sentido[2], e.sentido[3],
