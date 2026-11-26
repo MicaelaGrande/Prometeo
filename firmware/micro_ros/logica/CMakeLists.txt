@@ -7,4 +7,4 @@ idf_component_register(SRCS "sensores.c"
                             "brazo.c"
                             "ruedas.c"
                        INCLUDE_DIRS "."
-                       PRIV_REQUIRES motores hcsr04 mg90s esp_timer)
+                       PRIV_REQUIRES encoders motores hcsr04 mg90s esp_timer)

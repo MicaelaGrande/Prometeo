@@ -1,7 +1,6 @@
-# Libreria de motores: 4 motores con puente H L9110S + encoders + lazo de velocidad.
-# No depende del resto del firmware: sus opciones estan en Kconfig.projbuild (aca al lado)
-# y se prueba sola con el proyecto de ejemplo/ (tiene su propio sdkconfig).
+# Libreria de motores: 4 motores con puente H L9110S + lazo de velocidad con los encoders.
+# Sus opciones estan en Kconfig.projbuild (aca al lado). Usa la libreria drivers/encoders.
 idf_component_register(SRCS "motores.c"
-                            "encoder.c"
                        INCLUDE_DIRS "."
-                       REQUIRES driver esp_timer esp_driver_ledc)
+                       REQUIRES driver esp_timer esp_driver_ledc
+                       PRIV_REQUIRES encoders)

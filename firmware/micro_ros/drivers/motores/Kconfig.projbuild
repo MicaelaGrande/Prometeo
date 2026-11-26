@@ -1,30 +1,6 @@
-# Opciones de la libreria de motores (motores.c + encoder.c).
-# Se usan igual en el firmware completo y en el proyecto de ejemplo (ejemplo/).
-menu "Prometeo - Pines de motores y encoders"
-
-    comment "======== Concentrador Delantero ========"
-
-    comment "== Encoders =="
-
-    config PROMETEO_ENCODER_DEL_DER_PIN
-        int "Encoder rueda delantera derecha - pin"
-        range 0 39
-        default 5
-
-    config PROMETEO_ENCODER_DEL_IZQ_PIN
-        int "Encoder rueda delantera izquierda - pin"
-        range 0 39
-        default 2
-
-    config PROMETEO_ENCODER_TRAS_DER_PIN
-        int "Encoder rueda trasera derecha - pin"
-        range 0 39
-        default 14
-
-    config PROMETEO_ENCODER_TRAS_IZQ_PIN
-        int "Encoder rueda trasera izquierda - pin"
-        range 0 39
-        default 13
+# Opciones de la libreria de motores (motores.c). Los pines de los encoders y el diametro de
+# la rueda estan en drivers/encoders/Kconfig.projbuild.
+menu "Prometeo - Pines de motores"
 
     comment "======== Placa Motor ========"
 
@@ -248,10 +224,5 @@ menu "Prometeo - Seguridad motores"
         int "Constante de tiempo del esfuerzo (s)"
         range 1 600
         default 10
-
-    config PROMETEO_DIAMETRO_RUEDA_M
-        float "Diametro de la rueda en metros"
-        range 0 10
-        default 0.065
 
 endmenu

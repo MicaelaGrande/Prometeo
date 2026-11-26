@@ -1,5 +1,6 @@
 #pragma once
 #include "driver/gpio.h"
+#include "sdkconfig.h"
 
 // ===== PINES =====
 // Se eligen en menuconfig ("Prometeo - Pines GPIO" -> Encoders) y quedan en sdkconfig:
@@ -12,7 +13,7 @@
 #define TIMEOUT_PERIODO_US 3000000LL // sin pulsos por más de 3 s = rueda parada (mín. ~1 rpm)
 
 // ===== DATOS DE LA RUEDA =====
-#define DIAMETRO_RUEDA_M  CONFIG_PROMETEO_DIAMETRO_RUEDA_M
+#define DIAMETRO_RUEDA_M  (CONFIG_PROMETEO_DIAMETRO_RUEDA_MM / 1000.0f)
 
 // ===== RUEDAS =====
 typedef enum {
